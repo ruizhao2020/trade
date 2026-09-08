@@ -1,0 +1,920 @@
+//──────────────────────────────────────────────────────────────────────
+// 01 · ENGINE 引擎配置
+//──────────────────────────────────────────────────────────────────────
+// input.* 是 Pine Script 的"输入参数"机制:这些值会出现在图表的"设置/输入"面板中,
+// 用户可以不修改代码直接调参。脚本重新运行时,这些值在整个执行过程中保持不变。
+// 常用类型:input.int(整数)/ input.float(浮点)/ input.bool(布尔)/
+//          input.string(字符串)/ input.color(颜色)/ input.timeframe(周期)
+// group 参数把多个输入归到同一组;tooltip 提供懸浮提示文案。
+gEng = "01 · Engine"
+pivLen      = input.int(8, "Swing Pivot Lookback", minval = 2, maxval = 60, group = gEng, tooltip = "左右各取 N 根 K 线判断枢轴点。值越大信号越重大但越稀疏。")
+reclaimWin  = input.int(1, "Reclaim Window (bars)", minval = 0, maxval = 5, group = gEng, tooltip = "0=扫荡与回收必须同一根 K 线完成;1=允许下一根完成,以此类推。")
+atrLen      = input.int(14, "ATR Length", minval = 1, maxval = 200, group = gEng, tooltip = "ATR 用来归一化影线深度、止损距离、标签偏移。")
+maxLevels   = input.int(12, "Max Tracked Levels / Side", minval = 2, maxval = 40, group = gEng, tooltip = "每侧(高/低)最多同时跟踪多少个流动性水平。")
+maxLevelAge = input.int(600, "Max Level Age (bars)", minval = 25, maxval = 5000, group = gEng, tooltip = "摆动水平超过该根数未被扫荡则丢弃。")
+dirMode     = input.string("Both", "Signal Direction", options = ["Both", "Long Only", "Short Only"], group = gEng, tooltip = "限制允许发出的信号方向。")// This Pine Script® code is subject to the terms of the Mozilla Public License 2.0 at https://mozilla.org/MPL/2.0/
+// © officialjackofalltrades
+
+// ══════════════════════════════════════════════════════════════════════
+// Pine Script 入门须知(给有编程经验但不熟悉 Pine Script 的读者)
+// --------------------------------------------------------------------
+// 1) 执行模型:Pine Script 是"逐根 K 线(bar)执行"的脚本语言。
+//    脚本从图表第一根 K 线开始,每根 K 线都完整运行一次整个脚本。
+//    顶层语句每根 bar 都会执行;函数体内的语句只有在被调用时才执行。
+//
+// 2) "var" 关键字:声明"持久化变量"。普通变量每根 bar 都会重新计算,
+//    而 var 变量只在第一根 bar 初始化一次,之后在后续 bar 中保留上一根的值,
+//    除非显式重新赋值。这是实现"状态机"的核心机制。
+//
+// 3) 内置时间序列变量:high/low/close/open/volume/bar_index 等都是"序列",
+//    自动代表"当前 bar"的值;用 [n] 语法可访问 n 根之前的值,如 close[1]。
+//
+// 4) ta.* 命名空间:technical analysis(技术分析)函数,如 ta.atr/ta.sma/ta.ema,
+//    返回的也是序列,会随每根 bar 自动滚动更新。
+//
+// 5) na:not available,类似其他语言的 null/NaN。用 na(x) 判断,用 nz(x, default) 兜底。
+//
+// 6) request.security:跨周期取数,可在当前周期访问更高/更低周期的数据。
+//
+// 7) 绘图对象:line/label/box/table 都是"对象",用 xxx.new() 创建,返回 ID,
+//    可用 xxx.set_yyy() 修改属性。图表上的对象数量有上限,需手动 delete 回收。
+// ══════════════════════════════════════════════════════════════════════
+
+//@version=6  // Pine Script 第 6 版语法
+// indicator() 声明这是一个"指标"(不是 strategy 策略)。
+//   - overlay=true   :绘制在主图上(K 线图之上),而非独立副图
+//   - shorttitle      :图表左上角显示的简称
+//   - max_lines_count :允许同时在图表上保留的最大 line 数量(默认 50,这里放宽到 500)
+//   - max_labels_count/ max_boxes_count:同理,放宽上限避免绘图被截断
+indicator("Liquidity Sweep Reversal [JOAT]", shorttitle = "LIQ [JOAT]", overlay = true, max_lines_count = 500, max_labels_count = 500, max_boxes_count = 500)// This Pine Script® code is subject to the terms of the Mozilla Public License 2.0 at https://mozilla.org/MPL/2.0/
+// © officialjackofalltrades
+//@version=6
+indicator("Liquidity Sweep Reversal [JOAT]", shorttitle = "LIQ [JOAT]", overlay = true, max_lines_count = 500, max_labels_count = 500, max_boxes_count = 500)
+
+//══════════════════════════════════════════════════════════════════════
+// LIQUIDITY SWEEP REVERSAL [JOAT]
+// Stop-hunt sweep + reclaim engine. A bullish sweep wicks below a prior
+// swing low (grabs sell-side liquidity) then closes back above it -> BUY.
+// A bearish sweep wicks above a prior swing high (buy-side liquidity)
+// then closes back below it -> SELL. ATR / volume / HTF filters, ATR SL,
+// R-multiple TP1/TP2/TP3, outcome-tracking dashboard.
+//══════════════════════════════════════════════════════════════════════
+
+//──────────────────────────────────────────────────────────────────────
+// 01 · ENGINE
+//──────────────────────────────────────────────────────────────────────
+gEng = "01 · Engine"
+pivLen      = input.int(8, "Swing Pivot Lookback", minval = 2, maxval = 60, group = gEng, tooltip = "Bars on each side of a pivot. Higher = more significant, less frequent swing highs/lows tracked as liquidity.")
+reclaimWin  = input.int(1, "Reclaim Window (bars)", minval = 0, maxval = 5, group = gEng, tooltip = "0 = sweep and reclaim must complete on the same candle. 1 = the reclaim close may also land on the next bar, etc.")
+atrLen      = input.int(14, "ATR Length", minval = 1, maxval = 200, group = gEng, tooltip = "ATR normalises wick depth, stop distance and label offsets.")
+maxLevels   = input.int(12, "Max Tracked Levels / Side", minval = 2, maxval = 40, group = gEng, tooltip = "Active swing-high and swing-low liquidity levels kept per side.")
+maxLevelAge = input.int(600, "Max Level Age (bars)", minval = 25, maxval = 5000, group = gEng, tooltip = "A swing level is discarded once it is this many bars old without being swept.")
+dirMode     = input.string("Both", "Signal Direction", options = ["Both", "Long Only", "Short Only"], group = gEng, tooltip = "Restrict which sweep reversals are allowed to signal.")
+
+//──────────────────────────────────────────────────────────────────────
+// 02 · FILTERS 过滤器配置
+//──────────────────────────────────────────────────────────────────────
+gFilt = "02 · Filters"
+minWickATR  = input.float(0.15, "Min Wick Depth (× ATR)", minval = 0.0, maxval = 5.0, step = 0.05, group = gFilt, tooltip = "拒绝过浅的刺穿:影线超出水平的部分至少要达到该 ATR 倍数。")
+maxWickATR  = input.float(2.50, "Max Wick Depth (× ATR)", minval = 0.0, maxval = 20.0, step = 0.05, group = gFilt, tooltip = "拒绝过深的刺穿(可能为真突破)。0=关闭上限。")
+useVol      = input.bool(false, "Volume Spike Confirmation", group = gFilt, tooltip = "要求扫荡 K 线量能超过其均量的指定倍数。无成交量数据的市场视为通过。")
+volLen      = input.int(20, "Volume Average Length", minval = 2, maxval = 200, group = gFilt)
+volMult     = input.float(1.5, "Volume Spike Multiple", minval = 1.0, maxval = 10.0, step = 0.1, group = gFilt, tooltip = "扫荡量能必须超过均量×该值。")
+useHtf      = input.bool(true, "HTF Trend Alignment", group = gFilt, tooltip = "只在 HTF EMA 之上允许 BUY 扫荡,之下允许 SELL 扫荡。")
+htfTF       = input.timeframe("60", "HTF Timeframe", group = gFilt)
+htfEmaLen   = input.int(50, "HTF EMA Length", minval = 5, maxval = 500, group = gFilt)
+blockDual   = input.bool(true, "Block Dual-Side Sweep Bars", group = gFilt, tooltip = "若一根宽幅 K 线同时扫高低点,两个信号都丢弃。")
+cooldownBar = input.int(3, "Signal Cooldown (bars)", minval = 0, maxval = 200, group = gFilt, tooltip = "两次确认信号之间的最小间隔根数。")
+
+//──────────────────────────────────────────────────────────────────────
+// 03 · TRADE MODEL 交易模型配置
+//  R = 风险单位 = |入场价 - 止损价|,TP 用 R 的倍数表达盈利目标
+//──────────────────────────────────────────────────────────────────────
+gTrade = "03 · Trade Model"
+stopBufATR  = input.float(0.25, "Stop Buffer Beyond Wick (× ATR)", minval = 0.0, maxval = 5.0, step = 0.05, group = gTrade, tooltip = "止损放在被扫影线极值外 + 该 ATR 缓冲。")
+minRiskATR  = input.float(0.30, "Min Risk (× ATR) — floor", minval = 0.05, maxval = 6.0, step = 0.05, group = gTrade)
+maxRiskATR  = input.float(4.0, "Max Risk (× ATR) — cap", minval = 0.5, maxval = 15.0, step = 0.1, group = gTrade)
+tp1R        = input.float(1.0, "TP1 (R)", minval = 0.2, maxval = 50, step = 0.1, group = gTrade)
+tp2R        = input.float(2.0, "TP2 (R)", minval = 0.2, maxval = 50, step = 0.1, group = gTrade)
+tp3R        = input.float(3.0, "TP3 (R)", minval = 0.2, maxval = 50, step = 0.1, group = gTrade)
+sameBarPri  = input.string("Stop First", "TP / SL Same-Bar Priority", options = ["Stop First", "Target First"], group = gTrade, tooltip = "当同一根 K 线同时触及 SL 与 TP 时的保守仲裁。")
+maxTradeBar = input.int(200, "Trade Timeout (bars)", minval = 10, maxval = 2000, group = gTrade, tooltip = "若未触发 TP3 或 SL,到达该根数后市价平仓。")
+maxHist     = input.int(20, "Max Drawn Trades", minval = 1, maxval = 80, group = gTrade, tooltip = "图表上保留的历史交易结构数量上限(数组会被裁剪)。")
+
+//──────────────────────────────────────────────────────────────────────
+// 04 · VISUALS
+//──────────────────────────────────────────────────────────────────────
+gVis = "04 · Visuals"
+showSignals = input.bool(true, "Show BUY / SELL Markers", group = gVis)
+showSweepLn = input.bool(true, "Show Swept Liquidity Level", group = gVis)
+showSweepLb = input.bool(true, "Show Sweep Labels", group = gVis)
+maxSweepLb  = input.int(30, "Max Sweep Labels", minval = 1, maxval = 150, group = gVis, tooltip = "Historical swept-level lines & labels kept (array-capped).")
+showLines   = input.bool(true, "Show Entry / SL / TP Lines", group = gVis)
+showBoxes   = input.bool(true, "Show SL / TP Zones", group = gVis)
+showLevel   = input.bool(true, "Label Trade Levels", group = gVis)
+showExit    = input.bool(true, "Show TP / SL Result Labels", group = gVis)
+colorCandles = input.bool(false, "Color Signal Candles", group = gVis, tooltip = "Tint the signal bar and the active-trade run with the teal / magenta identity. Off by default for a clean chart.")
+useVwap     = input.bool(false, "Show VWAP + σ Bands", group = gVis, tooltip = "Chrome session VWAP with a shaded ±σ deviation band. Resets per session on intraday timeframes.")
+vwapDev     = input.float(1.0, "VWAP Band σ", minval = 0.5, maxval = 4.0, step = 0.5, group = gVis)
+projLen     = input.int(60, "Projection Length (bars)", minval = 5, maxval = 400, group = gVis)
+boxTransp   = input.int(84, "Zone Transparency", minval = 50, maxval = 98, group = gVis)
+lblSizeOpt  = input.string("Small", "Label Size", options = ["Tiny", "Small", "Normal", "Large"], group = gVis)
+bullCol     = input.color(#00E5C0, "Bull (Teal)", group = gVis)
+bullDeep    = input.color(#00BFA5, "Bull Deep", group = gVis)
+bearCol     = input.color(#FF2E93, "Bear (Magenta)", group = gVis)
+
+//──────────────────────────────────────────────────────────────────────
+// 05 · DASHBOARD
+//──────────────────────────────────────────────────────────────────────
+gDash = "05 · Dashboard"
+showDash    = input.bool(true, "Show Dashboard", group = gDash)
+dashPosOpt  = input.string("Top Right", "Position", options = ["Top Right", "Top Left", "Bottom Right", "Bottom Left", "Middle Right"], group = gDash)
+dashSizeOpt = input.string("Small", "Text Size", options = ["Tiny", "Small", "Normal"], group = gDash)
+showBreak   = input.bool(true, "Show TP/SL Breakdown", group = gDash)
+
+//──────────────────────────────────────────────────────────────────────
+// HELPERS 辅助函数
+// Pine Script 函数语法:f_name(arg1, arg2) =>
+//   表达式1
+//   表达式2   ← 最后一行的表达式即为返回值
+// 返回值可以单一或为元组(多返回值)。
+//──────────────────────────────────────────────────────────────────────
+
+// 将字符串映射为 Pine 内置的尺寸常量(用于 label/表格字号)
+f_size(string s) =>
+    switch s
+        "Tiny"   => size.tiny
+        "Small"  => size.small
+        "Normal" => size.normal
+        "Large"  => size.large
+        => size.small
+
+// 将字符串映射为表格位置常量
+f_pos(string p) =>
+    switch p
+        "Top Left"     => position.top_left
+        "Top Right"    => position.top_right
+        "Bottom Left"  => position.bottom_left
+        "Bottom Right" => position.bottom_right
+        "Middle Right" => position.middle_right
+        => position.top_right
+
+// 将 R 值格式化为带符号字符串,例如 +1.5R / -1R
+f_signedR(float v) => (v >= 0 ? "+" : "") + str.tostring(v, "#.##") + "R"
+
+// 找出数组中"被当前 bar 的 low 刺穿的、最高的摆动低点"
+// 逻辑:遍历所有保存的摆动低点,寻找 low < v 中 v 最大的那个(即最接近现价的下方流动性)
+// 返回该元素在数组中的下标,找不到返回 -1
+f_nearestLow(array<float> arr, float lo) =>
+    int idx = -1
+    float best = na
+    int n = array.size(arr)
+    if n > 0
+        for i = 0 to n - 1
+            float v = array.get(arr, i)
+            if lo < v and (idx == -1 or v > best)
+                best := v          // := 是"重新赋值"运算符(在函数局部修改变量)
+                idx := i
+    idx
+
+// 同上,找出被当前 high 刺穿的、最低的摆动高点(最接近现价的上方流动性)
+f_nearestHigh(array<float> arr, float hi) =>
+    int idx = -1
+    float best = na
+    int n = array.size(arr)
+    if n > 0
+        for i = 0 to n - 1
+            float v = array.get(arr, i)
+            if hi > v and (idx == -1 or v < best)
+                best := v
+                idx := i
+    idx
+
+//──────────────────────────────────────────────────────────────────────
+// PALETTE 调色板和 04·VISUALS / 05·DASHBOARD 视觉与仪表盘配置部分添加中文注释
+//──────────────────────────────────────────────────────────────────────
+color panelBg    = #0a0e12
+color panelBgAlt = #10161c
+color panelHdr   = #06201c
+color panelBrd   = color.new(#00BFA5, 40)
+color txtHi      = #e8f7f3
+color txtLo      = #7f9a94
+color neutralCol = #6f8a84
+color goodCol    = #00E5C0
+color badCol     = #FF2E93
+color chrome     = #AEBFC9
+color redRisk    = #FF3B4E
+
+//──────────────────────────────────────────────────────────────────────
+// MARKET DATA 市场数据与指标计算
+//  注意:这些是普通变量(非 var),每根 bar 都会重新计算,但底层 ta.* 函数
+//        会自动维护内部状态(如 ATR 需要历史 K 线累计)。
+//──────────────────────────────────────────────────────────────────────
+float atr    = ta.atr(atrLen)       // Average True Range:平均真实波幅,衡量波动率
+float volAvg = ta.sma(volume, volLen) // 成交量简单移动平均
+bool  volOk  = not useVol or na(volume) or na(volAvg) or volAvg <= 0 or volume >= volAvg * volMult
+// request.security():跨周期取数。从 HTF(高时间周期,如 60 分钟)取 HTF EMA 的值。
+//   [1]         :取"上一根已关闭"的 HTF bar 的值,避免未来函数(lookahead)
+//   lookahead=barmerge.lookahead_off:显式关闭偷看
+//   ignore_invalid_symbol:品种不存在时不报错
+float htfEma = request.security(syminfo.tickerid, htfTF, ta.ema(close, htfEmaLen)[1], lookahead = barmerge.lookahead_off, ignore_invalid_symbol = true)
+float vwapV  = ta.vwap(hlc3)        // VWAP:成交量加权平均价
+float vwSd   = ta.stdev(close, 100) // 100 周期收盘价标准差
+float vwUp   = vwapV + vwapDev * vwSd
+float vwLo   = vwapV - vwapDev * vwSd
+
+//──────────────────────────────────────────────────────────────────────
+// SWING LEVEL TRACKING 摆动水平追踪
+//  思路:用 pivot 函数识别"枢轴点",把它们存入数组作为"流动性水平库"。
+//        每个水平附带一个 bar_index 记录其形成时间,用于老化剔除。
+//  var array<float>:var 保证数组在 bar 间持久化,不会每根 bar 重置为空。
+//──────────────────────────────────────────────────────────────────────
+var array<float> lowLvls  = array.new<float>()   // 已识别的摆动低点价位队列
+var array<int>   lowBars  = array.new<int>()     // 对应摆动低点的 bar_index
+var array<float> highLvls = array.new<float>()   // 已识别的摆动高点价位队列
+var array<int>   highBars = array.new<int>()     // 对应摆动高点的 bar_index
+
+// ta.pivothigh/low:返回枢轴价位,若当前 bar 不是枢轴则返回 na。
+//   参数 (high, left, right):当前 bar 右侧需要 right 根 K 线才能确认枢轴,
+//   所以枢轴信号会延迟 pivLen 根才出现(代码后续用 bar_index - pivLen 修正定位)。
+float pvH = ta.pivothigh(high, pivLen, pivLen)
+float pvL = ta.pivotlow(low, pivLen, pivLen)
+
+// 检测到新的摆动低点 → 入队
+if not na(pvL)
+    array.push(lowLvls, pvL)
+    array.push(lowBars, bar_index - pivLen)   // 修正到真正的枢轴 bar
+    while array.size(lowLvls) > maxLevels     // 超过上限则从队首弹田最旧的
+        array.shift(lowLvls)
+        array.shift(lowBars)
+// 检测到新的摆动高点 → 同理入队
+if not na(pvH)
+    array.push(highLvls, pvH)
+    array.push(highBars, bar_index - pivLen)
+    while array.size(highLvls) > maxLevels
+        array.shift(highLvls)
+        array.shift(highBars)
+
+// 老化清理:超过 maxLevelAge 未被扫荡的水平从队首移除
+while array.size(lowBars) > 0 and bar_index - array.get(lowBars, 0) > maxLevelAge
+    array.shift(lowLvls)
+    array.shift(lowBars)
+while array.size(highBars) > 0 and bar_index - array.get(highBars, 0) > maxLevelAge
+    array.shift(highLvls)
+    array.shift(highBars)
+
+//──────────────────────────────────────────────────────────────────────
+// SWEEP + RECLAIM DETECTION 扫荡 + 回收检测 (本指标核心状态机)
+//
+// 核心交易逻辑:"扫荡 + 回收" 两步动作必须在 reclaimWin 根 K 线内完成:
+//   1) 扫荡(sweep):价格刺穿某个摆动水平(低点被下破 / 高点被上破)
+//   2) 回收(reclaim):同一根或后续几根 K 线,收盘价回到该水平另一侧
+//      (下破后收回上方=BUY,上破后收回下方=SELL)
+//
+// 为实现"跨 K 线的挂起状态",用一组 var 变量保存"已扫但未回收"的水平:
+//   pLowLvl / pHighLvl :挂起中的水平价位(na 表示当前无挂起)
+//   pLowArm / pHighArm :挂起起始 bar_index(用于计算是否超出回收窗口)
+//   pLowExt / pHighExt :挂起期间记录的极值(最低 low / 最高 high)
+//   pLowBar / pHighBar :原摆动水平的 bar_index(用于画线定位)
+//──────────────────────────────────────────────────────────────────────
+var float pLowLvl = na
+var int   pLowArm = na
+var float pLowExt = na
+var int   pLowBar = na
+
+var float pHighLvl = na
+var int   pHighArm = na
+var float pHighExt = na
+var int   pHighBar = na
+
+// 当前 bar 的检测结果(普通变量,每根 bar 重置)
+bool  bullSweep = false
+float bullLevel = na
+float bullExt   = na
+int   bullLvlBar = na
+
+bool  bearSweep = false
+float bearLevel = na
+float bearExt   = na
+int   bearLvlBar = na
+
+// 影线深度闸门:刺穿深度必须 ∈ [minWickATR, maxWickATR] × ATR
+depthGate(float depth) => not na(atr) and depth >= minWickATR * atr and (maxWickATR <= 0 or depth <= maxWickATR * atr)
+
+// ---- BULL 多头扫荡:下破摆动低点 → 收回上方 ----
+// 步骤 1:如果当前有挂起的多头扫荡,先检查本 bar 是否完成回收
+if not na(pLowLvl)
+    pLowExt := math.min(pLowExt, low)      // 继续刷新挂起期间的最低点
+    if close > pLowLvl                     // 本 bar 收盘回收水平上方 → 完成回收
+        bullSweep := true
+        bullLevel := pLowLvl
+        bullExt   := pLowExt
+        bullLvlBar := pLowBar
+        pLowLvl := na                      // 清空挂起状态
+    else if bar_index - pLowArm >= reclaimWin  // 超过回收窗口仍未回收 → 作废
+        pLowLvl := na
+
+// 步骤 2:无挂起且本 bar 还未确认信号,则检查本 bar 是否发起新的扫荡
+if na(pLowLvl) and not bullSweep
+    int idx = f_nearestLow(lowLvls, low)   // 找被刺穿的最近摆动低
+    if idx >= 0
+        float lvl = array.get(lowLvls, idx)
+        int   obar = array.get(lowBars, idx)
+        float depth = lvl - low            // 刺穿深度 = 水平价位 - 当前 low
+        if depthGate(depth) and high >= lvl  // 满足深度 且 本 bar 高点回到水平上方
+            array.remove(lowLvls, idx)     // 从水平库中移除(已消费)
+            array.remove(lowBars, idx)
+            if close > lvl                 // 同根 K 线完成扫+收 → 直接信号
+                bullSweep := true
+                bullLevel := lvl
+                bullExt   := low
+                bullLvlBar := obar
+            else if reclaimWin > 0          // 已扫未收 → 进入挂起状态等后续 bar
+                pLowLvl := lvl
+                pLowArm := bar_index
+                pLowExt := low
+                pLowBar := obar
+
+// ---- BEAR 空头扫荡:上破摆动高点 → 收回下方 (逻辑镜像) ----
+if not na(pHighLvl)
+    pHighExt := math.max(pHighExt, high)
+    if close < pHighLvl
+        bearSweep := true
+        bearLevel := pHighLvl
+        bearExt   := pHighExt
+        bearLvlBar := pHighBar
+        pHighLvl := na
+    else if bar_index - pHighArm >= reclaimWin
+        pHighLvl := na
+
+if na(pHighLvl) and not bearSweep
+    int idx = f_nearestHigh(highLvls, high)
+    if idx >= 0
+        float lvl = array.get(highLvls, idx)
+        int   obar = array.get(highBars, idx)
+        float depth = high - lvl
+        if depthGate(depth) and low <= lvl
+            array.remove(highLvls, idx)
+            array.remove(highBars, idx)
+            if close < lvl
+                bearSweep := true
+                bearLevel := lvl
+                bearExt   := high
+                bearLvlBar := obar
+            else if reclaimWin > 0
+                pHighLvl := lvl
+                pHighArm := bar_index
+                pHighExt := high
+                pHighBar := obar
+
+//──────────────────────────────────────────────────────────────────────
+// FILTERS → FINAL SIGNALS 多重过滤合流为最终信号
+//   原始 sweep 信号 → 逐个检查过滤器 → 全部通过则为 final 信号
+//──────────────────────────────────────────────────────────────────────
+var int sweepsDetected = 0
+if bullSweep
+    sweepsDetected += 1
+if bearSweep
+    sweepsDetected += 1
+
+// 过滤条件:
+//   dualBlocked :双面扫荡被拦截
+//   volOk       :成交量达标
+//   htfBull/Bear:HTF 趋势对齐(多头只在上、空头只在下)
+//   dirBull/Bear:用户选择的方向限制
+//   cooldownOk  :距上次信号超过冷却期
+bool dualBlocked = blockDual and bullSweep and bearSweep
+bool htfBull = not useHtf or na(htfEma) or close > htfEma
+bool htfBear = not useHtf or na(htfEma) or close < htfEma
+bool dirBull = dirMode != "Short Only"
+bool dirBear = dirMode != "Long Only"
+
+var int lastSigBar = na   // 记录上次信号 bar_index(var 跨 bar 持久化)
+bool cooldownOk = na(lastSigBar) or (bar_index - lastSigBar) >= cooldownBar
+
+// 全部过滤条件用 and 串联 → 任一不满足则不发信号
+bool finalBull = bullSweep and not dualBlocked and volOk and htfBull and dirBull and not na(atr) and cooldownOk
+bool finalBear = bearSweep and not dualBlocked and volOk and htfBear and dirBear and not na(atr) and cooldownOk
+// 极少数情况:同一 bar 同时出现多空信号 → 全部丢弃,避免伪信号
+if finalBull and finalBear
+    finalBull := false
+    finalBear := false
+
+// 记录最后一次扫荡的方向和水平,供仪表盘显示
+var int lastSweepSide = 0
+var float lastSweepLvl = na
+if finalBull
+    lastSweepSide := 1
+    lastSweepLvl := bullLevel
+if finalBear
+    lastSweepSide := -1
+    lastSweepLvl := bearLevel
+
+//──────────────────────────────────────────────────────────────────────
+// TRADE MODEL STATE 交易模型状态机
+//   一笔交易的生命周期:新建 → 持有(逐 bar 检查 TP/SL) → 关闭(记录结果)
+//   所有 var 变量跨 bar 持久化,保证状态在 K 线之间不丢。
+//   tradeSide: 0=空仓 / 1=多头 / -1=空头;bestStage:已达到的最高 TP 阶段
+//──────────────────────────────────────────────────────────────────────
+var bool  tradeActive = false
+var int   tradeSide = 0
+var int   tradeBar = na
+var float tEntry = na
+var float tStop = na
+var float tTp1 = na
+var float tTp2 = na
+var float tTp3 = na
+var float tRisk = na
+var int   bestStage = 0
+
+// 活跃交易的绘图对象 ID(line / box / label 都用 ID 引用,可后续修改)
+var line  aEn = na   // Entry 入场价线
+var line  aSl = na   // Stop Loss 止损线
+var line  aT1 = na   // TP1 线
+var line  aT2 = na   // TP2 线
+var line  aT3 = na   // TP3 线
+var box   aTb = na   // TP 区间盒
+var box   aSb = na   // SL 区间盒
+var label aLe = na   // Entry 标签
+var label aLs = na   // SL 标签
+var label aL1 = na   // TP1 标签
+var label aL2 = na   // TP2 标签
+var label aL3 = na   // TP3 标签
+var label aSig = na  // BUY/SELL 信号标签
+
+// 统计计数器(全部跨 bar 持久化,用于仪表盘展示)
+var int sTotal = 0       // 总信号数
+var int sClosed = 0      // 已平仓交易数
+var int sWins = 0        // 盈利交易数
+var float sR = 0.0       // 累计 R 值(总盈亏以风险单位计)
+var float sGW = 0.0      // 总盈利 R(只计正数)
+var float sGL = 0.0      // 总亏损 R(只计负数绝对值)
+var int sLong = 0        // 多头交易总数
+var int sLongW = 0       // 多头盈利数
+var int sShort = 0       // 空头交易总数
+var int sShortW = 0      // 空头盈利数
+var int sTp1 = 0         // 在 TP1 平仓数
+var int sTp2 = 0         // 在 TP2 平仓数
+var int sTp3 = 0         // 在 TP3 平仓数
+var int sSl = 0          // 止损平仓数
+var int sTo = 0          // 超时平仓数
+var int sCurW = 0        // 当前连胜计数
+var int sCurL = 0        // 当前连败计数
+var int sMaxW = 0        // 历史最大连胜
+var int sMaxL = 0        // 历史最大连败
+var int sStreak = 0      // 当前连续符号(正=连胜,负=连败)
+
+// ── Pine Script 用户自定义类型(UDT)──
+// type 关键字定义一个结构体;tViz 把一笔交易的所有绘图对象 ID 打包,方便
+// 历史交易统一管理(入队/出队/批量删除)。new() 构造实例,.字段 访问成员。
+type tViz
+    line  en
+    line  sl
+    line  t1
+    line  t2
+    line  t3
+    box   tb
+    box   sb
+    label le
+    label ls
+    label l1
+    label l2
+    label l3
+    label ex
+    label sg
+var array<tViz> trHist = array.new<tViz>()   // 历史交易的可视化记录队列
+
+// sViz:被扫流动性水平线的可视化记录
+type sViz
+    line ln
+    label lb
+var array<sViz> swHist = array.new<sViz>()   // 历史扫荡水平线队列
+
+//──────────────────────────────────────────────────────────────────────
+// ACTIVE TRADE 活跃交易:延伸绘图 + 评估退出条件
+//   持仓中的交易每根 bar 都要检查:
+//     1) 延伸 Entry/SL/TP 线和盒子右边界到当前 bar,使图形动态延长
+//     2) 判断本 bar 是否触发 TP1/TP2/TP3/SL
+//     3) 处理同一根 K 线同时触发 SL 和 TP 的冲突(sameBarPri)
+//     4) 超时未平仓则市价平
+//──────────────────────────────────────────────────────────────────────
+if tradeActive
+    // 延伸绘图对象的右边界(取 tradeBar 与 projLen 限制的较小值)
+    int rightNow = na(tradeBar) ? bar_index : math.min(bar_index, tradeBar + projLen)
+    if showLines
+        if not na(aEn)
+            line.set_x2(aEn, rightNow)   // line.set_x2():修改已存在 line 的右端 x 坐标
+        if not na(aSl)
+            line.set_x2(aSl, rightNow)
+        if not na(aT1)
+            line.set_x2(aT1, rightNow)
+        if not na(aT2)
+            line.set_x2(aT2, rightNow)
+        if not na(aT3)
+            line.set_x2(aT3, rightNow)
+    if showBoxes
+        if not na(aTb)
+            box.set_right(aTb, rightNow)  // box.set_right():修改盒子右边界
+        if not na(aSb)
+            box.set_right(aSb, rightNow)
+
+// 本 bar 的退出事件标志(普通变量,只在当前 bar 有效)
+bool closedTp3 = false   // 触发 TP3(最终止盈)
+bool closedSl  = false   // 触发止损
+bool closedTp  = false   // 部分止盈后又被止损(或反向止损)
+bool closedTo  = false   // 超时平仓
+
+if tradeActive
+    // 判断 TP/SL 是否被本 bar 触及:多头用 high≥TP / low≤SL,空头反向
+    bool tp1Hit = tradeSide == 1 ? high >= tTp1 : low <= tTp1
+    bool tp2Hit = tradeSide == 1 ? high >= tTp2 : low <= tTp2
+    bool tp3Hit = tradeSide == 1 ? high >= tTp3 : low <= tTp3
+    bool slHit  = tradeSide == 1 ? low  <= tStop : high >= tStop
+
+    // 阶段编号:达到的最高 TP(0=未达任何 TP, 3=达到 TP3)
+    int stage = tp3Hit ? 3 : tp2Hit ? 2 : tp1Hit ? 1 : 0
+    bool stopFirst = sameBarPri == "Stop First"
+    bool sameBarSl = slHit and stage > 0   // 同根 K 线同时触 SL 和某 TP
+    // 如果"止损优先"且同根触发,则不更新 bestStage(保守处理,认为止损在先)
+    if stage > bestStage and not (sameBarSl and stopFirst)
+        bestStage := stage
+
+    // 仲裁四种退出场景:
+    //   finalTp3:TP3 触发(若"止损优先"且同根则不算)
+    //   finalSl :止损触发(或同根优先止损且未到 TP3)
+    //   finalTp :触过 TP 但最终被止损(返回部分盈利 R)
+    //   finalTo :未触发以上,且超过 maxTradeBar → 超时平仓
+    bool finalTp3 = tp3Hit and not (sameBarSl and stopFirst)
+    bool finalSl  = slHit and (bestStage == 0 or (sameBarSl and stopFirst and not tp3Hit))
+    bool finalTp  = slHit and not finalSl and not finalTp3 and bestStage > 0 and bestStage < 3
+    bool finalTo  = not (finalTp3 or finalSl or finalTp) and not na(tradeBar) and (bar_index - tradeBar) >= maxTradeBar
+
+    // ── 确认平仓 → 计算本次 R 结果并累计统计 ──
+    if finalTp3 or finalSl or finalTp or finalTo
+        // markR = 按"当前收盘价"模拟平仓的 R 值(超时场景使用)
+        float markR = tRisk > 0 ? (tradeSide == 1 ? (close - tEntry) / tRisk : (tEntry - close) / tRisk) : 0.0
+        float toR = math.max(-1.0, math.min(tp3R, markR))   // 超时 R 限制在 [-1, tp3R]
+        // 根据退出类型确定最终 R 值
+        float resR = finalTp3 ? tp3R : finalTp and bestStage == 2 ? tp2R : finalTp and bestStage == 1 ? tp1R : finalSl ? -1.0 : toR
+        bool isWin = resR > 0
+
+        closedTp3 := finalTp3
+        closedSl  := finalSl
+        closedTp  := finalTp
+        closedTo  := finalTo
+
+        // 更新统计计数器
+        sClosed += 1
+        sR += resR
+        if isWin
+            sWins += 1
+            sGW += resR
+            sCurW += 1
+            sCurL := 0
+            sMaxW := math.max(sMaxW, sCurW)
+            sStreak := sCurW
+        else
+            sGL += math.abs(resR)
+            sCurL += 1
+            sCurW := 0
+            sMaxL := math.max(sMaxL, sCurL)
+            sStreak := -sCurL
+        if tradeSide == 1
+            sLong += 1
+            sLongW += isWin ? 1 : 0
+        else
+            sShort += 1
+            sShortW += isWin ? 1 : 0
+        // 根据 TP 阶段或止损/超时分类计数
+        if finalTp3
+            sTp3 += 1
+        else if finalTp and bestStage == 2
+            sTp2 += 1
+        else if finalTp and bestStage == 1
+            sTp1 += 1
+        else if finalSl
+            sSl += 1
+        else
+            sTo += 1
+
+        // ── 锁定绘图对象右边界,不再延伸 ──
+        int closeEdge = na(tradeBar) ? bar_index : math.max(tradeBar + 3, bar_index)
+        if showLines
+            if not na(aEn)
+                line.set_x2(aEn, closeEdge)
+            if not na(aSl)
+                line.set_x2(aSl, closeEdge)
+            if not na(aT1)
+                line.set_x2(aT1, closeEdge)
+            if not na(aT2)
+                line.set_x2(aT2, closeEdge)
+            if not na(aT3)
+                line.set_x2(aT3, closeEdge)
+        if showBoxes
+            if not na(aTb)
+                box.set_right(aTb, closeEdge)
+            if not na(aSb)
+                box.set_right(aSb, closeEdge)
+        if showLevel
+            if not na(aLe)
+                label.set_x(aLe, closeEdge)   // label.set_x():移动标签 x 坐标
+            if not na(aLs)
+                label.set_x(aLs, closeEdge)
+            if not na(aL1)
+                label.set_x(aL1, closeEdge)
+            if not na(aL2)
+                label.set_x(aL2, closeEdge)
+            if not na(aL3)
+                label.set_x(aL3, closeEdge)
+
+        // 计算平仓价(用于结果标签定位)
+        float resPrice = finalTp3 ? tTp3 : finalTp and bestStage == 2 ? tTp2 : finalTp and bestStage == 1 ? tTp1 : finalSl ? tStop : close
+        // 结果标签文案,例如 "TP3 ✔ +3R" / "SL ✘ -1R" / "TIME ⏱ +0.5R"
+        string resTxt = finalTp3 ? "TP3 ✔ " + f_signedR(resR) : finalTp ? "TP" + str.tostring(bestStage) + " ✔ " + f_signedR(resR) : finalSl ? "SL ✘ -1R" : "TIME ⏱ " + f_signedR(resR)
+        color resCol = resR >= 0 ? bullCol : bearCol
+        // 标签方向:多头盈利向上指,亏损向下指;空头反之
+        bool downLbl = tradeSide == 1 ? resR >= 0 : resR < 0
+        label ex0 = na
+        if showExit
+            // label.new():创建新标签对象,返回 ID
+            ex0 := label.new(closeEdge, resPrice, resTxt, style = downLbl ? label.style_label_down : label.style_label_up, color = color.new(resCol, 0), textcolor = color.rgb(6, 12, 12), size = f_size(lblSizeOpt))
+
+        // 把这笔交易的所有绘图对象打包入历史队列
+        tViz tv = tViz.new(aEn, aSl, aT1, aT2, aT3, aTb, aSb, aLe, aLs, aL1, aL2, aL3, ex0, aSig)
+        array.push(trHist, tv)
+        // 历史队列超过上限 → 弹出最旧的并删除其全部绘图对象(防止图表对象无限累积)
+        while array.size(trHist) > maxHist
+            tViz old = array.shift(trHist)
+            if not na(old.en)
+                line.delete(old.en)      // line.delete():释放 line 对象,从图表移除
+            if not na(old.sl)
+                line.delete(old.sl)
+            if not na(old.t1)
+                line.delete(old.t1)
+            if not na(old.t2)
+                line.delete(old.t2)
+            if not na(old.t3)
+                line.delete(old.t3)
+            if not na(old.tb)
+                box.delete(old.tb)
+            if not na(old.sb)
+                box.delete(old.sb)
+            if not na(old.le)
+                label.delete(old.le)
+            if not na(old.ls)
+                label.delete(old.ls)
+            if not na(old.l1)
+                label.delete(old.l1)
+            if not na(old.l2)
+                label.delete(old.l2)
+            if not na(old.l3)
+                label.delete(old.l3)
+            if not na(old.ex)
+                label.delete(old.ex)
+            if not na(old.sg)
+                label.delete(old.sg)
+
+        // 清空活跃交易状态(准备接收下一笔)
+        aEn := na
+        aSl := na
+        aT1 := na
+        aT2 := na
+        aT3 := na
+        aTb := na
+        aSb := na
+        aLe := na
+        aLs := na
+        aL1 := na
+        aL2 := na
+        aL3 := na
+        aSig := na
+
+        tradeActive := false
+        tradeSide := 0
+        tradeBar := na
+        tEntry := na
+        tStop := na
+        tTp1 := na
+        tTp2 := na
+        tTp3 := na
+        tRisk := na
+        bestStage := 0
+
+//──────────────────────────────────────────────────────────────────────
+// NEW TRADE ENTRY 新建交易入场
+//   条件:有 final 信号 + 当前无持仓 + 本 bar 未平仓(closedAny 为 false)
+//   计算流程:入场价=收盘 → 原始止损=影线±缓冲 → 风险夹在[min,max] → 重算止损 → 算 TP1/2/3
+//──────────────────────────────────────────────────────────────────────
+bool closedAny = closedTp3 or closedSl or closedTp or closedTo
+bool takeLong  = finalBull and not tradeActive and not closedAny
+bool takeShort = finalBear and not tradeActive and not closedAny
+
+if takeLong or takeShort
+    bool isLong = takeLong
+    int side = isLong ? 1 : -1
+    float ext = isLong ? bullExt : bearExt         // 扫荡影线极值
+    float lvl = isLong ? bullLevel : bearLevel      // 被扫的水平价位
+    int   lvlBar = isLong ? bullLvlBar : bearLvlBar // 被扫水平的 bar_index
+    float entv = close                               // 入场价 = 当前收盘价
+    // 原始止损 = 影线极值 ± 缓冲(ATR 倍数)
+    float rawStop = isLong ? ext - stopBufATR * atr : ext + stopBufATR * atr
+    float risk0 = math.abs(entv - rawStop)          // 原始风险距离
+    // 风险距离夹在 [minRiskATR, maxRiskATR] × ATR 之间,避免过小或过大
+    float risk = math.min(math.max(risk0, minRiskATR * atr), maxRiskATR * atr)
+    // 按夹紧后的风险重算止损位(保证止损距离=risk)
+    float stopv = isLong ? entv - risk : entv + risk
+    // 三个 TP:入场价 ± risk × 倍数
+    float t1 = isLong ? entv + risk * tp1R : entv - risk * tp1R
+    float t2 = isLong ? entv + risk * tp2R : entv - risk * tp2R
+    float t3 = isLong ? entv + risk * tp3R : entv - risk * tp3R
+
+    // 写入持仓状态机
+    tradeActive := true
+    tradeSide := side
+    tradeBar := bar_index
+    tEntry := entv
+    tStop := stopv
+    tTp1 := t1
+    tTp2 := t2
+    tTp3 := t3
+    tRisk := risk
+    bestStage := 0
+    sTotal += 1
+    lastSigBar := bar_index
+
+    color c = isLong ? bullCol : bearCol
+    int xr = bar_index + math.min(projLen, 40)       // 绘图右边界(默认画 40 根)
+
+    // BUY / SELL 信号胶囊标签(干净标签,不用三角/箭头)
+    if showSignals
+        float sigY = isLong ? low - atr * 0.6 : high + atr * 0.6
+        aSig := label.new(bar_index, sigY, isLong ? "BUY" : "SELL", xloc = xloc.bar_index, yloc = yloc.price, style = isLong ? label.style_label_up : label.style_label_down, color = color.new(c, 0), textcolor = isLong ? color.rgb(6, 12, 12) : color.white, size = f_size(lblSizeOpt), text_formatting = text.format_bold)
+
+    // TP / SL 区间盒(背景色填充)
+    if showBoxes
+        float tpTop = isLong ? t3 : entv
+        float tpBot = isLong ? entv : t3
+        float slTop = isLong ? entv : stopv
+        float slBot = isLong ? stopv : entv
+        // box.new():创建盒子对象,参数 (左x, 上y, 右x, 下y)
+        aTb := box.new(bar_index, tpTop, xr, tpBot, xloc = xloc.bar_index, bgcolor = color.new(bullDeep, boxTransp), border_color = color.new(c, 40), border_width = 1)
+        aSb := box.new(bar_index, slTop, xr, slBot, xloc = xloc.bar_index, bgcolor = color.new(redRisk, boxTransp), border_color = color.new(redRisk, 45), border_width = 1)
+
+    // Entry / SL / TP 水平线 + 价位标签
+    if showLines
+        // line.new():创建线条对象,参数 (x1, y1, x2, y2)
+        aEn := line.new(bar_index, entv,  xr, entv,  xloc = xloc.bar_index, color = color.new(c, 0), width = 2, style = line.style_solid)
+        aSl := line.new(bar_index, stopv, xr, stopv, xloc = xloc.bar_index, color = color.new(redRisk, 10), width = 1, style = line.style_dashed)
+        aT1 := line.new(bar_index, t1, xr, t1, xloc = xloc.bar_index, color = color.new(c, 15), width = 1, style = line.style_solid)
+        aT2 := line.new(bar_index, t2, xr, t2, xloc = xloc.bar_index, color = color.new(c, 35), width = 1, style = line.style_solid)
+        aT3 := line.new(bar_index, t3, xr, t3, xloc = xloc.bar_index, color = color.new(c, 52), width = 1, style = line.style_solid)
+        if showLevel
+            aLe := label.new(xr, entv,  (isLong ? "LONG" : "SHORT") + " @ " + str.tostring(entv, format.mintick), xloc = xloc.bar_index, style = label.style_label_left, color = color.new(c, 0), textcolor = color.rgb(6, 12, 12), size = f_size(lblSizeOpt))
+            aLs := label.new(xr, stopv, "SL @ " + str.tostring(stopv, format.mintick), xloc = xloc.bar_index, style = label.style_label_left, color = color.new(redRisk, 10), textcolor = color.white, size = f_size(lblSizeOpt))
+            aL1 := label.new(xr, t1, "TP1 " + str.tostring(tp1R, "#.#") + "R", xloc = xloc.bar_index, style = label.style_label_left, color = color.new(c, 15), textcolor = color.rgb(6, 12, 12), size = f_size(lblSizeOpt))
+            aL2 := label.new(xr, t2, "TP2 " + str.tostring(tp2R, "#.#") + "R", xloc = xloc.bar_index, style = label.style_label_left, color = color.new(c, 30), textcolor = color.rgb(6, 12, 12), size = f_size(lblSizeOpt))
+            aL3 := label.new(xr, t3, "TP3 " + str.tostring(tp3R, "#.#") + "R", xloc = xloc.bar_index, style = label.style_label_left, color = color.new(c, 45), textcolor = color.rgb(6, 12, 12), size = f_size(lblSizeOpt))
+
+    // 画被扫的流动性水平线 + 扫荡标签(SSL=卖方流动性 / BSL=买方流动性)
+    if (showSweepLn or showSweepLb) and not na(lvlBar)
+        line ln0 = na
+        label lb0 = na
+        if showSweepLn
+            ln0 := line.new(lvlBar, lvl, bar_index, lvl, xloc = xloc.bar_index, color = color.new(c, 20), width = 2, style = line.style_dotted)
+        if showSweepLb
+            string stxt = isLong ? "SSL SWEEP" : "BSL SWEEP"
+            lb0 := label.new(bar_index, lvl, stxt, xloc = xloc.bar_index, style = isLong ? label.style_label_up : label.style_label_down, color = color.new(c, 15), textcolor = color.rgb(6, 12, 12), size = size.tiny)
+        sViz sv = sViz.new(ln0, lb0)
+        array.push(swHist, sv)
+        // 扫荡水平线历史也限流,防止累积
+        while array.size(swHist) > maxSweepLb
+            sViz od = array.shift(swHist)
+            if not na(od.ln)
+                line.delete(od.ln)
+            if not na(od.lb)
+                label.delete(od.lb)
+
+//──────────────────────────────────────────────────────────────────────
+// CANDLE TINT · VWAP OVERLAY · ALERTS
+//   K线染色 / VWAP 覆盖图 / 告警条件
+//──────────────────────────────────────────────────────────────────────
+// BUY / SELL 以干净胶囊标签呈现(在上面的交易入场块中已绘制)。
+color barCol = na
+if colorCandles
+    // 信号 K 线染色:多=青色,空=洋红;持仓期间以该色淡色着色整段
+    barCol := takeLong ? bullCol : takeShort ? bearCol : tradeActive ? (tradeSide == 1 ? color.new(bullCol, 62) : color.new(bearCol, 62)) : na
+// barcolor():修改当前 K 线颜色(传入 na 则保持默认色)
+barcolor(barCol, title = "Signal Candles")
+
+// VWAP + 渐变 σ 带(装饰叠加,默认关闭)
+// plot():在图表上画线/点;返回 plot ID 可用于 fill()
+plot(useVwap ? vwapV : na, "VWAP", color = color.new(chrome, 0), linewidth = 2)
+pU = plot(useVwap ? vwUp : na, "VWAP +σ", color = color.new(chrome, 70))
+pL = plot(useVwap ? vwLo : na, "VWAP -σ", color = color.new(chrome, 70))
+// fill():填充两个 plot 之间的区域
+fill(pU, pL, color = useVwap ? color.new(chrome, 92) : na, title = "VWAP σ Band")
+
+// alertcondition():定义告警条件,用户可在 TradingView 告警面板中手动创建基于这些条件的告警
+//   注意:alertcondition 只能发"是否触发",不能携带运行时变量;告警文案是静态模板
+//   {{ticker}}/{{interval}}/{{close}} 是占位符,触发时会自动替换
+alertcondition(takeLong,   "Bullish Sweep (BUY)",  "Liquidity Sweep Reversal: BULLISH sweep + reclaim on {{ticker}} {{interval}} @ {{close}}")
+alertcondition(takeShort,  "Bearish Sweep (SELL)", "Liquidity Sweep Reversal: BEARISH sweep + reclaim on {{ticker}} {{interval}} @ {{close}}")
+alertcondition(closedTp3,  "TP3 Hit", "Liquidity Sweep Reversal: TP3 reached on {{ticker}} {{interval}}")
+alertcondition(closedTp,   "Partial TP Hit", "Liquidity Sweep Reversal: protected TP exit on {{ticker}} {{interval}}")
+alertcondition(closedSl,   "SL Hit", "Liquidity Sweep Reversal: stop-loss hit on {{ticker}} {{interval}}")
+
+//──────────────────────────────────────────────────────────────────────
+// DASHBOARD 仪表盘
+//   在图表角落画一个统计表格,实时反映策略表现。
+//   关键 Pine Script 概念:
+//     - barstate.islast:当前 bar 是图表上最后一根(实时 bar),只在此时刷新表格
+//     - table.new():创建表格对象;table.cell():填入单元格
+//     - 表格只在最后一根 bar 画一次即可,不需要每根 bar 重新创建
+//──────────────────────────────────────────────────────────────────────
+float winRate = sClosed > 0 ? sWins * 100.0 / sClosed : 0.0       // 胜率 = 盈利数 / 已平仓数
+float avgR    = sClosed > 0 ? sR / sClosed : 0.0                  // 平均 R = 累计 R / 已平仓数
+float pf      = sGL > 0 ? sGW / sGL : sGW > 0 ? 999.0 : 0.0       // 盈亏比 = 总盈利R / 总亏损R
+string pfTxt  = pf >= 999.0 ? "INF" : str.tostring(pf, "#.##")
+float longWR  = sLong > 0 ? sLongW * 100.0 / sLong : 0.0          // 多头胜率
+float shortWR = sShort > 0 ? sShortW * 100.0 / sShort : 0.0       // 空头胜率
+
+// "状态机"展示:有挂起扫荡=ARMED, 有持仓=ACTIVE, 否则=WAITING
+bool armed = not na(pLowLvl) or not na(pHighLvl)
+string statusTxt = tradeActive ? "ACTIVE" : armed ? "ARMED" : "WAITING"
+color statusC = tradeActive ? bullCol : armed ? #ffcf5c : neutralCol
+
+string activeTxt = tradeActive ? (tradeSide == 1 ? "LONG" : "SHORT") : "—"
+color activeC = tradeActive ? (tradeSide == 1 ? bullCol : bearCol) : neutralCol
+
+string lastTxt = lastSweepSide == 1 ? "BULL" : lastSweepSide == -1 ? "BEAR" : "—"
+color lastC = lastSweepSide == 1 ? bullCol : lastSweepSide == -1 ? bearCol : neutralCol
+string lastLvlTxt = na(lastSweepLvl) ? "—" : str.tostring(lastSweepLvl, format.mintick)
+
+// 胜率/盈亏比颜色阈值:≥55%/1.5=绿, ≥45%/1.0=黄, 其他=红
+color wrC = winRate >= 55 ? goodCol : winRate >= 45 ? #ffcf5c : badCol
+color pfC = pf >= 1.5 ? goodCol : pf >= 1.0 ? #ffcf5c : badCol
+
+// 连胜/连败展示:W3=连胜3次,L2=连败2次,附历史最大值
+string streakTxt = sStreak > 0 ? "W" + str.tostring(sStreak) : sStreak < 0 ? "L" + str.tostring(-sStreak) : "—"
+color  streakC   = sStreak > 0 ? goodCol : sStreak < 0 ? badCol : neutralCol
+string streakVal = streakTxt + "  (max +" + str.tostring(sMaxW) + " / -" + str.tostring(sMaxL) + ")"
+
+// 创建表格:var 保证只创建一次,后续 cell 内容在最后一根 bar 刷新
+var int dashRows = 14
+var table dash = table.new(f_pos(dashPosOpt), 2, dashRows, frame_color = panelBrd, frame_width = 1, border_width = 1, border_color = color.new(panelBrd, 30))
+
+if barstate.islast and showDash
+    ps = f_size(dashSizeOpt)
+    // 先清空所有单元格,再重填(避免旧内容残留)
+    table.clear(dash, 0, 0, 1, dashRows - 1)
+
+    // 逐行填入:左列=标签,右列=值。table.cell(表格, 列, 行, 文本, ...)
+    table.cell(dash, 0, 0, "LIQ SWEEP", text_color = color.rgb(6, 12, 12), text_size = ps, text_halign = text.align_left, bgcolor = color.from_gradient(0.15, 0, 1, bullCol, bearCol))
+    table.cell_set_text_formatting(dash, 0, 0, text.format_bold + text.format_italic)
+    table.cell(dash, 1, 0, "[JOAT]", text_color = color.white, text_size = ps, text_halign = text.align_center, bgcolor = color.from_gradient(0.85, 0, 1, bullCol, bearCol))
+    table.cell_set_text_formatting(dash, 1, 0, text.format_bold + text.format_italic)
+
+    table.cell(dash, 0, 1, "Status", text_color = txtLo, text_size = ps, text_halign = text.align_left, bgcolor = panelBg)
+    table.cell(dash, 1, 1, statusTxt, text_color = statusC, text_size = ps, text_halign = text.align_center, bgcolor = panelBg)
+
+    table.cell(dash, 0, 2, "Active Trade", text_color = txtLo, text_size = ps, text_halign = text.align_left, bgcolor = panelBgAlt)
+    table.cell(dash, 1, 2, activeTxt, text_color = activeC, text_size = ps, text_halign = text.align_center, bgcolor = panelBgAlt)
+
+    table.cell(dash, 0, 3, "Last Sweep", text_color = txtLo, text_size = ps, text_halign = text.align_left, bgcolor = panelBg)
+    table.cell(dash, 1, 3, lastTxt + " @ " + lastLvlTxt, text_color = lastC, text_size = ps, text_halign = text.align_center, bgcolor = panelBg)
+
+    table.cell(dash, 0, 4, "Sweeps Detected", text_color = txtLo, text_size = ps, text_halign = text.align_left, bgcolor = panelBgAlt)
+    table.cell(dash, 1, 4, str.tostring(sweepsDetected), text_color = txtHi, text_size = ps, text_halign = text.align_center, bgcolor = panelBgAlt)
+
+    table.cell(dash, 0, 5, "Signals Taken", text_color = txtLo, text_size = ps, text_halign = text.align_left, bgcolor = panelBg)
+    table.cell(dash, 1, 5, str.tostring(sTotal), text_color = txtHi, text_size = ps, text_halign = text.align_center, bgcolor = panelBg)
+
+    table.cell(dash, 0, 6, "Closed", text_color = txtLo, text_size = ps, text_halign = text.align_left, bgcolor = panelBgAlt)
+    table.cell(dash, 1, 6, str.tostring(sClosed), text_color = txtHi, text_size = ps, text_halign = text.align_center, bgcolor = panelBgAlt)
+
+    table.cell(dash, 0, 7, "Win Rate", text_color = txtLo, text_size = ps, text_halign = text.align_left, bgcolor = panelBg)
+    table.cell(dash, 1, 7, str.tostring(winRate, "#.#") + "%", text_color = wrC, text_size = ps, text_halign = text.align_center, bgcolor = panelBg)
+
+    table.cell(dash, 0, 8, "Profit Factor", text_color = txtLo, text_size = ps, text_halign = text.align_left, bgcolor = panelBgAlt)
+    table.cell(dash, 1, 8, pfTxt, text_color = pfC, text_size = ps, text_halign = text.align_center, bgcolor = panelBgAlt)
+
+    table.cell(dash, 0, 9, "Avg R", text_color = txtLo, text_size = ps, text_halign = text.align_left, bgcolor = panelBg)
+    table.cell(dash, 1, 9, f_signedR(avgR), text_color = avgR >= 0 ? goodCol : badCol, text_size = ps, text_halign = text.align_center, bgcolor = panelBg)
+
+    table.cell(dash, 0, 10, "Bull / Bear Win%", text_color = txtLo, text_size = ps, text_halign = text.align_left, bgcolor = panelBgAlt)
+    table.cell(dash, 1, 10, str.tostring(longWR, "#") + " / " + str.tostring(shortWR, "#"), text_color = txtHi, text_size = ps, text_halign = text.align_center, bgcolor = panelBgAlt)
+
+    table.cell(dash, 0, 11, "Streak", text_color = txtLo, text_size = ps, text_halign = text.align_left, bgcolor = panelBg)
+    table.cell(dash, 1, 11, streakVal, text_color = streakC, text_size = ps, text_halign = text.align_center, bgcolor = panelBg)
+
+    // 可选:TP1/TP2/TP3 与 SL/Timeout 计数明细
+    if showBreak
+        table.cell(dash, 0, 12, "TP1/TP2/TP3", text_color = color.rgb(6, 12, 12), text_size = ps, text_halign = text.align_left, bgcolor = bullDeep)
+        table.cell(dash, 1, 12, str.tostring(sTp1) + " / " + str.tostring(sTp2) + " / " + str.tostring(sTp3), text_color = color.rgb(6, 12, 12), text_size = ps, text_halign = text.align_center, bgcolor = bullDeep)
+        table.cell(dash, 0, 13, "SL / Timeout", text_color = color.white, text_size = ps, text_halign = text.align_left, bgcolor = color.new(bearCol, 20))
+        table.cell(dash, 1, 13, str.tostring(sSl) + " / " + str.tostring(sTo), text_color = color.white, text_size = ps, text_halign = text.align_center, bgcolor = color.new(bearCol, 20))
+    else
+        table.cell(dash, 0, 12, "", bgcolor = panelHdr)
+        table.cell(dash, 1, 12, "", bgcolor = panelHdr)
+        table.cell(dash, 0, 13, "", bgcolor = panelHdr)
+        table.cell(dash, 1, 13, "", bgcolor = panelHdr)

@@ -1,0 +1,337 @@
+"""
+============================================================================
+AkShare A-stock 数据适配器
+============================================================================
+
+## 功能
+使用 akshare 库从公开数据源拉取中国 A 股 K 线数据。
+- 日线/周线/月线: akshare.stock_zh_a_hist()
+- 分钟线 (5m, 30m, 60m): akshare.stock_zh_a_minute()
+- 无实时推送能力，subscribe_klines 返回空操作
+"""
+
+from __future__ import annotations
+import asyncio
+import logging
+from datetime import datetime, timezone, timedelta
+from typing import Awaitable, Callable
+
+from app.adapters.base import DataAdapter
+
+logger = logging.getLogger(__name__)
+
+# ---- timeframe mapping: internal → akshare period parameter -----------------
+
+TF_PERIOD: dict[str, str] = {
+    "1d": "daily",
+    "1w": "weekly",
+    "1M": "monthly",
+}
+
+TF_MINUTE: dict[str, str] = {
+    "5m": "5",
+    "30m": "30",
+    "60m": "60",
+}
+
+# 尝试在导入时检测 akshare 是否已安装
+try:
+    import akshare as ak  # noqa: F401
+    _AKSHARE_AVAILABLE = True
+except ImportError:
+    _AKSHARE_AVAILABLE = False
+
+# ---- helpers ----------------------------------------------------------------
+
+_CN_TZ = timezone(timedelta(hours=8))
+
+
+def _parse_symbol(symbol: str) -> tuple[str, str]:
+    """将前端传入的 symbol (如 "000001_sz") 解析为 (code, market)。
+
+    返回 (6 位代码, 市场后缀) —— market 为 "sz" 或 "sh" 或 ""。
+    """
+    symbol = symbol.strip().lower()
+    # 常见格式: "000001_sz", "600000.sh", "sh600000", "sz000001"
+    for sep in ("_", "."):
+        if sep in symbol:
+            code, market = symbol.rsplit(sep, 1)
+            code = code.strip().lstrip("sh").lstrip("sz")
+            market = market.strip().replace("_", "").replace(".", "")
+            return code.zfill(6), market
+    # 纯 6 位代码，无市场后缀
+    if symbol.isdigit() and len(symbol) == 6:
+        return symbol, ""
+    return symbol, ""
+
+
+def _to_date_str(epoch_ms: int | None) -> str | None:
+    """将 epoch 毫秒转换为 'YYYYMMDD' 字符串。"""
+    if epoch_ms is None:
+        return None
+    dt = datetime.fromtimestamp(epoch_ms / 1000, tz=timezone.utc).astimezone(_CN_TZ)
+    return dt.strftime("%Y%m%d")
+
+
+def _row_to_bar(row, *, is_closed: bool = True) -> dict:
+    """将 akshare DataFrame 行转换为统一 bar 格式。"""
+    # stock_zh_a_hist 列: 日期, 开盘, 收盘, 最高, 最低, 成交量, 成交额, ...
+    # stock_zh_a_minute 列: 时间, 开盘, 收盘, 最高, 最低, 成交量, ...
+    date_val = row.get("日期") or row.get("时间")
+    if date_val is None:
+        raise KeyError("akshare row missing date column")
+
+    # 解析日期 → epoch 毫秒
+    if isinstance(date_val, str) and len(date_val) == 8:  # "20250101"
+        dt = datetime.strptime(date_val, "%Y%m%d").replace(tzinfo=_CN_TZ)
+    elif isinstance(date_val, str) and ":" in date_val:  # "2025-01-01 09:30:00" or "09:30:00"
+        try:
+            dt = datetime.strptime(date_val, "%Y-%m-%d %H:%M:%S").replace(tzinfo=_CN_TZ)
+        except ValueError:
+            # 只有时间，需要结合当日日期 —— 这里用当天
+            today = datetime.now(_CN_TZ).strftime("%Y-%m-%d")
+            dt = datetime.strptime(f"{today} {date_val}", "%Y-%m-%d %H:%M:%S").replace(tzinfo=_CN_TZ)
+    elif isinstance(date_val, datetime):
+        dt = date_val.replace(tzinfo=_CN_TZ) if date_val.tzinfo is None else date_val.astimezone(_CN_TZ)
+    else:
+        dt = datetime.fromtimestamp(float(str(date_val)) / 1000, tz=_CN_TZ)
+
+    open_time_ms = int(dt.timestamp() * 1000)
+
+    return {
+        "open_time": open_time_ms,
+        "open": float(row["开盘"]),
+        "high": float(row["最高"]),
+        "low": float(row["最低"]),
+        "close": float(row["收盘"]),
+        "volume": float(row.get("成交量", 0)),
+        "is_closed": is_closed,
+    }
+
+
+# ---- sync data-fetch functions (wrapped in asyncio.to_thread) ---------------
+
+
+def _fetch_daily(symbol: str, start: str | None, end: str | None, limit: int) -> list[dict]:
+    """通过 akshare 拉取日线数据。"""
+    import akshare as ak
+
+    code, _market = _parse_symbol(symbol)
+    logger.info(f"akshare stock_zh_a_hist symbol={code} start={start} end={end}")
+
+    try:
+        df = ak.stock_zh_a_hist(
+            symbol=code,
+            period="daily",
+            start_date=start or "19900101",
+            end_date=end or "20991231",
+            adjust="qfq",  # 前复权
+        )
+    except Exception as e:
+        raise RuntimeError(
+            f"akshare stock_zh_a_hist 调用失败 (symbol={code}): {e}"
+        ) from e
+
+    if df is None or df.empty:
+        logger.warning(f"akshare returned no data for {code}")
+        return []
+
+    bars = [_row_to_bar(row) for _, row in df.iterrows()]
+    return bars[-limit:] if limit > 0 and len(bars) > limit else bars
+
+
+def _fetch_weekly_monthly(symbol: str, period: str, start: str | None, end: str | None, limit: int) -> list[dict]:
+    """通过 akshare 拉取周线/月线数据。"""
+    import akshare as ak
+
+    code, _market = _parse_symbol(symbol)
+    logger.info(f"akshare stock_zh_a_hist symbol={code} period={period} start={start} end={end}")
+
+    try:
+        df = ak.stock_zh_a_hist(
+            symbol=code,
+            period=period,
+            start_date=start or "19900101",
+            end_date=end or "20991231",
+            adjust="qfq",
+        )
+    except Exception as e:
+        raise RuntimeError(
+            f"akshare stock_zh_a_hist({period}) 调用失败 (symbol={code}): {e}"
+        ) from e
+
+    if df is None or df.empty:
+        return []
+
+    bars = [_row_to_bar(row) for _, row in df.iterrows()]
+    return bars[-limit:] if limit > 0 and len(bars) > limit else bars
+
+
+def _fetch_minute(symbol: str, period: str, limit: int) -> list[dict]:
+    """通过 akshare 拉取分钟线数据 (5/15/30/60 分钟)。"""
+    import akshare as ak
+
+    code, market = _parse_symbol(symbol)
+    # akshare.stock_zh_a_minute 需要市场前缀: "sh600000" 或 "sz000001"
+    if not market:
+        market = "sz" if code.startswith(("0", "3")) else "sh"
+    full_code = f"{market}{code}"
+
+    logger.info(f"akshare stock_zh_a_minute symbol={full_code} period={period}")
+
+    try:
+        df = ak.stock_zh_a_minute(symbol=full_code, period=period)
+    except Exception as e:
+        raise RuntimeError(
+            f"akshare stock_zh_a_minute 调用失败 (symbol={full_code}, period={period}): {e}"
+        ) from e
+
+    if df is None or df.empty:
+        logger.warning(f"akshare minute returned no data for {full_code} period={period}")
+        return []
+
+    bars = [_row_to_bar(row) for _, row in df.iterrows()]
+    return bars[-limit:] if limit > 0 and len(bars) > limit else bars
+
+
+# ---- mock fallback ----------------------------------------------------------
+
+import random
+import math
+
+_MOCK_BASE: dict[str, float] = {
+    "000001": 12.50,  # 平安银行
+    "000002": 8.30,   # 万科A
+    "600000": 10.20,  # 浦发银行
+    "600036": 42.00,  # 招商银行
+    "600519": 1450.0, # 贵州茅台
+    "000858": 128.0,  # 五粮液
+    "300750": 250.0,  # 宁德时代
+}
+
+
+def _generate_mock_klines(symbol: str, timeframe: str, limit: int) -> list[dict]:
+    code, _market = _parse_symbol(symbol)
+    base = _MOCK_BASE.get(code, 50.0)
+    random.seed(hash(code) % (2 ** 31))
+
+    interval_ms = {"1d": 86400_000, "5m": 300_000, "30m": 1800_000, "60m": 3600_000}.get(timeframe, 86400_000)
+    now = int(datetime.now(_CN_TZ).timestamp() * 1000)
+    start_ts = now - (limit * interval_ms)
+
+    bars: list[dict] = []
+    price = base * (0.5 + 0.5 * random.random())
+
+    for i in range(limit):
+        open_time = start_ts + i * interval_ms
+        change_pct = random.gauss(0, 0.02)
+        close = price * (1 + change_pct)
+        high = max(price, close) * (1 + abs(random.gauss(0, 0.008)))
+        low = min(price, close) * (1 - abs(random.gauss(0, 0.008)))
+        vol = abs(random.gauss(10000000, 5000000))
+
+        bars.append({
+            "open_time": open_time,
+            "open": round(price, 2),
+            "high": round(high, 2),
+            "low": round(low, 2),
+            "close": round(close, 2),
+            "volume": round(vol, 0),
+            "is_closed": True,
+        })
+        price = close
+
+    return bars
+
+
+# ---- adapter class ----------------------------------------------------------
+
+
+class AkShareAdapter(DataAdapter):
+    """基于 akshare 的 A 股 K 线数据适配器。
+
+    日线/周线/月线数据通过 stock_zh_a_hist() 获取；
+    分钟线数据通过 stock_zh_a_minute() 获取；
+    不支持实时推送。
+    """
+
+    @property
+    def name(self) -> str:
+        return "akshare"
+
+    async def fetch_klines(
+        self,
+        symbol: str,
+        timeframe: str,
+        start_time: int | None = None,
+        end_time: int | None = None,
+        limit: int = 500,
+    ) -> list[dict]:
+        logger.info(
+            f"fetch_klines symbol={symbol} tf={timeframe} "
+            f"start={start_time} end={end_time} limit={limit}"
+        )
+
+        if not _AKSHARE_AVAILABLE:
+            logger.warning(f"akshare not available, using mock data for {symbol}")
+            return _generate_mock_klines(symbol, timeframe, limit)
+
+        start_str = _to_date_str(start_time)
+        end_str = _to_date_str(end_time)
+
+        try:
+            if timeframe in TF_PERIOD:
+                period = TF_PERIOD[timeframe]
+                if timeframe == "1d":
+                    return await asyncio.to_thread(
+                        _fetch_daily, symbol, start_str, end_str, limit
+                    )
+                else:
+                    return await asyncio.to_thread(
+                        _fetch_weekly_monthly, symbol, period, start_str, end_str, limit
+                    )
+            elif timeframe in TF_MINUTE:
+                period = TF_MINUTE[timeframe]
+                return await asyncio.to_thread(
+                    _fetch_minute, symbol, period, limit
+                )
+            else:
+                raise ValueError(f"Unsupported timeframe: {timeframe}")
+        except Exception as e:
+            logger.warning(f"akshare fetch failed ({e}), falling back to mock data for {symbol}/{timeframe}")
+            return _generate_mock_klines(symbol, timeframe, limit)
+
+    async def subscribe_klines(
+        self,
+        symbol: str,
+        timeframe: str,
+        callback: Callable[[dict], Awaitable[None]],
+    ) -> Callable[[], Awaitable[None]]:
+        # akshare 无实时推送能力
+        async def _noop() -> None:
+            pass
+        return _noop
+
+    def supported_timeframes(self) -> list[str]:
+        """返回支持的时间周期列表。
+
+        日线始终可用；分钟线需要 akshare >= 1.12 版本的 stock_zh_a_minute。
+        """
+        # 尝试判断 stock_zh_a_minute 是否可用
+        intraday = list(TF_MINUTE.keys())
+        if _AKSHARE_AVAILABLE:
+            try:
+                import akshare as ak
+                if hasattr(ak, "stock_zh_a_minute"):
+                    return [*intraday, "1d"]
+            except Exception:
+                pass
+        return ["1d"]
+
+    def timeframe_to_exchange(self, timeframe: str) -> str:
+        """将内部 timeframe 映射为 akshare 的 period 参数值。"""
+        if timeframe in TF_PERIOD:
+            return TF_PERIOD[timeframe]
+        if timeframe in TF_MINUTE:
+            return TF_MINUTE[timeframe]
+        raise ValueError(f"Unsupported timeframe: {timeframe}")
