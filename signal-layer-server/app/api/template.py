@@ -1,8 +1,10 @@
 import logging
 from fastapi import APIRouter, HTTPException, Depends
-from sqlalchemy import select, delete
+from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 from app.db import get_session
+from app.api.security import require_permission
+from app.models.auth import User
 from app.models.template import Template
 from app.schemas.template import TemplateCreate, TemplateUpdate, TemplateResponse
 
@@ -27,15 +29,24 @@ def _to_response(t: Template) -> TemplateResponse:
 
 
 @router.get("", response_model=list[TemplateResponse])
-async def list_templates(session: AsyncSession = Depends(get_session)):
-    result = await session.execute(select(Template).order_by(Template.updated_at.desc()))
+async def list_templates(
+    session: AsyncSession = Depends(get_session),
+    user: User = Depends(require_permission("strategy.view")),
+):
+    result = await session.execute(
+        select(Template).where(Template.user_id == user.id).order_by(Template.updated_at.desc())
+    )
     templates = result.scalars().all()
     logger.info(f"GET /templates -> {len(templates)} templates")
     return [_to_response(t) for t in templates]
 
 
 @router.post("", response_model=TemplateResponse, status_code=201)
-async def create_template(body: TemplateCreate, session: AsyncSession = Depends(get_session)):
+async def create_template(
+    body: TemplateCreate,
+    session: AsyncSession = Depends(get_session),
+    user: User = Depends(require_permission("strategy.manage")),
+):
     logger.info(f"POST /templates id={body.id}")
     existing = await session.get(Template, body.id)
     if existing:
@@ -49,6 +60,7 @@ async def create_template(body: TemplateCreate, session: AsyncSession = Depends(
         secondary_tfs=body.secondary_tfs,
         enabled=body.enabled,
         trade_params=body.trade_params.model_dump() if body.trade_params else None,
+        user_id=user.id,
     )
     session.add(t)
     await session.commit()
@@ -58,22 +70,33 @@ async def create_template(body: TemplateCreate, session: AsyncSession = Depends(
 
 
 @router.get("/{template_id}", response_model=TemplateResponse)
-async def get_template(template_id: str, session: AsyncSession = Depends(get_session)):
+async def get_template(
+    template_id: str,
+    session: AsyncSession = Depends(get_session),
+    user: User = Depends(require_permission("strategy.view")),
+):
     logger.info(f"GET /templates/{template_id}")
     t = await session.get(Template, template_id)
-    if not t:
+    if not t or t.user_id != user.id:
         raise HTTPException(status_code=404, detail="Template not found")
     return _to_response(t)
 
 
 @router.put("/{template_id}", response_model=TemplateResponse)
-async def update_template(template_id: str, body: TemplateUpdate, session: AsyncSession = Depends(get_session)):
+async def update_template(
+    template_id: str,
+    body: TemplateUpdate,
+    session: AsyncSession = Depends(get_session),
+    user: User = Depends(require_permission("strategy.manage")),
+):
     logger.info(f"PUT /templates/{template_id}")
     t = await session.get(Template, template_id)
-    if not t:
+    if not t or t.user_id != user.id:
         raise HTTPException(status_code=404, detail="Template not found")
     update_data = body.model_dump(exclude_unset=True)
     for key, value in update_data.items():
+        if key == "trade_params" and value is not None and hasattr(value, "model_dump"):
+            value = value.model_dump()
         setattr(t, key, value)
     await session.commit()
     await session.refresh(t)
@@ -82,10 +105,14 @@ async def update_template(template_id: str, body: TemplateUpdate, session: Async
 
 
 @router.delete("/{template_id}", status_code=204)
-async def delete_template(template_id: str, session: AsyncSession = Depends(get_session)):
+async def delete_template(
+    template_id: str,
+    session: AsyncSession = Depends(get_session),
+    user: User = Depends(require_permission("strategy.manage")),
+):
     logger.info(f"DELETE /templates/{template_id}")
     t = await session.get(Template, template_id)
-    if not t:
+    if not t or t.user_id != user.id:
         raise HTTPException(status_code=404, detail="Template not found")
     await session.delete(t)
     await session.commit()

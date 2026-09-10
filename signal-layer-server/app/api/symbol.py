@@ -16,7 +16,9 @@ import logging
 import asyncio
 import time
 from typing import Optional
-from fastapi import APIRouter, Query, HTTPException
+from fastapi import APIRouter, Query, HTTPException, Depends
+from app.api.security import require_permission
+from app.market_data.mysql_store import MYSQL_CONFIG
 
 logger = logging.getLogger(__name__)
 
@@ -33,17 +35,6 @@ _FUTURES_CACHE_TTL = 24 * 3600  # 24 小时
 
 # ---- MySQL A 股列表 ---------------------------------------------------------
 
-_MYSQL_CONFIG = {
-    "host": "gz-cdb-qp23sl8p.sql.tencentcdb.com",
-    "port": 23784,
-    "user": "root",
-    "password": "stock2026",
-    "database": "stock",
-    "connect_timeout": 15,
-    "read_timeout": 20,
-}
-
-
 def _fetch_stock_symbols(keyword: Optional[str], limit: int) -> tuple[list[dict], int]:
     """从 MySQL stock_info 表读取股票列表，支持关键字搜索。
 
@@ -51,7 +42,7 @@ def _fetch_stock_symbols(keyword: Optional[str], limit: int) -> tuple[list[dict]
     """
     import pymysql
 
-    conn = pymysql.connect(**_MYSQL_CONFIG)
+    conn = pymysql.connect(**MYSQL_CONFIG)
     try:
         cur = conn.cursor()
 
@@ -165,7 +156,7 @@ async def get_symbol_items(
     raise ValueError(f"不支持的市场类型: {market}，可选 stock / futures")
 
 
-@router.get("")
+@router.get("", dependencies=[Depends(require_permission("market.read"))])
 async def list_symbols(
     market: str = Query(default="stock", description="市场类型：stock=股票, futures=期货"),
     keyword: Optional[str] = Query(default=None, description="搜索关键字（股票代码或名称）"),

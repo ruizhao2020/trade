@@ -29,6 +29,7 @@ export function ChanPanel({ options, onChange, analysis }: Props) {
     { key: 'showDuan', label: '线段', color: '#3b82f6', count: analysis?.duans.length },
     { key: 'showZhongshu', label: '中枢', color: '#8b5cf6', count: zsCount },
     { key: 'showZhongshuAxis', label: '中枢中轴', color: '#8b5cf6' },
+    { key: 'showDivergences', label: '背驰', color: '#56c7e8', count: analysis?.divergences.length },
     { key: 'showBuySellPoints', label: '买卖点', color: '#10b981', count: analysis?.buySellPoints.length },
   ]
 

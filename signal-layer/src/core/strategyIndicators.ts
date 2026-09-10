@@ -73,5 +73,6 @@ export function buildStrategyChanOptions(
     showZhongshu: enabled,
     showZhongshuAxis: enabled,
     showBuySellPoints: enabled,
+    showDivergences: enabled,
   }
 }

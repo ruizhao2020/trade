@@ -1,4 +1,6 @@
-from app.schemas.signal import ConditionSchema, ConstantValue, IndicatorValue, TimeframeValue
+from types import SimpleNamespace
+
+from app.schemas.signal import ChanValue, ConditionSchema, ConstantValue, IndicatorValue, TimeframeValue
 from app.services.condition_service import ConditionService
 from app.services.signal_evaluation_service import indicator_data_key, required_kline_limit
 
@@ -38,6 +40,32 @@ def test_condition_schema_accepts_direction_operators():
             "right": {"source": "constant", "value": 0},
         })
         assert condition.operator == operator
+
+
+def test_chan_divergence_condition_filters_direction_and_confirmation():
+    service = ConditionService()
+    condition = ConditionSchema.model_validate({
+        "id": "condition-bottom-divergence",
+        "name": "底背驰",
+        "left": {"source": "chan", "element": "divergence", "property": "bottom"},
+        "operator": "gt",
+        "right": {"source": "constant", "value": 0},
+    })
+    chan = SimpleNamespace(divergences=[
+        SimpleNamespace(type="bottom", confirmed=True),
+        SimpleNamespace(type="bottom", confirmed=False),
+        SimpleNamespace(type="top", confirmed=True),
+    ])
+
+    value = service._resolve(
+        ChanValue(source="chan", element="divergence", property="bottom"),
+        condition,
+        kline_data={},
+        chan_data={"1d": chan},
+        indicator_data={},
+        default_tf="1d",
+    )
+    assert value == 1.0
 
 
 def test_ma260_expands_realtime_kline_history():

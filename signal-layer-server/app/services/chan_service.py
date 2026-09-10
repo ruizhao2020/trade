@@ -65,6 +65,7 @@ class ChanService:
                 logger.info(f"Chan cache HIT {symbol} {timeframe} ({len(cached.get('bis', []))} bis, "
                             f"{len(cached.get('duans', []))} duans, "
                             f"{len(cached.get('zhongshus', []))} zhongshus, "
+                            f"{len(cached.get('divergences', []))} divergences, "
                             f"{len(cached.get('buy_sell_points', []))} points)")
                 return self._deserialize(cached)
 
@@ -73,6 +74,7 @@ class ChanService:
 
         logger.info(f"Chan analysis {symbol} {timeframe} -> {len(result.bis)} bis, "
                     f"{len(result.duans)} duans, {len(result.zhongshus)} zhongshus, "
+                    f"{len(result.divergences)} divergences, "
                     f"{len(result.buy_sell_points)} buy_sell_points")
         await self._cache.set(cache_key, self._serialize(result))
         return result
@@ -110,8 +112,24 @@ class ChanService:
                 {
                     "type": p.type, "price": str(p.price), "time": p.time,
                     "confirmed": p.confirmed, "strength": p.strength,
+                    "zhongshu_index": p.zhongshu_index, "bi_index": p.bi_index,
+                    "reason": p.reason, "divergence_index": p.divergence_index,
                 }
                 for p in result.buy_sell_points
+            ],
+            "divergences": [
+                {
+                    "index": item.index, "type": item.type, "level": item.level,
+                    "kind": item.kind, "price": str(item.price), "time": item.time,
+                    "zhongshu_index": item.zhongshu_index,
+                    "reference_bi_index": item.reference_bi_index,
+                    "current_bi_index": item.current_bi_index,
+                    "reference_power": item.reference_power,
+                    "current_power": item.current_power,
+                    "strength_ratio": item.strength_ratio,
+                    "confirmed": item.confirmed,
+                }
+                for item in result.divergences
             ],
             "updated_at": result.updated_at,
         }
@@ -136,6 +154,7 @@ class ChanService:
         from app.engine.chan.bi import Bi
         from app.engine.chan.zhongshu import Duan
         from app.engine.chan.signal import Zhongshu, BuySellPoint
+        from app.engine.chan.divergence import Divergence
 
         return ChanResult(
             symbol=data.get("symbol", ""),
@@ -168,10 +187,26 @@ class ChanService:
             buy_sell_points=[
                 BuySellPoint(
                     type=p["type"], price=float(p["price"]), time=p["time"],
-                    zhongshu_index=None, bi_index=0,
+                    zhongshu_index=p.get("zhongshu_index"), bi_index=p.get("bi_index", 0),
                     confirmed=p["confirmed"], strength=p["strength"],
+                    reason=p.get("reason"), divergence_index=p.get("divergence_index"),
                 )
                 for p in data.get("buy_sell_points", [])
+            ],
+            divergences=[
+                Divergence(
+                    index=item["index"], type=item["type"],
+                    level=item.get("level", "bi"), kind=item.get("kind", "consolidation"),
+                    price=float(item["price"]), time=item["time"],
+                    zhongshu_index=item["zhongshu_index"],
+                    reference_bi_index=item["reference_bi_index"],
+                    current_bi_index=item["current_bi_index"],
+                    reference_power=item["reference_power"],
+                    current_power=item["current_power"],
+                    strength_ratio=item["strength_ratio"],
+                    confirmed=item.get("confirmed", True),
+                )
+                for item in data.get("divergences", [])
             ],
             updated_at=data.get("updated_at", 0),
         )

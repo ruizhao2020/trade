@@ -1,0 +1,39 @@
+from __future__ import annotations
+
+from collections.abc import Callable
+from typing import Optional
+
+from fastapi import Depends, HTTPException
+from fastapi.security import HTTPAuthorizationCredentials, HTTPBearer
+from sqlalchemy import select
+from sqlalchemy.ext.asyncio import AsyncSession
+
+from app.db import get_session
+from app.models.auth import User
+from app.services.auth_service import decode_access_token, permission_codes
+
+bearer = HTTPBearer(auto_error=False)
+
+
+async def current_user(
+    credentials: Optional[HTTPAuthorizationCredentials] = Depends(bearer),
+    session: AsyncSession = Depends(get_session),
+) -> User:
+    if credentials is None or credentials.scheme.lower() != "bearer":
+        raise HTTPException(status_code=401, detail="请先登录", headers={"WWW-Authenticate": "Bearer"})
+    try:
+        user_id = decode_access_token(credentials.credentials)
+    except ValueError as error:
+        raise HTTPException(status_code=401, detail=str(error), headers={"WWW-Authenticate": "Bearer"}) from error
+    user = (await session.execute(select(User).where(User.id == user_id))).scalar_one_or_none()
+    if not user or not user.enabled:
+        raise HTTPException(status_code=401, detail="用户不存在或已停用")
+    return user
+
+
+def require_permission(code: str) -> Callable:
+    async def dependency(user: User = Depends(current_user)) -> User:
+        if code not in permission_codes(user):
+            raise HTTPException(status_code=403, detail=f"缺少权限：{code}")
+        return user
+    return dependency

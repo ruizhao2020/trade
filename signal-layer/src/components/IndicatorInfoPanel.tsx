@@ -111,6 +111,7 @@ export function IndicatorInfoPanel({
             <div className="flex justify-between"><span className="text-[var(--text-muted)]">笔</span><span className="font-mono">{analysis?.bis.length ?? 0}</span></div>
             <div className="flex justify-between"><span className="text-[var(--text-muted)]">线段</span><span className="font-mono">{analysis?.duans.length ?? 0}</span></div>
             <div className="flex justify-between"><span className="text-[var(--text-muted)]">中枢</span><span className="font-mono">{chanOptions.zsLevel === 'duan' ? analysis?.duanZhongshus.length ?? 0 : analysis?.zhongshus.length ?? 0}</span></div>
+            <div className="flex justify-between"><span className="text-[var(--text-muted)]">背驰</span><span className="font-mono">{analysis?.divergences.length ?? 0}</span></div>
             <div className="flex justify-between"><span className="text-[var(--text-muted)]">买卖点</span><span className="font-mono">{analysis?.buySellPoints.length ?? 0}</span></div>
           </div>
         </section>

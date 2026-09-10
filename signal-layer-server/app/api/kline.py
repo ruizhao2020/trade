@@ -2,13 +2,14 @@ from __future__ import annotations
 
 import logging
 from typing import Optional
-from fastapi import APIRouter, Query, HTTPException
+from fastapi import APIRouter, Query, HTTPException, Depends
 from app.api.deps import get_data_service
+from app.api.security import require_permission
 from app.schemas.kline import KlineResponse, KlineItem
 
 logger = logging.getLogger(__name__)
 
-router = APIRouter(prefix="/api/v1/klines", tags=["klines"])
+router = APIRouter(prefix="/api/v1/klines", tags=["klines"], dependencies=[Depends(require_permission("market.read"))])
 
 
 @router.get("/{symbol}", response_model=KlineResponse)

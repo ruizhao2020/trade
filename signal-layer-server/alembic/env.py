@@ -11,6 +11,7 @@ if config.config_file_name is not None:
 from app.models.base import Base
 from app.models.kline import Kline  # noqa: F401
 from app.models.template import Template  # noqa: F401
+from app.models.auth import Module, Permission, Role, User  # noqa: F401
 target_metadata = Base.metadata
 
 

@@ -13,7 +13,7 @@ AkShare A-stock 数据适配器
 from __future__ import annotations
 import asyncio
 import logging
-from datetime import datetime, timezone, timedelta
+from datetime import date, datetime, timezone, timedelta
 from typing import Awaitable, Callable
 
 from app.adapters.base import DataAdapter
@@ -82,17 +82,22 @@ def _row_to_bar(row, *, is_closed: bool = True) -> dict:
         raise KeyError("akshare row missing date column")
 
     # 解析日期 → epoch 毫秒
-    if isinstance(date_val, str) and len(date_val) == 8:  # "20250101"
+    if isinstance(date_val, datetime):
+        dt = date_val.replace(tzinfo=_CN_TZ) if date_val.tzinfo is None else date_val.astimezone(_CN_TZ)
+    elif isinstance(date_val, date):
+        dt = datetime.combine(date_val, datetime.min.time(), tzinfo=_CN_TZ)
+    elif isinstance(date_val, str) and len(date_val) == 8 and date_val.isdigit():  # "20250101"
         dt = datetime.strptime(date_val, "%Y%m%d").replace(tzinfo=_CN_TZ)
-    elif isinstance(date_val, str) and ":" in date_val:  # "2025-01-01 09:30:00" or "09:30:00"
+    elif isinstance(date_val, str) and len(date_val) >= 10 and date_val[4] == "-" and date_val[7] == "-":
+        fmt = "%Y-%m-%d %H:%M:%S" if ":" in date_val else "%Y-%m-%d"
+        dt = datetime.strptime(date_val[:19] if ":" in date_val else date_val[:10], fmt).replace(tzinfo=_CN_TZ)
+    elif isinstance(date_val, str) and ":" in date_val:  # "09:30:00"
         try:
             dt = datetime.strptime(date_val, "%Y-%m-%d %H:%M:%S").replace(tzinfo=_CN_TZ)
         except ValueError:
             # 只有时间，需要结合当日日期 —— 这里用当天
             today = datetime.now(_CN_TZ).strftime("%Y-%m-%d")
             dt = datetime.strptime(f"{today} {date_val}", "%Y-%m-%d %H:%M:%S").replace(tzinfo=_CN_TZ)
-    elif isinstance(date_val, datetime):
-        dt = date_val.replace(tzinfo=_CN_TZ) if date_val.tzinfo is None else date_val.astimezone(_CN_TZ)
     else:
         dt = datetime.fromtimestamp(float(str(date_val)) / 1000, tz=_CN_TZ)
 
@@ -279,6 +284,12 @@ class AkShareAdapter(DataAdapter):
         start_str = _to_date_str(start_time)
         end_str = _to_date_str(end_time)
 
+        # 最新 N 根日线只查询必要的日历区间，避免每次下载该股票全部历史数据。
+        if timeframe == "1d" and start_str is None:
+            now = datetime.now(_CN_TZ)
+            start_str = (now - timedelta(days=max(int(limit * 1.8), 30))).strftime("%Y%m%d")
+            end_str = end_str or now.strftime("%Y%m%d")
+
         try:
             if timeframe in TF_PERIOD:
                 period = TF_PERIOD[timeframe]
@@ -298,8 +309,9 @@ class AkShareAdapter(DataAdapter):
             else:
                 raise ValueError(f"Unsupported timeframe: {timeframe}")
         except Exception as e:
-            logger.warning(f"akshare fetch failed ({e}), falling back to mock data for {symbol}/{timeframe}")
-            return _generate_mock_klines(symbol, timeframe, limit)
+            # 线上行情失败时必须显式报错，不能把模拟行情写进正式行情表。
+            logger.error("akshare fetch failed for %s/%s: %s", symbol, timeframe, e)
+            raise
 
     async def subscribe_klines(
         self,

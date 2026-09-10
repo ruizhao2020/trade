@@ -2,7 +2,7 @@ from __future__ import annotations
 
 import logging
 
-from app.adapters.baostock_adapter import BaoStockAdapter
+from app.adapters.akshare_adapter import AkShareAdapter
 from app.adapters.base import DataAdapter
 from app.adapters.futures_adapter import FuturesAdapter
 from app.market_data.manager import MarketDataManager
@@ -21,7 +21,7 @@ class DataService:
         store=None,
         futures_adapter: DataAdapter | None = None,
     ):
-        self._stock_source = adapter or BaoStockAdapter()
+        self._stock_source = adapter or AkShareAdapter()
         self._futures_source = futures_adapter or FuturesAdapter(allow_mock=False)
         self._manager = MarketDataManager(
             store or MySQLMarketDataStore(),

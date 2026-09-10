@@ -27,6 +27,7 @@ from fastapi.middleware.cors import CORSMiddleware
 from app.api.router import api_router
 from app.api.deps import init_services, shutdown_services
 from app.config import settings
+from app.middleware.module_access import ModuleAccessMiddleware
 
 logger = logging.getLogger(__name__)
 
@@ -41,6 +42,8 @@ async def lifespan(app: FastAPI):
     注意：如果 Redis 不可用，init_services 会降级为 no-op 模式（不使用缓存）。
     """
     logger.info("Starting SignalLayer services...")
+    if not settings.debug and settings.token_secret == "change-this-secret-before-production":
+        raise RuntimeError("生产环境必须配置 SIGNAL_TOKEN_SECRET")
     await init_services()
     logger.info("All services initialized successfully")
     _print_routes(app)
@@ -60,11 +63,11 @@ app = FastAPI(
     lifespan=lifespan,
 )
 
-# CORS 中间件：允许前端（任意来源）跨域请求
-# 生产环境应替换 allow_origins=["*"] 为具体的前端域名
+# CORS 来源通过 SIGNAL_CORS_ORIGINS 配置，生产环境使用实际前端域名。
+app.add_middleware(ModuleAccessMiddleware)
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=["*"],
+    allow_origins=[origin.strip() for origin in settings.cors_origins.split(",") if origin.strip()],
     allow_credentials=True,
     allow_methods=["*"],
     allow_headers=["*"],

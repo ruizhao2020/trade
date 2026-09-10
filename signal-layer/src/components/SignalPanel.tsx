@@ -51,6 +51,7 @@ function conditionLabel(condition: Condition) {
   if (condition.name) return condition.name
   const left = condition.left
   if (left.source === 'chan' && left.element === 'buySellPoint') return CHAN_SIGNAL_LABEL[left.property ?? ''] ?? '买卖点'
+  if (left.source === 'chan' && left.element === 'divergence') return left.property === 'top' ? '顶背驰' : left.property === 'bottom' ? '底背驰' : '背驰'
   if (left.source === 'chan' && left.element === 'bi') return '笔数'
   if (left.source === 'chan' && left.element === 'zhongshu') return '中枢数'
   if (left.source === 'price') return PRICE_FIELD_LABEL[left.field] ?? left.field

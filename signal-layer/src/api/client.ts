@@ -16,6 +16,19 @@
 
 /** 后端 API 基地址。开发环境默认 localhost:8000，生产环境通过环境变量覆盖 */
 const BASE = import.meta.env.VITE_API_BASE ?? 'http://localhost:8000/api/v1'
+const TOKEN_KEY = 'signal_layer_access_token'
+
+export function getAccessToken() {
+  return typeof window === 'undefined' || !window.localStorage
+    ? null
+    : window.localStorage.getItem(TOKEN_KEY)
+}
+
+export function setAccessToken(token: string | null) {
+  if (typeof window === 'undefined' || !window.localStorage) return
+  if (token) window.localStorage.setItem(TOKEN_KEY, token)
+  else window.localStorage.removeItem(TOKEN_KEY)
+}
 
 class ApiClient {
   /**
@@ -28,13 +41,21 @@ class ApiClient {
    */
   private async request<T>(method: string, path: string, body?: unknown): Promise<T> {
     console.log(`[SL:API] ${method} ${path}`, body ? { body } : undefined)
+    const token = getAccessToken()
+    const headers: Record<string, string> = {}
+    if (body) headers['Content-Type'] = 'application/json'
+    if (token) headers.Authorization = `Bearer ${token}`
     const res = await fetch(`${BASE}${path}`, {
       method,
-      headers: body ? { 'Content-Type': 'application/json' } : undefined,
+      headers: Object.keys(headers).length > 0 ? headers : undefined,
       body: body ? JSON.stringify(body) : undefined,
     })
     if (!res.ok) {
       const text = await res.text()
+      if (res.status === 401 && !path.startsWith('/auth/')) {
+        setAccessToken(null)
+        window.dispatchEvent(new Event('signal-layer:unauthorized'))
+      }
       console.error(`[SL:API] ${method} ${path} -> FAIL ${res.status}`, text)
       throw new Error(`API ${res.status}: ${text}`)
     }

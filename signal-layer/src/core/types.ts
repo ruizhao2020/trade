@@ -114,6 +114,24 @@ export interface BuySellPoint {
   biIndex: number
   confirmed: boolean
   strength: number
+  reason?: string
+  divergenceIndex?: number
+}
+
+export interface Divergence {
+  index: number
+  type: 'top' | 'bottom'
+  level: 'bi'
+  kind: 'consolidation'
+  price: number
+  time: number
+  zhongshuIndex: number
+  referenceBiIndex: number
+  currentBiIndex: number
+  referencePower: number
+  currentPower: number
+  strengthRatio: number
+  confirmed: boolean
 }
 
 export interface ChanAnalysis {
@@ -125,6 +143,7 @@ export interface ChanAnalysis {
   zhongshus: Zhongshu[]         // 笔中枢(level="bi")
   duanZhongshus: Zhongshu[]     // 段中枢(level="duan")
   buySellPoints: BuySellPoint[]
+  divergences: Divergence[]
   updatedAt: number
   isComplete: boolean
 }
@@ -141,6 +160,7 @@ export interface ChanRenderOptions {
   showDuan: boolean             // 显示线段(蓝色粗线)
   showZhongshu: boolean         // 显示中枢(矩形盒)
   showBuySellPoints: boolean    // 显示买卖点(一买/二买/三买)
+  showDivergences: boolean      // 显示顶背驰/底背驰
   biColor?: string              // 笔颜色,默认黄色
   duanColor?: string            // 线段颜色,默认蓝色
   zhongshuColor?: string        // 中枢颜色,默认蓝色(未破)/绿/红(已破)
@@ -218,7 +238,7 @@ export type ConditionOperator = (typeof ConditionOperator)[keyof typeof Conditio
 export type ConditionValue =
   | { source: 'price'; field: 'open' | 'high' | 'low' | 'close' | 'volume' }
   | { source: 'indicator'; indicatorType: string; params: Record<string, number>; field: 'value' | string }
-  | { source: 'chan'; element: 'fenxing' | 'bi' | 'zhongshu' | 'buySellPoint'; property?: string }
+  | { source: 'chan'; element: 'fenxing' | 'bi' | 'zhongshu' | 'divergence' | 'buySellPoint'; property?: string }
   | { source: 'constant'; value: number }
   | { source: 'timeframe'; timeframeId: string; inner: ConditionValue }
 

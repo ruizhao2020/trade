@@ -11,13 +11,14 @@ interface Props {
   analysis?: ChanAnalysis
 }
 
-type ChanToggleKey = 'showFenxing' | 'showBi' | 'showDuan' | 'showZhongshu' | 'showBuySellPoints'
+type ChanToggleKey = 'showFenxing' | 'showBi' | 'showDuan' | 'showZhongshu' | 'showDivergences' | 'showBuySellPoints'
 
 const CHAN_ITEMS: { key: ChanToggleKey; label: string; color: string; count: (analysis?: ChanAnalysis) => number }[] = [
   { key: 'showFenxing', label: '分型', color: '#f59e0b', count: (analysis) => analysis?.fenxings.length ?? 0 },
   { key: 'showBi', label: '笔', color: '#e7c66b', count: (analysis) => analysis?.bis.length ?? 0 },
   { key: 'showDuan', label: '线段', color: '#6c8cff', count: (analysis) => analysis?.duans.length ?? 0 },
   { key: 'showZhongshu', label: '中枢', color: '#9b8cf2', count: (analysis) => analysis?.zhongshus.length ?? 0 },
+  { key: 'showDivergences', label: '背驰', color: '#56c7e8', count: (analysis) => analysis?.divergences.length ?? 0 },
   { key: 'showBuySellPoints', label: '买卖点', color: '#36c995', count: (analysis) => analysis?.buySellPoints.length ?? 0 },
 ]
 
@@ -141,6 +142,7 @@ export function IndicatorWorkbenchToolbar({
       showZhongshu: enabled,
       showZhongshuAxis: enabled,
       showBuySellPoints: enabled,
+      showDivergences: enabled,
     })
   }
 

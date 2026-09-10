@@ -12,6 +12,7 @@ services:
     volumes:
       - mysql_data:/var/lib/mysql
       - ./database/mysql/001_app_schema.sql:/docker-entrypoint-initdb.d/001_app_schema.sql:ro
+      - ./database/mysql/010_access_control_seed.sql:/docker-entrypoint-initdb.d/010_access_control_seed.sql:ro
     command: --character-set-server=utf8mb4 --collation-server=utf8mb4_unicode_ci
     healthcheck:
       test: ["CMD", "mysqladmin", "ping", "-h", "localhost", "-u", "root", "-psignal_layer"]

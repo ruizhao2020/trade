@@ -28,6 +28,12 @@ import {
 import { buildStrategyTradeMarkerResult } from './core/strategyMarkers.ts'
 import { isSupportedTimeframeId, timeframeLabel } from './core/constants.ts'
 import type { SupportedTimeframeId } from './core/constants.ts'
+import { AdminWorkspace } from './components/AdminWorkspace.tsx'
+import { LoginScreen } from './components/LoginScreen.tsx'
+import { fetchCurrentUser, logout } from './api/auth.ts'
+import type { AuthUser } from './api/auth.ts'
+import { getAccessToken } from './api/client.ts'
+import { ChangePasswordDialog } from './components/ChangePasswordDialog.tsx'
 
 const DEFAULT_CHAN_OPTIONS: ChanRenderOptions = {
   showFenxing: false,
@@ -36,6 +42,7 @@ const DEFAULT_CHAN_OPTIONS: ChanRenderOptions = {
   showZhongshu: true,
   showZhongshuAxis: true,
   showBuySellPoints: true,
+  showDivergences: true,
   biColor: '#e7c66b',
   duanColor: '#6c8cff',
   zhongshuColor: '#9b8cf2',
@@ -84,8 +91,9 @@ function CollapseIcon({ collapsed }: { collapsed: boolean }) {
   )
 }
 
-function App() {
-  const [activeModule, setActiveModule] = useState<WorkspaceModule>('indicators')
+function WorkbenchApp({ user, onLogout, onUserChange }: { user: AuthUser; onLogout: () => void; onUserChange: (user: AuthUser) => void }) {
+  const initialModule = user.modules[0]?.component_key || user.modules[0]?.code || ''
+  const [activeModule, setActiveModule] = useState<WorkspaceModule>(initialModule)
   const [timeframe, setTimeframe] = useState<SupportedTimeframeId>('1d')
   const [market, setMarket] = useState<'stock' | 'futures'>('futures')
   const [symbol, setSymbol] = useState('RB0')
@@ -102,10 +110,13 @@ function App() {
   const [strategyInfoCollapsed, setStrategyInfoCollapsed] = useState(false)
   const [backtestResult, setBacktestResult] = useState<{ key: string; result: BacktestResult } | null>(null)
   const [strategyTradeScan, setStrategyTradeScan] = useState<{ key: string; result: BacktestResult | null }>({ key: '', result: null })
+  const [passwordDialogOpen, setPasswordDialogOpen] = useState(false)
 
   const templates = useAppStore((state) => state.templates)
   const activeTemplateId = useAppStore((state) => state.activeTemplateId)
   const activeTemplate = templates.find((template) => template.id === activeTemplateId)
+  const allowedModules = user.modules.map((module) => module.component_key || module.code)
+  const effectiveActiveModule = allowedModules.includes(activeModule) ? activeModule : allowedModules[0] ?? ''
   const strategyRequests = useMemo(
     () => collectStrategyIndicatorsForTimeframe(activeTemplate, timeframe),
     [activeTemplate, timeframe],
@@ -185,7 +196,7 @@ function App() {
   }, [strategyRequestKey, strategyRequests, klineData, symbol, timeframe])
 
   useEffect(() => {
-    if (activeModule !== 'strategy' || !activeTemplate?.enabled || !strategyTradeKey) return
+    if (effectiveActiveModule !== 'strategy' || !activeTemplate?.enabled || !strategyTradeKey) return
     let cancelled = false
     runBacktest(symbol, activeTemplate, 300)
       .then((result) => {
@@ -195,7 +206,7 @@ function App() {
         if (!cancelled) setStrategyTradeScan({ key: strategyTradeKey, result: null })
       })
     return () => { cancelled = true }
-  }, [activeModule, activeTemplate, strategyTradeKey, symbol])
+  }, [effectiveActiveModule, activeTemplate, strategyTradeKey, symbol])
 
   const activeTradeResult = useMemo(() => {
     if (backtestResult?.key === strategyTradeKey) return backtestResult.result
@@ -243,13 +254,13 @@ function App() {
 
   return (
     <div className="flex h-full w-full overflow-hidden bg-[var(--bg-primary)]">
-      <WorkspaceNav active={activeModule} onChange={setActiveModule} />
+      <WorkspaceNav active={effectiveActiveModule} onChange={setActiveModule} modules={user.modules} user={user} onLogout={onLogout} onChangePassword={() => setPasswordDialogOpen(true)} />
       <main className="flex-1 min-w-0 flex flex-col overflow-hidden">
-        {activeModule === 'indicators' && (
+        {effectiveActiveModule === 'indicators' && (
           <>
             <WorkbenchHeader title="指标分析" {...headerProps} trailing={chanAnalysis && (
               <div className="hidden xl:flex items-center gap-3 text-[10px] text-[var(--text-muted)] font-mono whitespace-nowrap">
-                <span>笔 {chanAnalysis.bis.length}</span><span>段 {chanAnalysis.duans.length}</span><span>中枢 {chanOptions.zsLevel === 'duan' ? chanAnalysis.duanZhongshus.length : chanAnalysis.zhongshus.length}</span><span>买卖点 {chanAnalysis.buySellPoints.length}</span>
+                <span>笔 {chanAnalysis.bis.length}</span><span>段 {chanAnalysis.duans.length}</span><span>中枢 {chanOptions.zsLevel === 'duan' ? chanAnalysis.duanZhongshus.length : chanAnalysis.zhongshus.length}</span><span>背驰 {chanAnalysis.divergences.length}</span><span>买卖点 {chanAnalysis.buySellPoints.length}</span>
               </div>
             )} />
             <IndicatorWorkbenchToolbar selectedIndicators={selectedIndicators} onIndicatorChange={setSelectedIndicators} chanOptions={chanOptions} onChanChange={setChanOptions} analysis={chanAnalysis ?? undefined} />
@@ -260,7 +271,7 @@ function App() {
           </>
         )}
 
-        {activeModule === 'strategy' && (
+        {effectiveActiveModule === 'strategy' && (
           <>
             <WorkbenchHeader title="策略执行" {...headerProps} />
             <div className="h-11 px-4 flex items-center gap-2 border-b border-[var(--border-primary)] bg-[var(--bg-secondary)] shrink-0 overflow-x-auto">
@@ -283,15 +294,46 @@ function App() {
           </>
         )}
 
-        {activeModule === 'screener' && (
+        {effectiveActiveModule === 'screener' && (
           <>
             <div className="h-14 px-4 flex items-center gap-3 border-b border-[var(--border-primary)] bg-[var(--bg-secondary)] shrink-0"><h1 className="text-[15px] font-semibold tracking-tight">策略选股</h1><span className="text-[11px] text-[var(--text-muted)]">使用已有策略批量评估候选标的</span></div>
             <ScreenerWorkspace selectedSymbol={symbol} selectedName={symbolName} onSelectSymbol={handleScreenSymbol} chart={<ChartStage loading={loading} error={error} klineData={klineData} chanAnalysis={chanAnalysis} chanOptions={strategyChanOptions} indicatorResults={strategyIndicatorResults.key === strategyRequestKey ? strategyIndicatorResults.results : []} />} />
           </>
         )}
+
+        {effectiveActiveModule === 'admin' && (
+          <AdminWorkspace currentUser={user} onModulesChanged={() => { void fetchCurrentUser().then(onUserChange) }} />
+        )}
+
+        {!['indicators', 'strategy', 'screener', 'admin'].includes(effectiveActiveModule) && (
+          <div className="flex-1 flex items-center justify-center text-[var(--text-muted)]">
+            <div className="text-center"><div className="text-[14px] text-[var(--text-secondary)]">模块已配置</div><div className="mt-1 text-[11px]">页面组件尚未接入：{effectiveActiveModule}</div></div>
+          </div>
+        )}
       </main>
+      {passwordDialogOpen && <ChangePasswordDialog onClose={() => setPasswordDialogOpen(false)} />}
     </div>
   )
+}
+
+function App() {
+  const [user, setUser] = useState<AuthUser | null>(null)
+  const [initializing, setInitializing] = useState(() => Boolean(getAccessToken()))
+
+  useEffect(() => {
+    const handleUnauthorized = () => setUser(null)
+    window.addEventListener('signal-layer:unauthorized', handleUnauthorized)
+    if (getAccessToken()) {
+      fetchCurrentUser().then(setUser).catch(() => logout()).finally(() => setInitializing(false))
+    }
+    return () => window.removeEventListener('signal-layer:unauthorized', handleUnauthorized)
+  }, [])
+
+  if (initializing) {
+    return <div className="h-full flex items-center justify-center bg-[var(--bg-primary)] text-[var(--text-muted)]">正在验证登录状态…</div>
+  }
+  if (!user) return <LoginScreen onAuthenticated={setUser} />
+  return <WorkbenchApp user={user} onLogout={() => { logout(); setUser(null) }} onUserChange={setUser} />
 }
 
 export default App

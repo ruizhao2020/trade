@@ -29,8 +29,6 @@ export function IndicatorSelector({ selectedIndicators, onChange }: Props) {
 
   useEffect(() => {
     let cancelled = false
-    setLoading(true)
-    setError(null)
     fetchIndicatorList()
       .then((list) => {
         if (!cancelled) {

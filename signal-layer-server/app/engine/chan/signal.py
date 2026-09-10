@@ -48,6 +48,7 @@ import logging
 from dataclasses import dataclass
 from typing import Literal
 from app.engine.chan.bi import Bi
+from app.engine.chan.divergence import Divergence
 
 logger = logging.getLogger(__name__)
 
@@ -83,6 +84,8 @@ class BuySellPoint:
     bi_index: int
     confirmed: bool
     strength: float
+    reason: str | None = None
+    divergence_index: int | None = None
 
 
 def identify_zhongshus_from_bis(bis: list[Bi]) -> list[Zhongshu]:
@@ -238,6 +241,7 @@ def identify_zhongshus(duans: list[Duan]) -> list[Zhongshu]:
 def identify_buy_sell_points(
     bis: list[Bi],
     zhongshus: list[Zhongshu],
+    divergences: list[Divergence] | None = None,
 ) -> list[BuySellPoint]:
     """
     识别缠论买卖点 — 标准定义。
@@ -259,6 +263,7 @@ def identify_buy_sell_points(
         return points
 
     bi_index_map = {b.index: idx for idx, b in enumerate(bis)}
+    divergence_by_bi = {item.current_bi_index: item for item in (divergences or [])}
 
     for zs in zhongshus:
         if not zs.broken or not zs.break_direction:
@@ -266,19 +271,29 @@ def identify_buy_sell_points(
 
         # 找突破笔(中枢最后一笔的下一笔)
         last_bi_idx_in_zs = zs.bi_indices[-1] if zs.bi_indices else -1
+        departure_bi_idx = bi_index_map.get(last_bi_idx_in_zs)
         break_bi_idx = bi_index_map.get(last_bi_idx_in_zs + 1)
-        if break_bi_idx is None or break_bi_idx >= bi_count:
+        if (
+            departure_bi_idx is None
+            or break_bi_idx is None
+            or break_bi_idx >= bi_count
+        ):
             continue
+        departure_bi = bis[departure_bi_idx]
         break_bi = bis[break_bi_idx]
 
         if zs.break_direction == "down":
             # 向下突破 → 买点
-            # 一买: 突破笔低点
-            points.append(BuySellPoint(
-                type="buy1", price=break_bi.low, time=break_bi.end_time,
-                zhongshu_index=zs.index, bi_index=break_bi.index,
-                confirmed=True, strength=zs.low - break_bi.low,
-            ))
+            # 一买: 向下离开中枢并出现确认底背驰
+            divergence = divergence_by_bi.get(departure_bi.index)
+            if divergence and divergence.type == "bottom":
+                points.append(BuySellPoint(
+                    type="buy1", price=departure_bi.low, time=departure_bi.end_time,
+                    zhongshu_index=zs.index, bi_index=departure_bi.index,
+                    confirmed=divergence.confirmed,
+                    strength=round(1 - divergence.strength_ratio, 4),
+                    reason="bottom_divergence", divergence_index=divergence.index,
+                ))
 
             # 二买: 反弹后下跌不破一买低点
             if break_bi_idx + 2 < bi_count:
@@ -306,12 +321,16 @@ def identify_buy_sell_points(
 
         elif zs.break_direction == "up":
             # 向上突破 → 卖点
-            # 一卖: 突破笔高点
-            points.append(BuySellPoint(
-                type="sell1", price=break_bi.high, time=break_bi.end_time,
-                zhongshu_index=zs.index, bi_index=break_bi.index,
-                confirmed=True, strength=break_bi.high - zs.high,
-            ))
+            # 一卖: 向上离开中枢并出现确认顶背驰
+            divergence = divergence_by_bi.get(departure_bi.index)
+            if divergence and divergence.type == "top":
+                points.append(BuySellPoint(
+                    type="sell1", price=departure_bi.high, time=departure_bi.end_time,
+                    zhongshu_index=zs.index, bi_index=departure_bi.index,
+                    confirmed=divergence.confirmed,
+                    strength=round(1 - divergence.strength_ratio, 4),
+                    reason="top_divergence", divergence_index=divergence.index,
+                ))
 
             # 二卖: 回调后反弹不破一卖高点
             if break_bi_idx + 2 < bi_count:

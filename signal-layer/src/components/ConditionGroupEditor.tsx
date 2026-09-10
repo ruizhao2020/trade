@@ -45,6 +45,8 @@ const PRICE_OPTIONS = [
 ]
 
 const CHAN_OPTIONS = [
+  { value: 'chan:bottom', label: '底背驰', element: 'divergence' as const, property: 'bottom' },
+  { value: 'chan:top', label: '顶背驰', element: 'divergence' as const, property: 'top' },
   { value: 'chan:buy1', label: '一买', element: 'buySellPoint' as const, property: 'buy1' },
   { value: 'chan:buy2', label: '二买', element: 'buySellPoint' as const, property: 'buy2' },
   { value: 'chan:buy3', label: '三买', element: 'buySellPoint' as const, property: 'buy3' },
@@ -193,8 +195,8 @@ export function ConditionGroupEditor({ groups, indicators, onChange, allowEmpty 
               const rightSrc = cond.right.source
               const leftInfo = leftSrc === 'indicator' ? indicators.find(i => i.type === (cond.left as {indicatorType?: string}).indicatorType) : null
               const rightInfo = rightSrc === 'indicator' ? indicators.find(i => i.type === (cond.right as {indicatorType?: string}).indicatorType) : null
-              // 缠论买卖点（1/2/3买/卖）是独立条件，不需要操作符和右值
-              const isChanSignal = leftSrc === 'chan' && (cond.left as {element?: string}).element === 'buySellPoint'
+              // 缠论背驰和买卖点是独立事件条件，不需要操作符和右值
+              const isChanSignal = leftSrc === 'chan' && ['divergence', 'buySellPoint'].includes((cond.left as {element?: string}).element ?? '')
               const isMaLeft = leftSrc === 'indicator' && (cond.left as IndicatorValue).indicatorType === 'ma'
               const directionOperators: ConditionOperator[] = [
                 ConditionOperator.Rising,
@@ -224,8 +226,8 @@ export function ConditionGroupEditor({ groups, indicators, onChange, allowEmpty 
                   const opt = [...CHAN_OPTIONS, ...CHAN_SHAPE_OPTIONS].find(o => o.value === e.target.value)
                   const element = opt?.element ?? 'bi'
                   const property = (opt as typeof CHAN_OPTIONS[0])?.property
-                  if (side === 'left' && element === 'buySellPoint') {
-                    // 缠论买卖点：独立条件，自动设为「数量 > 0」（存在即满足）
+                  if (side === 'left' && ['divergence', 'buySellPoint'].includes(element)) {
+                    // 缠论事件：独立条件，自动设为「数量 > 0」（存在即满足）
                     updateCondition(gi, conditionIndex, {
                       left: { source: 'chan', element, property },
                       operator: ConditionOperator.GreaterThan,
@@ -253,7 +255,7 @@ export function ConditionGroupEditor({ groups, indicators, onChange, allowEmpty 
                     className={`${selClass} flex-1 min-w-[150px]`} style={selStyle}>
                     <optgroup label="价格">{PRICE_OPTIONS.map(o => <option key={o.value} value={o.value} className="bg-[var(--bg-secondary)] text-[var(--text-primary)]">{o.label}</option>)}</optgroup>
                     <optgroup label="指标">{indicators.map(i => <option key={`indicator:${i.type}`} value={`indicator:${i.type}`} className="bg-[var(--bg-secondary)] text-[var(--text-primary)]">{i.name}</option>)}</optgroup>
-                    <optgroup label="缠论·买卖点">{CHAN_OPTIONS.map(o => <option key={o.value} value={o.value} className="bg-[var(--bg-secondary)] text-[var(--text-primary)]">{o.label}</option>)}</optgroup>
+                    <optgroup label="缠论·信号">{CHAN_OPTIONS.map(o => <option key={o.value} value={o.value} className="bg-[var(--bg-secondary)] text-[var(--text-primary)]">{o.label}</option>)}</optgroup>
                     <optgroup label="缠论·形态">{CHAN_SHAPE_OPTIONS.map(o => <option key={o.value} value={o.value} className="bg-[var(--bg-secondary)] text-[var(--text-primary)]">{o.label}</option>)}</optgroup>
                     <optgroup label="其他"><option value="constant" className="bg-[var(--bg-secondary)] text-[var(--text-primary)]">固定值</option></optgroup>
                   </select>
@@ -281,7 +283,7 @@ export function ConditionGroupEditor({ groups, indicators, onChange, allowEmpty 
                       className="w-[90px] bg-[var(--bg-tertiary)] text-[13px] text-[var(--text-primary)] px-3 py-2 rounded-lg border border-[var(--border-primary)] outline-none focus:border-[var(--accent)] transition-colors duration-150 text-right font-mono" placeholder="数值" />
                   )}
 
-                  {/* 缠论买卖点：独立条件，不显示操作符和右值 */}
+                  {/* 缠论背驰/买卖点：独立条件，不显示操作符和右值 */}
                   {!isChanSignal && (
                     <>
                       <select value={cond.operator} aria-label={`条件 ${conditionIndex + 1} 运算符`} onChange={(e) => {
@@ -305,7 +307,7 @@ export function ConditionGroupEditor({ groups, indicators, onChange, allowEmpty 
                             className={`${selClass} flex-1 min-w-[150px]`} style={selStyle}>
                             <optgroup label="价格">{PRICE_OPTIONS.map(o => <option key={o.value} value={o.value} className="bg-[var(--bg-secondary)] text-[var(--text-primary)]">{o.label}</option>)}</optgroup>
                             <optgroup label="指标">{indicators.map(i => <option key={`indicator:${i.type}`} value={`indicator:${i.type}`} className="bg-[var(--bg-secondary)] text-[var(--text-primary)]">{i.name}</option>)}</optgroup>
-                            <optgroup label="缠论·买卖点">{CHAN_OPTIONS.map(o => <option key={o.value} value={o.value} className="bg-[var(--bg-secondary)] text-[var(--text-primary)]">{o.label}</option>)}</optgroup>
+                            <optgroup label="缠论·信号">{CHAN_OPTIONS.map(o => <option key={o.value} value={o.value} className="bg-[var(--bg-secondary)] text-[var(--text-primary)]">{o.label}</option>)}</optgroup>
                             <optgroup label="缠论·形态">{CHAN_SHAPE_OPTIONS.map(o => <option key={o.value} value={o.value} className="bg-[var(--bg-secondary)] text-[var(--text-primary)]">{o.label}</option>)}</optgroup>
                             <optgroup label="其他"><option value="constant" className="bg-[var(--bg-secondary)] text-[var(--text-primary)]">固定值</option></optgroup>
                           </select>

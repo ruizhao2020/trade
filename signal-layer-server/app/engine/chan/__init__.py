@@ -35,6 +35,7 @@ from app.engine.chan.signal import (
     identify_zhongshus_from_bis, identify_zhongshus,
     Zhongshu, identify_buy_sell_points, BuySellPoint,
 )
+from app.engine.chan.divergence import Divergence, identify_divergences
 
 logger = logging.getLogger(__name__)
 
@@ -53,6 +54,7 @@ class ChanResult:
     zhongshus: list[Zhongshu]              # 笔中枢(3 笔重叠扩展,level="bi")
     duan_zhongshus: list[Zhongshu]         # 段中枢(3 段重叠扩展,level="duan")
     buy_sell_points: list[BuySellPoint]
+    divergences: list[Divergence]
     updated_at: int
 
 
@@ -89,8 +91,9 @@ class ChanEngine:
         # 5b. 段中枢:3 段重叠扩展法(缠论原著严格定义)
         duan_zhongshus = identify_zhongshus(duans)
 
-        # 6. 识别买卖点(基于笔中枢,信号更及时)
-        points = identify_buy_sell_points(bis, zhongshus)
+        # 6. 识别背驰，并以确认背驰作为一类买卖点的必要条件
+        divergences = identify_divergences(bis, zhongshus)
+        points = identify_buy_sell_points(bis, zhongshus, divergences)
 
         last_time = klines[-1]["open_time"] if klines else 0
 
@@ -98,7 +101,7 @@ class ChanEngine:
                     f"{len(bars_ubi)} bars_ubi, {len(fenxings)} fenxings, "
                     f"{len(bis)} bis, {len(duans)} duans, "
                     f"{len(zhongshus)} bi_zs, {len(duan_zhongshus)} duan_zs, "
-                    f"{len(points)} buy_sell_points")
+                    f"{len(divergences)} divergences, {len(points)} buy_sell_points")
         return ChanResult(
             symbol=symbol,
             timeframe=timeframe,
@@ -109,5 +112,6 @@ class ChanEngine:
             zhongshus=zhongshus,
             duan_zhongshus=duan_zhongshus,
             buy_sell_points=points,
+            divergences=divergences,
             updated_at=last_time,
         )

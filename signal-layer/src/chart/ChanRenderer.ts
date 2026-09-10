@@ -25,6 +25,7 @@ import type {
   Fenxing,
   Zhongshu,
   BuySellPoint,
+  Divergence,
   Duan,
   Bi,
 } from '../core/types.ts'
@@ -66,13 +67,13 @@ class ZhongshuRenderer implements IPrimitivePaneRenderer {
         const h = Math.abs(yHigh - yLow)
 
         const fillColor = zs.broken
-          ? (zs.breakDirection === 'up' ? 'rgba(16,185,129,0.15)' : 'rgba(239,68,68,0.15)')
+          ? (zs.breakDirection === 'up' ? 'rgba(255,91,98,0.15)' : 'rgba(47,197,141,0.15)')
           : this.options.color + '33'
         ctx.fillStyle = fillColor
         ctx.fillRect(x, yTop, w, h)
 
         ctx.strokeStyle = zs.broken
-          ? (zs.breakDirection === 'up' ? '#10b981' : '#ef4444')
+          ? (zs.breakDirection === 'up' ? '#ff5b62' : '#2fc58d')
           : this.options.color
         ctx.lineWidth = 1
         ctx.strokeRect(x, yTop, w, h)
@@ -341,6 +342,21 @@ function buildBuySellMarkers(points: BuySellPoint[]): SeriesMarker<Time>[] {
   })
 }
 
+function buildDivergenceMarkers(divergences: Divergence[]): SeriesMarker<Time>[] {
+  return divergences.map(item => {
+    const isBottom = item.type === 'bottom'
+    return {
+      time: item.time / 1000 as Time,
+      position: isBottom ? 'atPriceBottom' : 'atPriceTop',
+      price: isBottom ? item.price * 0.97 : item.price * 1.03,
+      color: isBottom ? '#48c7e8' : '#d77dff',
+      shape: 'square',
+      size: 1,
+      text: isBottom ? '底背驰' : '顶背驰',
+    }
+  })
+}
+
 export class ChanRenderer {
   private lineSeriesList: ISeriesApi<'Line'>[] = []
   private primitives: IPanePrimitive[] = []
@@ -415,6 +431,9 @@ export class ChanRenderer {
     if (options.showFenxing && analysis.fenxings.length > 0) {
       const chanKLineTimes = analysis.chanKLines.map(k => k.openTime)
       markers.push(...buildFenxingMarkers(analysis.fenxings, chanKLineTimes))
+    }
+    if (options.showDivergences && analysis.divergences.length > 0) {
+      markers.push(...buildDivergenceMarkers(analysis.divergences))
     }
     if (options.showBuySellPoints && analysis.buySellPoints.length > 0) {
       markers.push(...buildBuySellMarkers(analysis.buySellPoints))

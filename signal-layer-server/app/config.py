@@ -16,6 +16,7 @@
 """
 
 import logging
+from urllib.parse import quote_plus
 
 logging.basicConfig(
     level=logging.INFO,
@@ -56,11 +57,18 @@ class Settings(BaseSettings):
     mock_base_price: float = 50000.0
     mock_candle_count: int = 200
 
+    # ==================== 认证与权限 ====================
+    token_secret: str = "change-this-secret-before-production"
+    token_expire_minutes: int = 1440
+    bootstrap_admin_username: str = "admin"
+    bootstrap_admin_password: str = "Admin123!"
+    cors_origins: str = "http://localhost:4173,http://127.0.0.1:4173"
+
     @property
     def database_url(self) -> str:
         """组装 MySQL 连接字符串（aiomysql 驱动）"""
         return (
-            f"mysql+aiomysql://{self.mysql_user}:{self.mysql_password}"
+            f"mysql+aiomysql://{quote_plus(self.mysql_user)}:{quote_plus(self.mysql_password)}"
             f"@{self.mysql_host}:{self.mysql_port}/{self.mysql_database}"
             f"?charset=utf8mb4"
         )
@@ -76,4 +84,3 @@ class Settings(BaseSettings):
 
 # 全局配置实例。模块级导入：from app.config import settings
 settings = Settings()
-

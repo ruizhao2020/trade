@@ -248,6 +248,13 @@ class ConditionService:
                         if p.type == value.property
                     ))
                 return float(len(chan.buy_sell_points))
+            if value.element == "divergence":
+                if value.property:
+                    return float(sum(
+                        1 for item in chan.divergences
+                        if item.type == value.property and item.confirmed
+                    ))
+                return float(sum(1 for item in chan.divergences if item.confirmed))
             if value.element == "bi":
                 return float(len(chan.bis))
             if value.element == "zhongshu":

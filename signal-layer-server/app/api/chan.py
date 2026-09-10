@@ -1,14 +1,15 @@
 import logging
-from fastapi import APIRouter, HTTPException, Query
+from fastapi import APIRouter, HTTPException, Query, Depends
+from app.api.security import require_permission
 from app.api.deps import get_data_service, get_chan_service
 from app.schemas.chan import (
     ChanAnalysisResponse, BiSchema, DuanSchema,
-    ZhongshuSchema, BuySellPointSchema,
+    ZhongshuSchema, BuySellPointSchema, DivergenceSchema,
 )
 
 logger = logging.getLogger(__name__)
 
-router = APIRouter(prefix="/api/v1/chan", tags=["chan"])
+router = APIRouter(prefix="/api/v1/chan", tags=["chan"], dependencies=[Depends(require_permission("analysis.compute"))])
 
 
 @router.get("/{symbol}/{timeframe}", response_model=ChanAnalysisResponse)
@@ -66,6 +67,7 @@ async def get_chan_analysis(
             high=str(z.high), low=str(z.low), mid=str(z.mid),
             start_time=z.start_time, end_time=z.end_time,
             level=z.level, broken=z.broken,
+            bi_indices=z.bi_indices, break_direction=z.break_direction,
         )
         for z in result.zhongshus
     ]
@@ -76,6 +78,7 @@ async def get_chan_analysis(
             high=str(z.high), low=str(z.low), mid=str(z.mid),
             start_time=z.start_time, end_time=z.end_time,
             level=z.level, broken=z.broken,
+            bi_indices=z.bi_indices, break_direction=z.break_direction,
         )
         for z in result.duan_zhongshus
     ]
@@ -84,14 +87,31 @@ async def get_chan_analysis(
         BuySellPointSchema(
             type=p.type, price=str(p.price), time=p.time,
             confirmed=p.confirmed, strength=p.strength,
+            zhongshu_index=p.zhongshu_index, bi_index=p.bi_index,
+            reason=p.reason, divergence_index=p.divergence_index,
         )
         for p in result.buy_sell_points
+    ]
+    divergences = [
+        DivergenceSchema(
+            index=item.index, type=item.type, level=item.level, kind=item.kind,
+            price=str(item.price), time=item.time,
+            zhongshu_index=item.zhongshu_index,
+            reference_bi_index=item.reference_bi_index,
+            current_bi_index=item.current_bi_index,
+            reference_power=item.reference_power,
+            current_power=item.current_power,
+            strength_ratio=item.strength_ratio,
+            confirmed=item.confirmed,
+        )
+        for item in result.divergences
     ]
 
     actual_cached = False
 
     logger.info(f"GET /chan/{symbol}/{timeframe} -> {len(bis)} bis, {len(duans)} duans, "
-                f"{len(zhongshus)} bi_zs, {len(duan_zhongshus)} duan_zs, {len(points)} points")
+                f"{len(zhongshus)} bi_zs, {len(duan_zhongshus)} duan_zs, "
+                f"{len(divergences)} divergences, {len(points)} points")
     return ChanAnalysisResponse(
         symbol=symbol,
         timeframe=timeframe,
@@ -100,6 +120,7 @@ async def get_chan_analysis(
         zhongshus=zhongshus,
         duan_zhongshus=duan_zhongshus,
         buy_sell_points=points,
+        divergences=divergences,
         updated_at=result.updated_at,
         cached=actual_cached,
     )

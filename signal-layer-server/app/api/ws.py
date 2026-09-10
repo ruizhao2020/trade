@@ -3,7 +3,11 @@ import asyncio
 import time
 import logging
 from fastapi import APIRouter, WebSocket, WebSocketDisconnect
+from sqlalchemy import select
 from app.api.deps import get_data_service
+from app.db import get_session
+from app.models.auth import User
+from app.services.auth_service import decode_access_token, permission_codes
 
 logger = logging.getLogger(__name__)
 
@@ -107,6 +111,20 @@ manager = ConnectionManager()
 
 @router.websocket("/ws")
 async def websocket_endpoint(ws: WebSocket):
+    token = ws.query_params.get("token", "")
+    try:
+        user_id = decode_access_token(token)
+        user = None
+        async for session in get_session():
+            user = (await session.execute(select(User).where(User.id == user_id))).scalar_one_or_none()
+            break
+        if not user or not user.enabled:
+            raise ValueError("用户不可用")
+        permissions = permission_codes(user)
+    except ValueError:
+        await ws.close(code=4401, reason="请先登录")
+        return
+
     client_id = await manager.connect(ws)
     logger.info(f"WebSocket connection established: {client_id}")
 
@@ -126,6 +144,9 @@ async def websocket_endpoint(ws: WebSocket):
             if msg_type == "subscribe":
                 channel = msg.get("channel", "")
                 if channel == "kline":
+                    if "market.read" not in permissions:
+                        await ws.send_json({"type": "error", "message": "缺少行情权限"})
+                        continue
                     symbol = msg.get("symbol", "")
                     timeframe = msg.get("timeframe", "")
                     channel_key = f"{symbol}:{timeframe}"
@@ -136,6 +157,9 @@ async def websocket_endpoint(ws: WebSocket):
                         "key": channel_key,
                     })
                 elif channel == "signal":
+                    if "strategy.evaluate" not in permissions:
+                        await ws.send_json({"type": "error", "message": "缺少策略评估权限"})
+                        continue
                     template_id = msg.get("template_id", "")
                     manager.subscribe(client_id, "signal", template_id)
                     await ws.send_json({

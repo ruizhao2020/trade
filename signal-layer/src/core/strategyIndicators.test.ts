@@ -14,6 +14,7 @@ const baseOptions: ChanRenderOptions = {
   showZhongshu: false,
   showZhongshuAxis: false,
   showBuySellPoints: false,
+  showDivergences: false,
   zsLevel: 'bi',
 }
 
@@ -95,6 +96,7 @@ describe('strategy indicator dependencies by timeframe', () => {
       showDuan: true,
       showZhongshu: true,
       showBuySellPoints: true,
+      showDivergences: true,
     })
   })
 

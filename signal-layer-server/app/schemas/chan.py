@@ -43,6 +43,8 @@ class ZhongshuSchema(BaseModel):
     end_time: int
     level: str
     broken: bool
+    bi_indices: list[int]
+    break_direction: Optional[Literal["up", "down"]] = None
 
 
 class BuySellPointSchema(BaseModel):
@@ -51,6 +53,26 @@ class BuySellPointSchema(BaseModel):
     time: int
     confirmed: bool
     strength: float
+    zhongshu_index: Optional[int] = None
+    bi_index: int
+    reason: Optional[str] = None
+    divergence_index: Optional[int] = None
+
+
+class DivergenceSchema(BaseModel):
+    index: int
+    type: Literal["top", "bottom"]
+    level: Literal["bi"]
+    kind: Literal["consolidation"]
+    price: str
+    time: int
+    zhongshu_index: int
+    reference_bi_index: int
+    current_bi_index: int
+    reference_power: float
+    current_power: float
+    strength_ratio: float
+    confirmed: bool
 
 
 class ChanAnalysisResponse(BaseModel):
@@ -61,5 +83,6 @@ class ChanAnalysisResponse(BaseModel):
     zhongshus: list[ZhongshuSchema]              # 笔中枢(level="bi")
     duan_zhongshus: list[ZhongshuSchema]         # 段中枢(level="duan")
     buy_sell_points: list[BuySellPointSchema]
+    divergences: list[DivergenceSchema]
     updated_at: int
     cached: bool

@@ -3,6 +3,7 @@ from __future__ import annotations
 import re
 from datetime import datetime
 from typing import Any
+from app.config import settings
 
 
 TIMEFRAME_SUFFIX: dict[str, str] = {
@@ -22,11 +23,11 @@ TIMEFRAME_MINUTES: dict[str, int] = {
 }
 
 MYSQL_CONFIG = {
-    "host": "gz-cdb-qp23sl8p.sql.tencentcdb.com",
-    "port": 23784,
-    "user": "root",
-    "password": "stock2026",
-    "database": "stock",
+    "host": settings.mysql_host,
+    "port": settings.mysql_port,
+    "user": settings.mysql_user,
+    "password": settings.mysql_password,
+    "database": settings.mysql_database,
     "connect_timeout": 15,
     "read_timeout": 20,
     "write_timeout": 20,

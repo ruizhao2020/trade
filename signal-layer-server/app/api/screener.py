@@ -3,7 +3,8 @@ from __future__ import annotations
 import asyncio
 import logging
 
-from fastapi import APIRouter, HTTPException
+from fastapi import APIRouter, HTTPException, Depends
+from app.api.security import require_permission
 
 from app.api.deps import (
     get_chan_service,
@@ -20,7 +21,7 @@ logger = logging.getLogger(__name__)
 router = APIRouter(prefix="/api/v1/screener", tags=["screener"])
 
 
-@router.post("/run", response_model=ScreenerResponse)
+@router.post("/run", response_model=ScreenerResponse, dependencies=[Depends(require_permission("screener.run"))])
 async def run_screener(request: ScreenerRequest):
     """用同一策略批量评估标的，并按完成度返回匹配结果。"""
     try:

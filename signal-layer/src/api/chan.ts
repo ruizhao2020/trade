@@ -1,6 +1,6 @@
 import { api } from './client'
 import type {
-  ChanAnalysis, ChanKLine, Fenxing, Bi, Duan, Zhongshu, BuySellPoint, SignalType,
+  ChanAnalysis, ChanKLine, Fenxing, Bi, Duan, Zhongshu, BuySellPoint, Divergence, SignalType,
 } from '../core/types.ts'
 
 interface ApiBi {
@@ -20,6 +20,16 @@ interface ApiZhongshu {
 
 interface ApiBsp {
   type: string; price: string; time: number; confirmed: boolean; strength: number
+  zhongshu_index?: number | null; bi_index?: number
+  reason?: string | null; divergence_index?: number | null
+}
+
+interface ApiDivergence {
+  index: number; type: 'top' | 'bottom'; level: 'bi'; kind: 'consolidation'
+  price: string; time: number; zhongshu_index: number
+  reference_bi_index: number; current_bi_index: number
+  reference_power: number; current_power: number; strength_ratio: number
+  confirmed: boolean
 }
 
 interface ApiFeatElement {
@@ -43,6 +53,7 @@ interface ApiChanResponse {
   zhongshus: ApiZhongshu[]           // 笔中枢(level="bi")
   duan_zhongshus: ApiZhongshu[]      // 段中枢(level="duan")
   buy_sell_points: ApiBsp[]
+  divergences?: ApiDivergence[]
   updated_at: number
   cached: boolean
 }
@@ -93,9 +104,28 @@ function toChanAnalysis(raw: ApiChanResponse): ChanAnalysis {
     type: p.type as SignalType,
     price: f(p.price),
     time: p.time,
-    biIndex: 0,
+    zhongshuIndex: p.zhongshu_index ?? undefined,
+    biIndex: p.bi_index ?? 0,
     confirmed: p.confirmed,
     strength: p.strength,
+    reason: p.reason ?? undefined,
+    divergenceIndex: p.divergence_index ?? undefined,
+  }))
+
+  const divergences: Divergence[] = (raw.divergences ?? []).map(item => ({
+    index: item.index,
+    type: item.type,
+    level: item.level,
+    kind: item.kind,
+    price: f(item.price),
+    time: item.time,
+    zhongshuIndex: item.zhongshu_index,
+    referenceBiIndex: item.reference_bi_index,
+    currentBiIndex: item.current_bi_index,
+    referencePower: item.reference_power,
+    currentPower: item.current_power,
+    strengthRatio: item.strength_ratio,
+    confirmed: item.confirmed,
   }))
 
   return {
@@ -107,6 +137,7 @@ function toChanAnalysis(raw: ApiChanResponse): ChanAnalysis {
     zhongshus,
     duanZhongshus,
     buySellPoints,
+    divergences,
     updatedAt: raw.updated_at,
     isComplete: true,
   }
@@ -135,6 +166,7 @@ export async function fetchChanAnalysis(symbol: string, timeframe: string, limit
     zhongshus: raw.zhongshus.length,
     duanZhongshus: raw.duan_zhongshus?.length ?? 0,
     buySellPoints: raw.buy_sell_points.length,
+    divergences: raw.divergences?.length ?? 0,
   })
   return toChanAnalysis(raw)
 }

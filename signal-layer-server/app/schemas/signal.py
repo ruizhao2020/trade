@@ -39,7 +39,7 @@ class IndicatorValue(BaseModel):
 
 class ChanValue(BaseModel):
     source: Literal["chan"]
-    element: Literal["fenxing", "bi", "zhongshu", "buySellPoint"]
+    element: Literal["fenxing", "bi", "zhongshu", "divergence", "buySellPoint"]
     property: Optional[str] = None
 
 

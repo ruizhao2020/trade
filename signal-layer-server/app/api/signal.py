@@ -1,5 +1,6 @@
 import logging
-from fastapi import APIRouter, HTTPException
+from fastapi import APIRouter, HTTPException, Depends
+from app.api.security import require_permission
 from app.api.deps import get_data_service, get_chan_service, get_indicator_service, get_condition_service
 from app.schemas.signal import (
     EvaluateRequest, SignalResult,
@@ -16,7 +17,7 @@ logger = logging.getLogger(__name__)
 router = APIRouter(prefix="/api/v1/signal", tags=["signal"])
 
 
-@router.post("/evaluate", response_model=SignalResult)
+@router.post("/evaluate", response_model=SignalResult, dependencies=[Depends(require_permission("strategy.evaluate"))])
 async def evaluate_signal(req: EvaluateRequest):
     template = req.template
     symbol = req.symbol
@@ -45,7 +46,7 @@ async def evaluate_signal(req: EvaluateRequest):
     return result
 
 
-@router.post("/backtest", response_model=BacktestResult)
+@router.post("/backtest", response_model=BacktestResult, dependencies=[Depends(require_permission("strategy.backtest"))])
 async def backtest(req: BacktestRequest):
     template = req.template
     symbol = req.symbol

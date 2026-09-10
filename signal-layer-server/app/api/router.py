@@ -7,9 +7,13 @@ from app.api.template import router as template_router
 from app.api.symbol import router as symbol_router
 from app.api.ws import router as ws_router
 from app.api.screener import router as screener_router
+from app.api.auth import router as auth_router
+from app.api.admin import router as admin_router
 
 api_router = APIRouter()
 
+api_router.include_router(auth_router)
+api_router.include_router(admin_router)
 api_router.include_router(kline_router)
 api_router.include_router(chan_router)
 api_router.include_router(indicator_router)
