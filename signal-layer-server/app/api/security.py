@@ -3,7 +3,7 @@ from __future__ import annotations
 from collections.abc import Callable
 from typing import Optional
 
-from fastapi import Depends, HTTPException
+from fastapi import Depends, HTTPException, Request
 from fastapi.security import HTTPAuthorizationCredentials, HTTPBearer
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -16,6 +16,7 @@ bearer = HTTPBearer(auto_error=False)
 
 
 async def current_user(
+    request: Request,
     credentials: Optional[HTTPAuthorizationCredentials] = Depends(bearer),
     session: AsyncSession = Depends(get_session),
 ) -> User:
@@ -25,6 +26,9 @@ async def current_user(
         user_id = decode_access_token(credentials.credentials)
     except ValueError as error:
         raise HTTPException(status_code=401, detail=str(error), headers={"WWW-Authenticate": "Bearer"}) from error
+    middleware_user = getattr(request.state, "current_user", None)
+    if middleware_user is not None and middleware_user.id == user_id:
+        return middleware_user
     user = (await session.execute(select(User).where(User.id == user_id))).scalar_one_or_none()
     if not user or not user.enabled:
         raise HTTPException(status_code=401, detail="用户不存在或已停用")

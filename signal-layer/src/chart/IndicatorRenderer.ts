@@ -16,12 +16,21 @@
 
 import type { IChartApi, ISeriesApi, Time, ISeriesMarkersPluginApi, SeriesMarker } from 'lightweight-charts'
 import { LineSeries, HistogramSeries, createSeriesMarkers } from 'lightweight-charts'
-import type { IndicatorResult, RenderSpec } from '../core/types.ts'
+import type { IndicatorProfileData, IndicatorResult, RenderSpec } from '../core/types.ts'
+import { volumeClassStyle } from '../core/volumeIndicator.ts'
+import { findProfileSnapshot } from '../core/profileData.ts'
+import { VolumeBoxPrimitive, type VolumeBoxPoint } from './VolumeBoxPrimitive.ts'
+import { PriceProfilePrimitive, type PriceProfilePoint } from './PriceProfilePrimitive.ts'
+
+interface AttachedPrimitive {
+  detach: () => void
+}
 
 interface CreatedSeries {
   indicatorKey: string
   series: Array<ISeriesApi<'Line'> | ISeriesApi<'Histogram'>>
   markerPlugins: ISeriesMarkersPluginApi<Time>[]
+  primitives: AttachedPrimitive[]
   paneIndex: number
 }
 
@@ -30,6 +39,7 @@ export class IndicatorRenderer {
   private candleSeries: ISeriesApi<'Candlestick'>
   private created: CreatedSeries[] = []
   private subPaneCount = 1
+  private priceProfile?: { primitive: PriceProfilePrimitive; data: IndicatorProfileData }
 
   constructor(chart: IChartApi, candleSeries: ISeriesApi<'Candlestick'>) {
     this.chart = chart
@@ -54,6 +64,9 @@ export class IndicatorRenderer {
   /** 清理所有已创建的 series */
   clear() {
     for (const item of this.created) {
+      for (const attached of item.primitives) {
+        try { attached.detach() } catch { /* already detached */ }
+      }
       for (const s of item.series) {
         try { this.chart.removeSeries(s) } catch { /* already removed */ }
       }
@@ -63,6 +76,7 @@ export class IndicatorRenderer {
     }
     this.created = []
     this.subPaneCount = 1
+    this.priceProfile = undefined
   }
 
   /** 渲染单个指标 */
@@ -73,6 +87,7 @@ export class IndicatorRenderer {
 
     const series: Array<ISeriesApi<'Line'> | ISeriesApi<'Histogram'>> = []
     const markerPlugins: ISeriesMarkersPluginApi<Time>[] = []
+    const primitives: AttachedPrimitive[] = []
 
     for (const plot of render.plots) {
       if (plot.type === 'marker') continue
@@ -85,7 +100,22 @@ export class IndicatorRenderer {
 
       if (data.length === 0) continue
 
-      if (plot.type === 'line') {
+      if (plot.type === 'profile') {
+        const profileData = result.profileData
+        const snapshot = findProfileSnapshot(profileData, null)
+        if (profileData && snapshot) {
+          const points = this._profilePoints(profileData, snapshot.weights, snapshot.metrics.current_price)
+          const metrics = snapshot.metrics
+          const primitive = new PriceProfilePrimitive(this.candleSeries, points, {
+            currentPrice: metrics.current_price,
+            peakPrice: metrics.peak_price,
+            averageCost: metrics.average_cost,
+          })
+          this.candleSeries.attachPrimitive(primitive)
+          primitives.push({ detach: () => this.candleSeries.detachPrimitive(primitive) })
+          this.priceProfile = { primitive, data: profileData }
+        }
+      } else if (plot.type === 'line') {
         const s = this.chart.addSeries(LineSeries, {
           color: plot.color,
           lineWidth: 1,
@@ -100,7 +130,30 @@ export class IndicatorRenderer {
           priceLineVisible: false,
           lastValueVisible: false,
         }, paneIndex)
-        s.setData(data)
+        if (result.type === 'volume' && plot.field === 'volume') {
+          const volumeData = result.values
+            .filter(value => Number.isFinite(value.volume))
+            .map(value => ({
+              time: (value.time / 1000) as Time,
+              value: value.volume,
+              color: volumeClassStyle(value.volume_class, value.is_up > 0).color,
+            }))
+          s.setData(volumeData)
+          const boxPoints: VolumeBoxPoint[] = result.values
+            .filter(value => value.volume_class > 0 && Number.isFinite(value.volume))
+            .map(value => ({
+              time: value.time,
+              value: value.volume,
+              color: volumeClassStyle(value.volume_class, value.is_up > 0).color,
+            }))
+          if (boxPoints.length > 0) {
+            const primitive = new VolumeBoxPrimitive(this.chart, s, boxPoints)
+            s.attachPrimitive(primitive)
+            primitives.push({ detach: () => s.detachPrimitive(primitive) })
+          }
+        } else {
+          s.setData(data)
+        }
         series.push(s)
       }
     }
@@ -157,9 +210,36 @@ export class IndicatorRenderer {
       }
     }
 
-    if (series.length > 0 || markerPlugins.length > 0) {
-      this.created.push({ indicatorKey: key, series, markerPlugins, paneIndex })
+    if (series.length > 0 || markerPlugins.length > 0 || primitives.length > 0) {
+      this.created.push({ indicatorKey: key, series, markerPlugins, primitives, paneIndex })
     }
+  }
+
+  setProfileTime(time: number | null): void {
+    if (!this.priceProfile) return
+    const snapshot = findProfileSnapshot(this.priceProfile.data, time)
+    if (!snapshot) return
+    const metrics = snapshot.metrics
+    this.priceProfile.primitive.setSnapshot(
+      this._profilePoints(this.priceProfile.data, snapshot.weights, metrics.current_price),
+      {
+        currentPrice: metrics.current_price,
+        peakPrice: metrics.peak_price,
+        averageCost: metrics.average_cost,
+      },
+    )
+  }
+
+  private _profilePoints(
+    profile: IndicatorProfileData,
+    weights: number[],
+    currentPrice: number,
+  ): PriceProfilePoint[] {
+    return profile.prices.map((price, index) => ({
+      price,
+      weight: weights[index] ?? 0,
+      isProfit: price <= currentPrice,
+    }))
   }
 
   /** 生成指标唯一 key,如 "ma:period=5" */

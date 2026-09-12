@@ -2,6 +2,7 @@ import { useEffect, useMemo, useRef, useState } from 'react'
 import { fetchIndicatorList } from '../api/indicator.ts'
 import type { ChanAnalysis, ChanRenderOptions, IndicatorDisplay, IndicatorInfo } from '../core/types.ts'
 import { getMaPeriodColor, MA_PERIODS } from '../core/indicatorColors.ts'
+import { VOLUME_LEGEND } from '../core/volumeIndicator.ts'
 
 interface Props {
   selectedIndicators: IndicatorDisplay[]
@@ -21,6 +22,17 @@ const CHAN_ITEMS: { key: ChanToggleKey; label: string; color: string; count: (an
   { key: 'showDivergences', label: '背驰', color: '#56c7e8', count: (analysis) => analysis?.divergences.length ?? 0 },
   { key: 'showBuySellPoints', label: '买卖点', color: '#36c995', count: (analysis) => analysis?.buySellPoints.length ?? 0 },
 ]
+
+const PARAM_LABELS: Record<string, string> = {
+  shrink_max: '缩量上限',
+  increase_min: '增量起点',
+  double_min: '倍量起点',
+  triple_min: '三倍量起点',
+  multiple_min: '多倍量起点',
+  bins: '价格档位',
+  lookback: '回看天数',
+  min_turnover_days: '最少有效天数',
+}
 
 function Toggle({ enabled, label, onClick }: { enabled: boolean; label: string; onClick: () => void }) {
   return (
@@ -272,9 +284,26 @@ export function IndicatorWorkbenchToolbar({
         {activeType !== 'ma' && activeType !== 'chan' && activeInfo && (
           <>
             <span className="text-[10px] text-[var(--text-muted)] mr-1">{activeInfo.name} 参数</span>
+            {activeType === 'volume' && (
+              <div className="flex items-center gap-1.5 mr-2 pr-2 border-r border-[var(--border-primary)]">
+                {VOLUME_LEGEND.map(item => (
+                  <span key={item.code} className="h-6 px-1.5 rounded border border-[var(--border-primary)] flex items-center gap-1 text-[10px] text-[var(--text-muted)] whitespace-nowrap">
+                    {item.followsPrice ? (
+                      <span className="w-2 h-2 border border-[var(--border-accent)] grid grid-cols-2 overflow-hidden">
+                        <span className="bg-[#ff5b62]" />
+                        <span className="bg-[#2fc58d]" />
+                      </span>
+                    ) : (
+                      <span className="w-2 h-2 border" style={{ borderColor: item.color }} />
+                    )}
+                    {item.label}
+                  </span>
+                ))}
+              </div>
+            )}
             {Object.entries(activeIndicator?.params ?? activeInfo.default_params).map(([key, value]) => (
               <label key={key} className="flex items-center gap-1.5 text-[10px] text-[var(--text-muted)]">
-                {key}
+                {PARAM_LABELS[key] ?? key}
                 <input
                   type="number"
                   value={value}

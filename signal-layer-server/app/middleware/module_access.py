@@ -46,5 +46,6 @@ class ModuleAccessMiddleware(BaseHTTPMiddleware):
                 return JSONResponse({"detail": "用户不存在或已停用"}, status_code=401)
             if required_permission not in permission_codes(user):
                 return JSONResponse({"detail": f"缺少模块权限：{required_permission}"}, status_code=403)
+            request.state.current_user = user
             break
         return await call_next(request)

@@ -121,12 +121,26 @@ class RenderSpec(BaseModel):
     markers: list[MarkerSpec] = []         # 信号标记(可选)
 
 
+class ProfileSnapshot(BaseModel):
+    """某根 K 线结束时的价格分布快照。"""
+    time: int
+    weights: list[float]
+    metrics: dict[str, float]
+
+
+class ProfileData(BaseModel):
+    """紧凑价格分布；所有快照共享同一价格轴。"""
+    prices: list[float]
+    snapshots: list[ProfileSnapshot]
+
+
 class IndicatorResult(BaseModel):
     """指标计算结果标准结构"""
     type: str                              # 指标类型,如 "ma" / "macd"
     params: dict[str, Any]                 # 本次计算使用的参数
     values: list[dict[str, float]]         # 每根 K 线对应的指标值(含 time 字段)
     render: Optional[RenderSpec] = None    # 渲染提示(前端据此画图)
+    profile_data: Optional[ProfileData] = None
 
 
 class IndicatorCalculator(ABC):

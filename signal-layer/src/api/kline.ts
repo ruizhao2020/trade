@@ -1,4 +1,5 @@
 import { api } from './client'
+import { marketRequestTtl, recentMarketRequests } from './requestCache.ts'
 
 export interface ApiKlineItem {
   open_time: number
@@ -7,7 +8,12 @@ export interface ApiKlineItem {
   low: string
   close: string
   volume: string
+  amount?: string
   turnover?: string
+  turnover_rate?: string
+  circulating_shares?: string
+  adjustment_factor?: string
+  adjustment_type?: string
   is_closed: boolean
 }
 
@@ -27,7 +33,12 @@ export interface FrontendKline {
   low: number
   close: number
   volume: number
+  amount?: number
   turnover?: number
+  turnoverRate?: number
+  circulatingShares?: number
+  adjustmentFactor?: number
+  adjustmentType?: string
   isClosed: boolean
 }
 
@@ -46,7 +57,12 @@ function toFrontend(item: ApiKlineItem): FrontendKline {
     low: parseFloat(item.low),
     close: parseFloat(item.close),
     volume: parseFloat(item.volume),
+    ...(item.amount ? { amount: parseFloat(item.amount) } : {}),
     ...(item.turnover ? { turnover: parseFloat(item.turnover) } : {}),
+    ...(item.turnover_rate ? { turnoverRate: parseFloat(item.turnover_rate) } : {}),
+    ...(item.circulating_shares ? { circulatingShares: parseFloat(item.circulating_shares) } : {}),
+    ...(item.adjustment_factor ? { adjustmentFactor: parseFloat(item.adjustment_factor) } : {}),
+    ...(item.adjustment_type ? { adjustmentType: item.adjustment_type } : {}),
     isClosed: item.is_closed,
   }
 }
@@ -54,10 +70,13 @@ function toFrontend(item: ApiKlineItem): FrontendKline {
 export async function fetchKlines(
   symbol: string, timeframe: string, limit = 200,
 ): Promise<FrontendKlineResponse> {
-  console.log(`[SL:API] GET /klines/${symbol}`, { timeframe, limit })
-  const raw = await api.get<ApiKlineResponse>(`/klines/${symbol}`, { timeframe, limit: String(limit) })
-  console.log(`[SL:API] GET /klines/${symbol} -> OK ${raw.count} candles`)
-  return { symbol: raw.symbol, timeframe: raw.timeframe, data: raw.data.map(toFrontend), count: raw.count }
+  const key = `kline:${symbol}:${timeframe}:${limit}`
+  return recentMarketRequests.run(key, marketRequestTtl(timeframe), async () => {
+    console.log(`[SL:API] GET /klines/${symbol}`, { timeframe, limit })
+    const raw = await api.get<ApiKlineResponse>(`/klines/${symbol}`, { timeframe, limit: String(limit) })
+    console.log(`[SL:API] GET /klines/${symbol} -> OK ${raw.count} candles`)
+    return { symbol: raw.symbol, timeframe: raw.timeframe, data: raw.data.map(toFrontend), count: raw.count }
+  })
 }
 
 /** 按时间范围读取 K 线。服务端会先查 DB，只从外部行情源补齐缺失区间。 */

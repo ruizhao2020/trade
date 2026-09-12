@@ -9,7 +9,12 @@ class KlineItem(BaseModel):
     low: str
     close: str
     volume: str
+    amount: Optional[str] = None
     turnover: Optional[str] = None
+    turnover_rate: Optional[str] = None
+    circulating_shares: Optional[str] = None
+    adjustment_factor: Optional[str] = None
+    adjustment_type: Optional[str] = None
     is_closed: bool = True
 
 

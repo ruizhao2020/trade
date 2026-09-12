@@ -23,6 +23,15 @@
 
 这些表由 `MySQLMarketDataStore` 按需创建。
 
+动态行情表除 OHLCV 与成交额外，还会保存筹码计算所需的可用字段：
+
+- `turnover_rate`：换手率，单位为百分比
+- `circulating_shares`：当日流通股本，单位为股
+- `adjustment_factor`：前复权因子
+- `adjustment_type`：价格复权类型，当前为 `qfq`
+
+旧动态表会在行情回填时自动补列；已有完整K线但缺少上述字段时，服务会先返回K线，并在后台补齐筹码字段，避免阻塞图表加载。
+
 ## 初始化方式
 
 SQLite 测试/迁移库：

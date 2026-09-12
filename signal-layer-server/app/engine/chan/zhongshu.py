@@ -200,8 +200,70 @@ def build_duans(bis: list[Bi]) -> list[Duan]:
         else:
             break
 
+    _align_duan_boundaries(duans, bis)
     logger.info(f"build_duans: {bi_count} bis -> {len(duans)} duans (特征序列分型法)")
     return duans
+
+
+def _align_duan_boundaries(duans: list[Duan], bis: list[Bi]) -> None:
+    """让相邻线段共享同一个极值端点，并据此重新划分边界笔。
+
+    特征序列确认发生后，后一段可能在最初几笔内继续创出新极值。
+    `_make_duan` 会正确地把后一段起点放到该极值，但前一段仍可能停留在
+    较早的候选点，造成两段断开。这里以后一段已经确认的起点为最终边界：
+    边界前的笔归前段，边界开始的笔归后段。
+    """
+    if len(duans) < 2:
+        return
+
+    position_by_index = {item.index: position for position, item in enumerate(bis)}
+
+    for position in range(1, len(duans)):
+        previous = duans[position - 1]
+        current = duans[position]
+        boundary_position = next((
+            index for index, item in enumerate(bis)
+            if (
+                item.direction == current.direction
+                and item.start_time == current.start_time
+                and item.start_price == current.start_price
+            )
+        ), None)
+        if boundary_position is None or boundary_position == 0:
+            continue
+
+        previous_start = position_by_index.get(previous.bi_indices[0]) if previous.bi_indices else None
+        current_end = position_by_index.get(current.bi_indices[-1]) if current.bi_indices else None
+        if previous_start is None or current_end is None:
+            continue
+        if not (previous_start < boundary_position <= current_end):
+            continue
+
+        previous_bis = bis[previous_start:boundary_position]
+        current_bis = bis[boundary_position:current_end + 1]
+        if len(previous_bis) < 3 or len(current_bis) < 3:
+            continue
+
+        previous.bi_indices = [item.index for item in previous_bis]
+        previous.end_time = current.start_time
+        previous.end_price = current.start_price
+        previous.high = max(max(item.start_price, item.end_price) for item in previous_bis)
+        previous.low = min(min(item.start_price, item.end_price) for item in previous_bis)
+
+        current.bi_indices = [item.index for item in current_bis]
+        current.high = max(max(item.start_price, item.end_price) for item in current_bis)
+        current.low = min(min(item.start_price, item.end_price) for item in current_bis)
+
+        previous_allowed = set(previous.bi_indices)
+        current_allowed = set(current.bi_indices)
+        if previous.feat_elements is not None:
+            previous.feat_elements = [item for item in previous.feat_elements if item["bi"] in previous_allowed]
+        if previous.merged_feat is not None:
+            previous.merged_feat = [item for item in previous.merged_feat if item["bi"] in previous_allowed]
+        if current.feat_elements is not None:
+            current.feat_elements = [item for item in current.feat_elements if item["bi"] in current_allowed]
+        if current.merged_feat is not None:
+            current.merged_feat = [item for item in current.merged_feat if item["bi"] in current_allowed]
 
 
 def _find_seg_end_by_extreme(

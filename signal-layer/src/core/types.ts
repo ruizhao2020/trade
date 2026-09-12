@@ -24,7 +24,12 @@ export interface RawKline {
   low: number
   close: number
   volume: number
+  amount?: number
   turnover?: number
+  turnoverRate?: number
+  circulatingShares?: number
+  adjustmentFactor?: number
+  adjustmentType?: string
   isClosed: boolean
 }
 
@@ -132,6 +137,17 @@ export interface Divergence {
   currentPower: number
   strengthRatio: number
   confirmed: boolean
+  reasons: string[]
+}
+
+/** 图表指标标记提供给通用详情浮窗的数据。 */
+export interface IndicatorMarkerDetail {
+  id: string
+  title: string
+  subtitle?: string
+  accentColor: string
+  fields: Array<{ label: string; value: string }>
+  reasons?: string[]
 }
 
 export interface ChanAnalysis {
@@ -173,7 +189,7 @@ export interface ChanRenderOptions {
 /** 单条线的渲染规格 */
 export interface PlotSpec {
   field: string                // 从 values 里取哪个字段(如 "value" / "dif")
-  type: 'line' | 'histogram' | 'marker'  // 线、柱状图 或 信号标记
+  type: 'line' | 'histogram' | 'marker' | 'profile'  // 线、柱状图、信号标记或价格分布
   color: string
   label: string
 }
@@ -200,12 +216,24 @@ export interface RenderSpec {
   markers?: MarkerSpec[]       // 信号标记(可选)
 }
 
+export interface IndicatorProfileSnapshot {
+  time: number
+  weights: number[]
+  metrics: Record<string, number>
+}
+
+export interface IndicatorProfileData {
+  prices: number[]
+  snapshots: IndicatorProfileSnapshot[]
+}
+
 /** 指标计算结果(开放 values 字段,由后端 render 描述如何画) */
 export interface IndicatorResult {
   type: string
   params: Record<string, number>
   values: Record<string, number>[]   // 每根 K 线一个对象,字段由指标决定(必含 time)
   render: RenderSpec
+  profileData?: IndicatorProfileData
 }
 
 /** 指标元信息(指标库展示用) */

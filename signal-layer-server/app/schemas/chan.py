@@ -73,6 +73,7 @@ class DivergenceSchema(BaseModel):
     current_power: float
     strength_ratio: float
     confirmed: bool
+    reasons: list[str]
 
 
 class ChanAnalysisResponse(BaseModel):

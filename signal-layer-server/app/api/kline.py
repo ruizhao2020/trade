@@ -54,7 +54,12 @@ async def get_klines(
             low=str(k["low"]),
             close=str(k["close"]),
             volume=str(k["volume"]),
+            amount=str(k.get("amount", 0)),
             turnover=str(k.get("turnover", 0)),
+            turnover_rate=str(k["turnover_rate"]) if k.get("turnover_rate") is not None else None,
+            circulating_shares=str(k["circulating_shares"]) if k.get("circulating_shares") is not None else None,
+            adjustment_factor=str(k["adjustment_factor"]) if k.get("adjustment_factor") is not None else None,
+            adjustment_type=k.get("adjustment_type"),
             is_closed=k.get("is_closed", True),
         )
         for k in result["data"]

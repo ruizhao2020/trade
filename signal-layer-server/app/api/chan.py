@@ -103,6 +103,7 @@ async def get_chan_analysis(
             current_power=item.current_power,
             strength_ratio=item.strength_ratio,
             confirmed=item.confirmed,
+            reasons=item.reasons,
         )
         for item in result.divergences
     ]

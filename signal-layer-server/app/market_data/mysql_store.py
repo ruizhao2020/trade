@@ -45,6 +45,7 @@ class MySQLMarketDataStore:
 
     def __init__(self, config: dict[str, Any] | None = None):
         self._config = dict(config or MYSQL_CONFIG)
+        self._column_cache: dict[str, set[str]] = {}
 
     def _connect(self):
         import pymysql
@@ -88,8 +89,48 @@ class MySQLMarketDataStore:
                 low DOUBLE NOT NULL,
                 volume DOUBLE NOT NULL DEFAULT 0,
                 amount DOUBLE NOT NULL DEFAULT 0,
+                turnover_rate DOUBLE NULL,
+                circulating_shares DOUBLE NULL,
+                adjustment_factor DOUBLE NULL,
+                adjustment_type VARCHAR(8) NULL,
                 PRIMARY KEY (date_time_int)
             ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4"""
+        )
+
+    def _table_columns(self, cursor, table: str) -> set[str]:
+        cached = self._column_cache.get(table)
+        if cached is not None:
+            return cached
+        cursor.execute(
+            "SELECT column_name FROM information_schema.columns "
+            "WHERE table_schema=DATABASE() AND table_name=%s",
+            (table,),
+        )
+        columns = {str(row[0]) for row in cursor.fetchall()}
+        self._column_cache[table] = columns
+        return columns
+
+    def _ensure_chip_columns(self, cursor, table: str) -> None:
+        columns = self._table_columns(cursor, table)
+        definitions = {
+            "turnover_rate": "DOUBLE NULL",
+            "circulating_shares": "DOUBLE NULL",
+            "adjustment_factor": "DOUBLE NULL",
+            "adjustment_type": "VARCHAR(8) NULL",
+        }
+        for column, definition in definitions.items():
+            if column not in columns:
+                cursor.execute(
+                    f"ALTER TABLE {self._quote(table)} ADD COLUMN {self._quote(column)} {definition}"
+                )
+                columns.add(column)
+        self._column_cache[table] = columns
+
+    def _chip_projection(self, cursor, table: str) -> str:
+        columns = self._table_columns(cursor, table)
+        return ", ".join(
+            self._quote(column) if column in columns else f"NULL AS {self._quote(column)}"
+            for column in ("turnover_rate", "circulating_shares", "adjustment_factor", "adjustment_type")
         )
 
     def _ensure_coverage_table(self, cursor):
@@ -117,6 +158,10 @@ class MySQLMarketDataStore:
                 "volume": float(row[5]) * volume_scale,
                 "amount": float(row[6]),
                 "turnover": float(row[6]),
+                "turnover_rate": float(row[7]) if row[7] is not None else None,
+                "circulating_shares": float(row[8]) if row[8] is not None else None,
+                "adjustment_factor": float(row[9]) if row[9] is not None else None,
+                "adjustment_type": str(row[10]) if row[10] is not None else None,
                 "is_closed": True,
             }
             for row in rows
@@ -128,8 +173,9 @@ class MySQLMarketDataStore:
             with connection.cursor() as cursor:
                 if not self._table_exists(cursor, table):
                     return []
+                chip_projection = self._chip_projection(cursor, table)
                 cursor.execute(
-                    f"SELECT date_time_int, open, close, high, low, volume, amount "
+                    f"SELECT date_time_int, open, close, high, low, volume, amount, {chip_projection} "
                     f"FROM {self._quote(table)} ORDER BY date_time_int DESC LIMIT %s",
                     (limit,),
                 )
@@ -142,8 +188,9 @@ class MySQLMarketDataStore:
             with connection.cursor() as cursor:
                 if not self._table_exists(cursor, table):
                     return []
+                chip_projection = self._chip_projection(cursor, table)
                 cursor.execute(
-                    f"SELECT date_time_int, open, close, high, low, volume, amount "
+                    f"SELECT date_time_int, open, close, high, low, volume, amount, {chip_projection} "
                     f"FROM {self._quote(table)} WHERE date_time_int BETWEEN %s AND %s "
                     f"ORDER BY date_time_int ASC",
                     (start_time // 1000, end_time // 1000),
@@ -161,26 +208,38 @@ class MySQLMarketDataStore:
                 symbol,
                 datetime.fromtimestamp(int(bar["open_time"]) / 1000),
                 int(bar["open_time"]) // 1000,
-                TIMEFRAME_SUFFIX[timeframe],
+                # freq 仅作为表内元数据，使用稳定的 ASCII 周期 ID。
+                # 部分历史行情表的该字段仍是 latin1，写入“日线/分钟”会失败。
+                timeframe,
                 float(bar["open"]),
                 float(bar["close"]),
                 float(bar["high"]),
                 float(bar["low"]),
                 float(bar.get("volume", 0)) / 100 if stock else float(bar.get("volume", 0)),
                 float(bar.get("amount", bar.get("turnover", 0))),
+                float(bar["turnover_rate"]) if bar.get("turnover_rate") is not None else None,
+                float(bar["circulating_shares"]) if bar.get("circulating_shares") is not None else None,
+                float(bar["adjustment_factor"]) if bar.get("adjustment_factor") is not None else None,
+                str(bar["adjustment_type"]) if bar.get("adjustment_type") is not None else None,
             )
             for bar in bars
         ]
         with self._connect() as connection:
             with connection.cursor() as cursor:
                 self._ensure_data_table(cursor, table)
+                self._ensure_chip_columns(cursor, table)
                 cursor.executemany(
                     f"INSERT INTO {self._quote(table)} "
-                    "(code, date_time, date_time_int, freq, open, close, high, low, volume, amount) "
-                    "VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s) "
+                    "(code, date_time, date_time_int, freq, open, close, high, low, volume, amount, "
+                    "turnover_rate, circulating_shares, adjustment_factor, adjustment_type) "
+                    "VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s) "
                     "ON DUPLICATE KEY UPDATE date_time=VALUES(date_time), open=VALUES(open), "
                     "close=VALUES(close), high=VALUES(high), low=VALUES(low), "
-                    "volume=VALUES(volume), amount=VALUES(amount)",
+                    "volume=VALUES(volume), amount=VALUES(amount), "
+                    "turnover_rate=COALESCE(VALUES(turnover_rate), turnover_rate), "
+                    "circulating_shares=COALESCE(VALUES(circulating_shares), circulating_shares), "
+                    "adjustment_factor=COALESCE(VALUES(adjustment_factor), adjustment_factor), "
+                    "adjustment_type=COALESCE(VALUES(adjustment_type), adjustment_type)",
                     rows,
                 )
             connection.commit()

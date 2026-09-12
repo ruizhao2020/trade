@@ -1,5 +1,7 @@
 import type { ChanAnalysis, ChanRenderOptions, IndicatorDisplay, IndicatorResult, RawKline } from '../core/types.ts'
 import { financialValueColorClass } from '../core/financialColors.ts'
+import { volumeClassStyle } from '../core/volumeIndicator.ts'
+import { findProfileSnapshot } from '../core/profileData.ts'
 
 interface Props {
   collapsed: boolean
@@ -9,6 +11,7 @@ interface Props {
   chanOptions: ChanRenderOptions
   indicators: IndicatorDisplay[]
   results: IndicatorResult[]
+  cursorTime?: number | null
 }
 
 function formatNumber(value: number | undefined, digits = 2) {
@@ -32,18 +35,34 @@ export function IndicatorInfoPanel({
   chanOptions,
   indicators,
   results,
+  cursorTime,
 }: Props) {
   const latest = klineData.at(-1)
   const previous = klineData.at(-2)
   const change = latest && previous ? ((latest.close - previous.close) / previous.close) * 100 : undefined
-  const latestIndicatorValues = results.flatMap((result) => {
+  const chipResult = results.find(result => result.type === 'chip_distribution')
+  const chipSnapshot = findProfileSnapshot(chipResult?.profileData, cursorTime)
+  const chipMetrics = chipSnapshot?.metrics ?? chipResult?.values[0]
+  const chipTimeLabel = chipSnapshot
+    ? new Date(chipSnapshot.time).toLocaleString('zh-CN', {
+        month: '2-digit', day: '2-digit', hour: '2-digit', minute: '2-digit', hour12: false,
+      })
+    : ''
+  const latestIndicatorValues: Array<{ key: string; label: string; value?: number; text?: string }> = results.flatMap((result) => {
     const last = result.values.at(-1)
     if (!last) return []
-    return result.render.plots.slice(0, 2).map((plot) => ({
+    if (result.type === 'chip_distribution') return []
+    const plotValues = result.render.plots.slice(0, 2).map((plot) => ({
       key: `${result.type}-${plot.field}`,
       label: plot.label || `${result.type.toUpperCase()} ${plot.field}`,
       value: last[plot.field],
     }))
+    if (result.type !== 'volume') return plotValues
+    return [
+      ...plotValues,
+      { key: 'volume-ratio', label: '相邻量比', value: last.ratio },
+      { key: 'volume-class', label: '量能分类', text: volumeClassStyle(last.volume_class).label },
+    ]
   }).slice(0, 6)
 
   if (collapsed) {
@@ -83,6 +102,30 @@ export function IndicatorInfoPanel({
           </div>
         </section>
 
+        {chipMetrics && (
+          <section className="py-4 border-b border-[var(--border-primary)]">
+            <div className="flex items-center justify-between mb-3">
+              <span className="text-[11px] font-semibold text-[var(--text-secondary)]">筹码分布</span>
+              <span className="text-[10px] text-[var(--text-muted)]">{chipTimeLabel || `近${formatNumber(chipMetrics.valid_turnover_days, 0)}日估算`}</span>
+            </div>
+            <div className="space-y-2 text-[11px]">
+              <div className="flex justify-between"><span className="text-[var(--text-muted)]">主筹码峰</span><span className="font-mono text-[#e7c66b]">{formatNumber(chipMetrics.peak_price)}</span></div>
+              <div className="flex justify-between"><span className="text-[var(--text-muted)]">平均成本</span><span className="font-mono">{formatNumber(chipMetrics.average_cost)}</span></div>
+              <div className="flex justify-between"><span className="text-[var(--text-muted)]">获利盘</span><span className="font-mono text-[var(--accent-red)]">{formatNumber(chipMetrics.profit_ratio)}%</span></div>
+              <div className="flex justify-between"><span className="text-[var(--text-muted)]">70%成本区间</span><span className="font-mono">{formatNumber(chipMetrics.range70_low)}–{formatNumber(chipMetrics.range70_high)}</span></div>
+              <div className="flex justify-between"><span className="text-[var(--text-muted)]">70%集中度</span><span className="font-mono">{formatNumber(chipMetrics.concentration70)}%</span></div>
+              <div className="flex justify-between"><span className="text-[var(--text-muted)]">90%成本区间</span><span className="font-mono">{formatNumber(chipMetrics.range90_low)}–{formatNumber(chipMetrics.range90_high)}</span></div>
+              <div className="flex justify-between"><span className="text-[var(--text-muted)]">90%集中度</span><span className="font-mono">{formatNumber(chipMetrics.concentration90)}%</span></div>
+              <div className="flex justify-between"><span className="text-[var(--text-muted)]">数据覆盖</span><span className="font-mono">{formatNumber(chipMetrics.coverage_ratio)}%</span></div>
+              {chipMetrics.intraday_bars > 0 && <div className="flex justify-between"><span className="text-[var(--text-muted)]">分钟演进</span><span className="font-mono">{formatNumber(chipMetrics.intraday_bars, 0)} 根</span></div>}
+            </div>
+            <div className="mt-3 pt-3 border-t border-[var(--border-primary)] flex items-center gap-3 text-[10px] text-[var(--text-muted)]">
+              <span className="flex items-center gap-1"><span className="w-2 h-2 bg-[rgba(255,91,98,0.7)]" />获利筹码</span>
+              <span className="flex items-center gap-1"><span className="w-2 h-2 bg-[rgba(47,197,141,0.7)]" />套牢筹码</span>
+            </div>
+          </section>
+        )}
+
         <section className="py-4 border-b border-[var(--border-primary)]">
           <div className="flex items-center justify-between mb-3">
             <span className="text-[11px] font-semibold text-[var(--text-secondary)]">指标数值</span>
@@ -93,7 +136,7 @@ export function IndicatorInfoPanel({
               {latestIndicatorValues.map((item) => (
                 <div key={item.key} className="flex items-center justify-between text-[11px]">
                   <span className="text-[var(--text-muted)] truncate pr-3">{item.label}</span>
-                  <span className="font-mono text-[var(--text-primary)]">{formatNumber(item.value, 4)}</span>
+                  <span className="font-mono text-[var(--text-primary)]">{item.text ?? formatNumber(item.value, 4)}</span>
                 </div>
               ))}
             </div>

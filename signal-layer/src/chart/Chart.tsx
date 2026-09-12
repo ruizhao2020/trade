@@ -1,9 +1,11 @@
-import { useEffect, useRef } from 'react'
+import { useEffect, useRef, useState } from 'react'
 import { createChart, CandlestickSeries, ColorType, CrosshairMode } from 'lightweight-charts'
-import type { IChartApi, ISeriesApi, Time } from 'lightweight-charts'
-import type { RawKline, ChanAnalysis, ChanRenderOptions, IndicatorResult } from '../core/types.ts'
+import type { IChartApi, ISeriesApi, MouseEventParams, Time } from 'lightweight-charts'
+import type { RawKline, ChanAnalysis, ChanRenderOptions, IndicatorMarkerDetail, IndicatorResult } from '../core/types.ts'
 import { ChanRenderer } from './ChanRenderer.ts'
 import { IndicatorRenderer } from './IndicatorRenderer.ts'
+import { IndicatorMarkerPopover } from '../components/IndicatorMarkerPopover.tsx'
+import { placeMarkerDetailPopup, type MarkerDetailProvider } from './markerDetails.ts'
 
 interface Props {
   /** K线数据 */
@@ -14,6 +16,7 @@ interface Props {
   chanOptions?: ChanRenderOptions
   /** 指标计算结果(可选) */
   indicatorResults?: IndicatorResult[]
+  onCursorTimeChange?: (time: number | null) => void
 }
 
 /**
@@ -24,12 +27,24 @@ interface Props {
  *   2) 删除多周期图层逻辑 - 单周期
  *   3) 缠论叠加交给 ChanRenderer
  */
-export function Chart({ klineData, chanAnalysis, chanOptions, indicatorResults }: Props) {
+export function Chart({ klineData, chanAnalysis, chanOptions, indicatorResults, onCursorTimeChange }: Props) {
   const containerRef = useRef<HTMLDivElement>(null)
+  const popupRef = useRef<HTMLDivElement>(null)
   const chartRef = useRef<IChartApi | null>(null)
   const candleRef = useRef<ISeriesApi<'Candlestick'> | null>(null)
   const chanRendererRef = useRef<ChanRenderer | null>(null)
   const indicatorRendererRef = useRef<IndicatorRenderer | null>(null)
+  const detailProvidersRef = useRef<MarkerDetailProvider[]>([])
+  const onCursorTimeChangeRef = useRef(onCursorTimeChange)
+  const [markerPopup, setMarkerPopup] = useState<{
+    detail: IndicatorMarkerDetail
+    left: number
+    top: number
+  } | null>(null)
+
+  useEffect(() => {
+    onCursorTimeChangeRef.current = onCursorTimeChange
+  }, [onCursorTimeChange])
 
   // 初始化图表(只创建一次)
   useEffect(() => {
@@ -75,6 +90,42 @@ export function Chart({ klineData, chanAnalysis, chanOptions, indicatorResults }
     })
     chanRendererRef.current = new ChanRenderer(chart, candleRef.current)
     indicatorRendererRef.current = new IndicatorRenderer(chart, candleRef.current)
+    detailProvidersRef.current = [chanRendererRef.current]
+
+    const handleChartClick = (param: MouseEventParams<Time>) => {
+      const objectId = param.hoveredInfo?.objectId ?? param.hoveredObjectId
+      const markerId = typeof objectId === 'string' ? objectId : undefined
+      const detail = markerId
+        ? detailProvidersRef.current
+          .map(provider => provider.getMarkerDetail(markerId))
+          .find((item): item is IndicatorMarkerDetail => Boolean(item))
+        : undefined
+
+      if (!detail || !param.point || !containerRef.current) {
+        setMarkerPopup(null)
+        return
+      }
+
+      const position = placeMarkerDetailPopup(
+        param.point,
+        { width: containerRef.current.clientWidth, height: containerRef.current.clientHeight },
+      )
+      setMarkerPopup(current => current?.detail.id === detail.id
+        ? null
+        : { detail, ...position })
+    }
+    chart.subscribeClick(handleChartClick)
+    let cursorFrame: number | null = null
+    const handleCrosshairMove = (param: MouseEventParams<Time>) => {
+      const time = typeof param.time === 'number' ? param.time * 1000 : null
+      indicatorRendererRef.current?.setProfileTime(time)
+      if (cursorFrame !== null) window.cancelAnimationFrame(cursorFrame)
+      cursorFrame = window.requestAnimationFrame(() => {
+        onCursorTimeChangeRef.current?.(time)
+        cursorFrame = null
+      })
+    }
+    chart.subscribeCrosshairMove(handleCrosshairMove)
 
     const ro = new ResizeObserver(() => {
       if (!containerRef.current || !chartRef.current) return
@@ -87,6 +138,9 @@ export function Chart({ klineData, chanAnalysis, chanOptions, indicatorResults }
 
     return () => {
       ro.disconnect()
+      chart.unsubscribeClick(handleChartClick)
+      chart.unsubscribeCrosshairMove(handleCrosshairMove)
+      if (cursorFrame !== null) window.cancelAnimationFrame(cursorFrame)
       chanRendererRef.current?.destroy()
       indicatorRendererRef.current?.destroy()
       chart.remove()
@@ -94,8 +148,20 @@ export function Chart({ klineData, chanAnalysis, chanOptions, indicatorResults }
       candleRef.current = null
       chanRendererRef.current = null
       indicatorRendererRef.current = null
+      detailProvidersRef.current = []
     }
   }, [])
+
+  useEffect(() => {
+    if (!markerPopup) return
+    const closeOutside = (event: PointerEvent) => {
+      const target = event.target as Node
+      if (popupRef.current?.contains(target) || containerRef.current?.contains(target)) return
+      setMarkerPopup(null)
+    }
+    document.addEventListener('pointerdown', closeOutside)
+    return () => document.removeEventListener('pointerdown', closeOutside)
+  }, [markerPopup])
 
   // K线数据更新
   useEffect(() => {
@@ -132,6 +198,15 @@ export function Chart({ klineData, chanAnalysis, chanOptions, indicatorResults }
   return (
     <div className="absolute inset-0">
       <div ref={containerRef} className="absolute inset-0" />
+      {markerPopup && (
+        <IndicatorMarkerPopover
+          detail={markerPopup.detail}
+          left={markerPopup.left}
+          top={markerPopup.top}
+          onClose={() => setMarkerPopup(null)}
+          popupRef={popupRef}
+        />
+      )}
       {/* 重置视图按钮:一键回到全量视图 */}
       <button
         onClick={() => chartRef.current?.timeScale().fitContent()}

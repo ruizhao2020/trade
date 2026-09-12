@@ -1,4 +1,5 @@
 import { api } from './client'
+import { marketRequestTtl, recentMarketRequests } from './requestCache.ts'
 import type {
   ChanAnalysis, ChanKLine, Fenxing, Bi, Duan, Zhongshu, BuySellPoint, Divergence, SignalType,
 } from '../core/types.ts'
@@ -29,7 +30,7 @@ interface ApiDivergence {
   price: string; time: number; zhongshu_index: number
   reference_bi_index: number; current_bi_index: number
   reference_power: number; current_power: number; strength_ratio: number
-  confirmed: boolean
+  confirmed: boolean; reasons?: string[]
 }
 
 interface ApiFeatElement {
@@ -126,6 +127,7 @@ function toChanAnalysis(raw: ApiChanResponse): ChanAnalysis {
     currentPower: item.current_power,
     strengthRatio: item.strength_ratio,
     confirmed: item.confirmed,
+    reasons: item.reasons ?? [],
   }))
 
   return {
@@ -159,14 +161,17 @@ function toZhongshu(z: ApiZhongshu): Zhongshu {
 }
 
 export async function fetchChanAnalysis(symbol: string, timeframe: string, limit = 200): Promise<ChanAnalysis> {
-  console.log(`[SL:API] GET /chan/${symbol}/${timeframe}`, { limit })
-  const raw = await api.get<ApiChanResponse>(`/chan/${symbol}/${timeframe}`, { limit: String(limit) })
-  console.log(`[SL:API] GET /chan/${symbol}/${timeframe} -> OK`, {
-    bis: raw.bis.length, duans: raw.duans.length,
-    zhongshus: raw.zhongshus.length,
-    duanZhongshus: raw.duan_zhongshus?.length ?? 0,
-    buySellPoints: raw.buy_sell_points.length,
-    divergences: raw.divergences?.length ?? 0,
+  const key = `chan:${symbol}:${timeframe}:${limit}`
+  return recentMarketRequests.run(key, marketRequestTtl(timeframe), async () => {
+    console.log(`[SL:API] GET /chan/${symbol}/${timeframe}`, { limit })
+    const raw = await api.get<ApiChanResponse>(`/chan/${symbol}/${timeframe}`, { limit: String(limit) })
+    console.log(`[SL:API] GET /chan/${symbol}/${timeframe} -> OK`, {
+      bis: raw.bis.length, duans: raw.duans.length,
+      zhongshus: raw.zhongshus.length,
+      duanZhongshus: raw.duan_zhongshus?.length ?? 0,
+      buySellPoints: raw.buy_sell_points.length,
+      divergences: raw.divergences?.length ?? 0,
+    })
+    return toChanAnalysis(raw)
   })
-  return toChanAnalysis(raw)
 }

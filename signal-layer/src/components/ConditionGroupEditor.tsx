@@ -254,7 +254,7 @@ export function ConditionGroupEditor({ groups, indicators, onChange, allowEmpty 
                   <select value={srcValue(cond.left)} onChange={onSrcChange('left')}
                     className={`${selClass} flex-1 min-w-[150px]`} style={selStyle}>
                     <optgroup label="价格">{PRICE_OPTIONS.map(o => <option key={o.value} value={o.value} className="bg-[var(--bg-secondary)] text-[var(--text-primary)]">{o.label}</option>)}</optgroup>
-                    <optgroup label="指标">{indicators.map(i => <option key={`indicator:${i.type}`} value={`indicator:${i.type}`} className="bg-[var(--bg-secondary)] text-[var(--text-primary)]">{i.name}</option>)}</optgroup>
+                    <optgroup label="指标">{indicators.filter(i => i.type !== 'chip_distribution').map(i => <option key={`indicator:${i.type}`} value={`indicator:${i.type}`} className="bg-[var(--bg-secondary)] text-[var(--text-primary)]">{i.name}</option>)}</optgroup>
                     <optgroup label="缠论·信号">{CHAN_OPTIONS.map(o => <option key={o.value} value={o.value} className="bg-[var(--bg-secondary)] text-[var(--text-primary)]">{o.label}</option>)}</optgroup>
                     <optgroup label="缠论·形态">{CHAN_SHAPE_OPTIONS.map(o => <option key={o.value} value={o.value} className="bg-[var(--bg-secondary)] text-[var(--text-primary)]">{o.label}</option>)}</optgroup>
                     <optgroup label="其他"><option value="constant" className="bg-[var(--bg-secondary)] text-[var(--text-primary)]">固定值</option></optgroup>
@@ -306,7 +306,7 @@ export function ConditionGroupEditor({ groups, indicators, onChange, allowEmpty 
                           <select value={srcValue(cond.right)} onChange={onSrcChange('right')}
                             className={`${selClass} flex-1 min-w-[150px]`} style={selStyle}>
                             <optgroup label="价格">{PRICE_OPTIONS.map(o => <option key={o.value} value={o.value} className="bg-[var(--bg-secondary)] text-[var(--text-primary)]">{o.label}</option>)}</optgroup>
-                            <optgroup label="指标">{indicators.map(i => <option key={`indicator:${i.type}`} value={`indicator:${i.type}`} className="bg-[var(--bg-secondary)] text-[var(--text-primary)]">{i.name}</option>)}</optgroup>
+                            <optgroup label="指标">{indicators.filter(i => i.type !== 'chip_distribution').map(i => <option key={`indicator:${i.type}`} value={`indicator:${i.type}`} className="bg-[var(--bg-secondary)] text-[var(--text-primary)]">{i.name}</option>)}</optgroup>
                             <optgroup label="缠论·信号">{CHAN_OPTIONS.map(o => <option key={o.value} value={o.value} className="bg-[var(--bg-secondary)] text-[var(--text-primary)]">{o.label}</option>)}</optgroup>
                             <optgroup label="缠论·形态">{CHAN_SHAPE_OPTIONS.map(o => <option key={o.value} value={o.value} className="bg-[var(--bg-secondary)] text-[var(--text-primary)]">{o.label}</option>)}</optgroup>
                             <optgroup label="其他"><option value="constant" className="bg-[var(--bg-secondary)] text-[var(--text-primary)]">固定值</option></optgroup>

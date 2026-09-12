@@ -66,6 +66,11 @@ class RangeSource:
         return noop
 
 
+class FailingSource(RangeSource):
+    async def fetch_klines(self, symbol, timeframe, start_time=None, end_time=None, limit=500):
+        raise RuntimeError("行情源暂时不可用")
+
+
 def test_manager_fetches_only_the_missing_range_and_then_uses_db():
     store = MemoryStore()
     source = RangeSource()
@@ -99,6 +104,33 @@ def test_latest_request_does_not_call_api_when_db_has_enough_rows():
 
     assert [item["open_time"] for item in values] == [5, 6, 7, 8, 9]
     assert source.calls == []
+    assert cached is True
+
+
+def test_latest_memory_cache_reuses_data_across_kline_and_analysis_requests():
+    store = MemoryStore()
+    source = RangeSource()
+    manager = MarketDataManager(store, source, source)
+
+    first, first_cached = asyncio.run(manager.fetch("000001_sz", "1d", limit=5))
+    second, second_cached = asyncio.run(manager.fetch("000001_sz", "1d", limit=5))
+
+    assert [item["open_time"] for item in first] == [0, 1, 2, 3, 4]
+    assert second == first
+    assert source.calls == [(None, None)]
+    assert first_cached is False
+    assert second_cached is True
+
+
+def test_latest_request_returns_stored_rows_when_api_is_unavailable():
+    store = MemoryStore()
+    source = FailingSource()
+    store.upsert("000001_sz", "1d", [bar(index) for index in range(3)])
+    manager = MarketDataManager(store, source, source)
+
+    values, cached = asyncio.run(manager.fetch("000001_sz", "1d", limit=5))
+
+    assert [item["open_time"] for item in values] == [0, 1, 2]
     assert cached is True
 
 

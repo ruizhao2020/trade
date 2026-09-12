@@ -21,6 +21,9 @@ def test_sqlite_initialization_script_creates_fixed_tables():
         template_columns = {
             row[1] for row in connection.execute("PRAGMA table_info(templates)")
         }
+        kline_columns = {
+            row[1] for row in connection.execute("PRAGMA table_info(klines)")
+        }
     finally:
         connection.close()
 
@@ -29,6 +32,7 @@ def test_sqlite_initialization_script_creates_fixed_tables():
         "user_roles", "role_permissions",
     }.issubset(tables)
     assert "trade_params" in template_columns
+    assert {"amount", "turnover_rate", "circulating_shares", "adjustment_factor", "adjustment_type"}.issubset(kline_columns)
     connection = sqlite3.connect(":memory:")
     try:
         connection.executescript(sql)

@@ -26,9 +26,11 @@ import type {
   Zhongshu,
   BuySellPoint,
   Divergence,
+  IndicatorMarkerDetail,
   Duan,
   Bi,
 } from '../core/types.ts'
+import { arrangeSeriesMarkersVertically, buildDivergenceMarkerDetail, divergenceMarkerId, divergenceMarkerLabel } from './markerDetails.ts'
 
 class ZhongshuRenderer implements IPrimitivePaneRenderer {
   private readonly candleSeries: ISeriesApi<'Candlestick'>
@@ -175,9 +177,11 @@ function buildBiIndexMarkers(bis: Array<{ index: number; direction: 'up' | 'down
   const first = bis[0]
   markers.push({
     time: first.startTime / 1000 as Time,
-    position: first.direction === 'up' ? 'belowBar' : 'aboveBar',
+    position: first.direction === 'up' ? 'atPriceBottom' : 'atPriceTop',
+    price: first.startPrice,
     color: '#fbbf24',
     shape: 'circle',
+    id: `chan:bi-point:0:${first.startTime}`,
     text: '0',
   })
 
@@ -185,9 +189,11 @@ function buildBiIndexMarkers(bis: Array<{ index: number; direction: 'up' | 'down
   bis.forEach((b, i) => {
     markers.push({
       time: b.endTime / 1000 as Time,
-      position: b.direction === 'up' ? 'aboveBar' : 'belowBar',
+      position: b.direction === 'up' ? 'atPriceTop' : 'atPriceBottom',
+      price: b.endPrice,
       color: '#fbbf24',
       shape: 'circle',
+      id: `chan:bi-point:${i + 1}:${b.endTime}`,
       text: `${i + 1}`,
     })
   })
@@ -202,18 +208,22 @@ function buildDuanIndexMarkers(duans: Array<{ index: number; direction: 'up' | '
   const first = duans[0]
   markers.push({
     time: first.startTime / 1000 as Time,
-    position: first.direction === 'up' ? 'belowBar' : 'aboveBar',
+    position: first.direction === 'up' ? 'atPriceBottom' : 'atPriceTop',
+    price: first.startPrice,
     color: '#3b82f6',
     shape: 'square',
+    id: `chan:duan-point:0:${first.startTime}`,
     text: 'D0',
   })
 
   duans.forEach((d, i) => {
     markers.push({
       time: d.endTime / 1000 as Time,
-      position: d.direction === 'up' ? 'aboveBar' : 'belowBar',
+      position: d.direction === 'up' ? 'atPriceTop' : 'atPriceBottom',
+      price: d.endPrice,
       color: '#3b82f6',
       shape: 'square',
+      id: `chan:duan-point:${i + 1}:${d.endTime}`,
       text: `D${i + 1}`,
     })
   })
@@ -309,7 +319,8 @@ class FeatSequencePrimitive implements IPanePrimitive {
 function buildFenxingMarkers(fenxings: Fenxing[], chanKLineTimes: number[]): SeriesMarker<Time>[] {
   return fenxings.map(f => ({
     time: (chanKLineTimes[f.klineIndices[1]] ?? 0) / 1000 as Time,
-    position: f.direction === 'top' ? 'aboveBar' : 'belowBar',
+    position: f.direction === 'top' ? 'atPriceTop' : 'atPriceBottom',
+    price: f.price,
     color: f.direction === 'top' ? '#ef4444' : '#10b981',
     shape: f.direction === 'top' ? 'arrowDown' : 'arrowUp',
     text: f.direction === 'top' ? '顶' : '底',
@@ -327,16 +338,14 @@ function buildBuySellMarkers(points: BuySellPoint[]): SeriesMarker<Time>[] {
   }
   return points.map(p => {
     const isBuy = p.type.startsWith('buy')
-    // 用 price 定位 + 偏移,让标记离 K 线远一点,避免遮挡
-    // 买入点放到价格下方 1.5%,卖出点放到价格上方 1.5%
-    const offsetPrice = isBuy ? p.price * 0.985 : p.price * 1.015
     return {
       time: p.time / 1000 as Time,
       position: isBuy ? 'atPriceBottom' : 'atPriceTop',
-      price: offsetPrice,
+      price: p.price,
       color: colorMap[p.type] ?? '#fbbf24',
       shape: isBuy ? 'arrowUp' : 'arrowDown',
       size: 2,
+      id: `chan:buy-sell:${p.type}:${p.time}:${p.biIndex}`,
       text: labelMap[p.type] ?? p.type,
     }
   })
@@ -348,11 +357,12 @@ function buildDivergenceMarkers(divergences: Divergence[]): SeriesMarker<Time>[]
     return {
       time: item.time / 1000 as Time,
       position: isBottom ? 'atPriceBottom' : 'atPriceTop',
-      price: isBottom ? item.price * 0.97 : item.price * 1.03,
+      price: item.price,
       color: isBottom ? '#48c7e8' : '#d77dff',
       shape: 'square',
       size: 1,
-      text: isBottom ? '底背驰' : '顶背驰',
+      id: divergenceMarkerId(item),
+      text: divergenceMarkerLabel(item),
     }
   })
 }
@@ -361,6 +371,7 @@ export class ChanRenderer {
   private lineSeriesList: ISeriesApi<'Line'>[] = []
   private primitives: IPanePrimitive[] = []
   private markersPlugin: ISeriesMarkersPluginApi<Time> | null = null
+  private markerDetails = new Map<string, IndicatorMarkerDetail>()
   private readonly chart: IChartApi
   private readonly candleSeries: ISeriesApi<'Candlestick'>
 
@@ -433,18 +444,24 @@ export class ChanRenderer {
       markers.push(...buildFenxingMarkers(analysis.fenxings, chanKLineTimes))
     }
     if (options.showDivergences && analysis.divergences.length > 0) {
+      for (const item of analysis.divergences) {
+        const detail = buildDivergenceMarkerDetail(item, analysis.buySellPoints)
+        this.markerDetails.set(detail.id, detail)
+      }
       markers.push(...buildDivergenceMarkers(analysis.divergences))
     }
     if (options.showBuySellPoints && analysis.buySellPoints.length > 0) {
       markers.push(...buildBuySellMarkers(analysis.buySellPoints))
     }
-    markers.sort((a, b) => (a.time as number) - (b.time as number))
-    if (markers.length > 0) {
-      this.markersPlugin = createSeriesMarkers(this.candleSeries, markers)
+    const arrangedMarkers = arrangeSeriesMarkersVertically(markers)
+      .sort((a, b) => (a.time as number) - (b.time as number))
+    if (arrangedMarkers.length > 0) {
+      this.markersPlugin = createSeriesMarkers(this.candleSeries, arrangedMarkers)
     }
   }
 
   clear(): void {
+    this.markerDetails.clear()
     for (const s of this.lineSeriesList) {
       this.chart.removeSeries(s)
     }
@@ -466,5 +483,9 @@ export class ChanRenderer {
 
   destroy(): void {
     this.clear()
+  }
+
+  getMarkerDetail(markerId: string): IndicatorMarkerDetail | undefined {
+    return this.markerDetails.get(markerId)
   }
 }

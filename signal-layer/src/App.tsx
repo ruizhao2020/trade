@@ -56,6 +56,7 @@ function ChartStage({
   chanAnalysis,
   chanOptions,
   indicatorResults,
+  onCursorTimeChange,
 }: {
   loading: boolean
   error: string | null
@@ -63,6 +64,7 @@ function ChartStage({
   chanAnalysis: ChanAnalysis | null
   chanOptions: ChanRenderOptions
   indicatorResults: IndicatorResult[]
+  onCursorTimeChange?: (time: number | null) => void
 }) {
   return (
     <div className="flex-1 relative min-w-0 min-h-0 bg-[var(--chart-background)]">
@@ -77,7 +79,7 @@ function ChartStage({
       ) : klineData.length === 0 ? (
         <div className="absolute inset-0 flex items-center justify-center text-[var(--text-muted)] text-sm">无数据</div>
       ) : (
-        <Chart klineData={klineData} chanAnalysis={chanAnalysis ?? undefined} chanOptions={chanOptions} indicatorResults={indicatorResults} />
+        <Chart klineData={klineData} chanAnalysis={chanAnalysis ?? undefined} chanOptions={chanOptions} indicatorResults={indicatorResults} onCursorTimeChange={onCursorTimeChange} />
       )}
     </div>
   )
@@ -111,6 +113,7 @@ function WorkbenchApp({ user, onLogout, onUserChange }: { user: AuthUser; onLogo
   const [backtestResult, setBacktestResult] = useState<{ key: string; result: BacktestResult } | null>(null)
   const [strategyTradeScan, setStrategyTradeScan] = useState<{ key: string; result: BacktestResult | null }>({ key: '', result: null })
   const [passwordDialogOpen, setPasswordDialogOpen] = useState(false)
+  const [indicatorCursorTime, setIndicatorCursorTime] = useState<number | null>(null)
 
   const templates = useAppStore((state) => state.templates)
   const activeTemplateId = useAppStore((state) => state.activeTemplateId)
@@ -227,20 +230,27 @@ function WorkbenchApp({ user, onLogout, onUserChange }: { user: AuthUser; onLogo
   )
 
   const handleMarketChange = useCallback((nextMarket: 'stock' | 'futures') => {
+    setIndicatorCursorTime(null)
     setMarket(nextMarket)
     setSymbol(nextMarket === 'stock' ? '300843_sz' : 'RB0')
     setSymbolName(nextMarket === 'stock' ? '胜蓝股份' : '螺纹钢连续')
   }, [])
   const handleSymbolChange = useCallback((nextSymbol: string, nextName: string) => {
+    setIndicatorCursorTime(null)
     setSymbol(nextSymbol)
     setSymbolName(nextName)
   }, [])
   const handleScreenSymbol = useCallback((nextSymbol: string, nextName: string) => {
+    setIndicatorCursorTime(null)
     setMarket('stock')
     setSymbol(nextSymbol)
     setSymbolName(nextName)
     if (activeTemplate && isSupportedTimeframeId(activeTemplate.primaryTimeframeId)) setTimeframe(activeTemplate.primaryTimeframeId)
   }, [activeTemplate])
+  const handleTimeframeChange = useCallback((nextTimeframe: SupportedTimeframeId) => {
+    setIndicatorCursorTime(null)
+    setTimeframe(nextTimeframe)
+  }, [])
 
   const headerProps = {
     market,
@@ -249,7 +259,7 @@ function WorkbenchApp({ user, onLogout, onUserChange }: { user: AuthUser; onLogo
     timeframe,
     onMarketChange: handleMarketChange,
     onSymbolChange: handleSymbolChange,
-    onTimeframeChange: setTimeframe,
+    onTimeframeChange: handleTimeframeChange,
   }
 
   return (
@@ -265,8 +275,8 @@ function WorkbenchApp({ user, onLogout, onUserChange }: { user: AuthUser; onLogo
             )} />
             <IndicatorWorkbenchToolbar selectedIndicators={selectedIndicators} onIndicatorChange={setSelectedIndicators} chanOptions={chanOptions} onChanChange={setChanOptions} analysis={chanAnalysis ?? undefined} />
             <div className="flex flex-1 min-h-0 overflow-hidden">
-              <ChartStage loading={loading} error={error} klineData={klineData} chanAnalysis={chanAnalysis} chanOptions={chanOptions} indicatorResults={selectedIndicators.length > 0 ? indicatorResults : []} />
-              <IndicatorInfoPanel collapsed={indicatorInfoCollapsed} onToggle={() => setIndicatorInfoCollapsed((value) => !value)} klineData={klineData} analysis={chanAnalysis ?? undefined} chanOptions={chanOptions} indicators={selectedIndicators} results={selectedIndicators.length > 0 ? indicatorResults : []} />
+              <ChartStage loading={loading} error={error} klineData={klineData} chanAnalysis={chanAnalysis} chanOptions={chanOptions} indicatorResults={selectedIndicators.length > 0 ? indicatorResults : []} onCursorTimeChange={setIndicatorCursorTime} />
+              <IndicatorInfoPanel collapsed={indicatorInfoCollapsed} onToggle={() => setIndicatorInfoCollapsed((value) => !value)} klineData={klineData} analysis={chanAnalysis ?? undefined} chanOptions={chanOptions} indicators={selectedIndicators} results={selectedIndicators.length > 0 ? indicatorResults : []} cursorTime={indicatorCursorTime} />
             </div>
           </>
         )}

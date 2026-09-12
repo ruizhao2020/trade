@@ -5,6 +5,7 @@ from sqlalchemy.ext.asyncio import create_async_engine, async_sessionmaker, Asyn
 from app.models.base import Base
 from app.models.template import Template  # noqa: F401 — 确保模型注册到 Base.metadata
 from app.models.auth import Module, Permission, Role, User  # noqa: F401
+from app.models.kline import Kline  # noqa: F401 — 注册固定 K 线模型
 from app.config import settings
 
 _engine = None
@@ -50,6 +51,18 @@ def _ensure_compat_columns(connection):
             connection.execute(text("ALTER TABLE modules ADD COLUMN api_prefixes VARCHAR(500) NOT NULL DEFAULT ''"))
         if "api_permission" not in module_columns:
             connection.execute(text("ALTER TABLE modules ADD COLUMN api_permission VARCHAR(100) NOT NULL DEFAULT ''"))
+    if "klines" in inspector.get_table_names():
+        kline_columns = {column["name"] for column in inspector.get_columns("klines")}
+        additions = {
+            "amount": "DECIMAL(24,8) NULL",
+            "turnover_rate": "DECIMAL(16,8) NULL",
+            "circulating_shares": "DECIMAL(24,4) NULL",
+            "adjustment_factor": "DECIMAL(24,12) NULL",
+            "adjustment_type": "VARCHAR(8) NULL",
+        }
+        for column, definition in additions.items():
+            if column not in kline_columns:
+                connection.execute(text(f"ALTER TABLE klines ADD COLUMN {column} {definition}"))
 
 
 def _ensure_mysql_utf8mb4(connection):

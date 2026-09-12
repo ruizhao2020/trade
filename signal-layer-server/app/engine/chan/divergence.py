@@ -23,6 +23,7 @@ class Divergence:
     current_power: float
     strength_ratio: float
     confirmed: bool
+    reasons: list[str]
 
 
 def identify_divergences(bis: list[Bi], zhongshus: list) -> list[Divergence]:
@@ -75,11 +76,13 @@ def identify_divergences(bis: list[Bi], zhongshus: list) -> list[Divergence]:
                 continue
             divergence_type: Literal["top", "bottom"] = "top"
             price = current.high
+            extreme_reason = "离开笔向上突破中枢并创出新高"
         else:
             if current.low >= reference.low:
                 continue
             divergence_type = "bottom"
             price = current.low
+            extreme_reason = "离开笔向下突破中枢并创出新低"
 
         divergences.append(Divergence(
             index=len(divergences),
@@ -95,6 +98,11 @@ def identify_divergences(bis: list[Bi], zhongshus: list) -> list[Divergence]:
             current_power=current_power,
             strength_ratio=round(current_power / reference_power, 4),
             confirmed=True,
+            reasons=[
+                extreme_reason,
+                "离开笔力度小于中枢内最近同向笔",
+                "后一笔位于中枢外，背驰已经确认",
+            ],
         ))
 
     return divergences

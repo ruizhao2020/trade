@@ -128,6 +128,7 @@ class ChanService:
                     "current_power": item.current_power,
                     "strength_ratio": item.strength_ratio,
                     "confirmed": item.confirmed,
+                    "reasons": item.reasons,
                 }
                 for item in result.divergences
             ],
@@ -205,6 +206,7 @@ class ChanService:
                     current_power=item["current_power"],
                     strength_ratio=item["strength_ratio"],
                     confirmed=item.get("confirmed", True),
+                    reasons=item.get("reasons", []),
                 )
                 for item in data.get("divergences", [])
             ],

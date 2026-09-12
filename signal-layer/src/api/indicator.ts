@@ -11,6 +11,10 @@ interface ApiIndicatorResult {
     window: string
     plots: { field: string; type: string; color: string; label: string }[]
   }
+  profile_data?: {
+    prices: number[]
+    snapshots: Array<{ time: number; weights: number[]; metrics: Record<string, number> }>
+  } | null
   cached: boolean
 }
 
@@ -45,11 +49,15 @@ function toFrontend(r: ApiIndicatorResult): IndicatorResult {
       window: r.render.window as 'main' | 'sub',
       plots: r.render.plots.map(p => ({
         field: p.field,
-        type: p.type as 'line' | 'histogram',
+        type: p.type as 'line' | 'histogram' | 'marker' | 'profile',
         color: p.color,
         label: p.label,
       })),
     },
+    profileData: r.profile_data ? {
+      prices: r.profile_data.prices,
+      snapshots: r.profile_data.snapshots,
+    } : undefined,
   })
 }
 
@@ -88,7 +96,7 @@ export async function fetchIndicatorList(): Promise<IndicatorInfo[]> {
       window: i.render.window as 'main' | 'sub',
       plots: i.render.plots.map(p => ({
         field: p.field,
-        type: p.type as 'line' | 'histogram',
+        type: p.type as 'line' | 'histogram' | 'marker' | 'profile',
         color: p.color,
         label: p.label,
       })),

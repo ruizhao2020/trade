@@ -26,6 +26,8 @@ indicator:{symbol}:{timeframe}:{type}:{params_hash}
 无需修改本文件。
 """
 
+from __future__ import annotations
+
 import logging
 from app.cache.indicator_cache import IndicatorCache
 from app.engine.indicator.base import (
@@ -57,6 +59,7 @@ class IndicatorService:
         indicator_type: str,
         params: dict[str, float],
         klines: list[dict],
+        context: dict | None = None,
     ) -> IndicatorResult:
         """
         计算指定指标值。优先从 Redis 读取缓存。
@@ -88,6 +91,7 @@ class IndicatorService:
                     params=cached["params"],
                     values=cached["values"],
                     render=cached.get("render"),
+                    profile_data=cached.get("profile_data"),
                 )
 
         calc = self._registry.get(indicator_type)
@@ -98,7 +102,12 @@ class IndicatorService:
 
         logger.info(f"Indicator cache MISS {symbol} {timeframe} {indicator_type} params={params} - computing...")
         params_sanitized = {k: v for k, v in params.items()}
-        result = calc.calculate(klines, params_sanitized)
+        calculate_with_context = getattr(calc, "calculate_with_context", None)
+        result = (
+            calculate_with_context(klines, params_sanitized, context or {})
+            if calculate_with_context is not None
+            else calc.calculate(klines, params_sanitized)
+        )
 
         logger.info(f"Indicator {indicator_type} {symbol} {timeframe} -> {len(result.values)} values")
         cache_data = {
@@ -106,6 +115,7 @@ class IndicatorService:
             "params": result.params,
             "values": result.values,
             "render": result.render.model_dump() if result.render else None,
+            "profile_data": result.profile_data.model_dump() if result.profile_data else None,
             "data_end_time": klines[-1]["open_time"] if klines else 0,
         }
         await self._cache.set(cache_key, cache_data)

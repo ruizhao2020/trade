@@ -1,6 +1,10 @@
 from pydantic import BaseModel, Field
 from typing import Any, Optional
-from app.engine.indicator.base import RenderSpec as EngineRenderSpec, PlotSpec as EnginePlotSpec
+from app.engine.indicator.base import (
+    ProfileData,
+    RenderSpec as EngineRenderSpec,
+    PlotSpec as EnginePlotSpec,
+)
 
 
 # 复用 engine 层的 RenderSpec/PlotSpec,避免类型不一致
@@ -25,6 +29,7 @@ class IndicatorResultItem(BaseModel):
     params: dict[str, Any]
     values: list[dict[str, float]]
     render: Optional[RenderSpec] = None
+    profile_data: Optional[ProfileData] = None
     cached: bool = False
 
 

@@ -3,6 +3,8 @@ from __future__ import annotations
 import asyncio
 import logging
 import math
+import time
+from collections import OrderedDict
 from typing import Protocol
 
 from app.adapters.base import DataAdapter
@@ -10,6 +12,9 @@ from app.market_data.ranges import TimeRange, infer_coverage, missing_ranges
 from app.market_data.mysql_store import TIMEFRAME_MINUTES
 
 logger = logging.getLogger(__name__)
+
+_LATEST_CACHE_TTL = {"5m": 15.0, "15m": 30.0, "30m": 60.0, "60m": 90.0, "1d": 300.0}
+_LATEST_CACHE_MAX_ENTRIES = 128
 
 
 class MarketDataStore(Protocol):
@@ -33,6 +38,66 @@ class MarketDataManager:
         self._stock_source = stock_source
         self._futures_source = futures_source
         self._locks: dict[tuple[str, str], asyncio.Lock] = {}
+        self._enrichment_tasks: dict[tuple[str, str], asyncio.Task] = {}
+        self._latest_cache: OrderedDict[
+            tuple[str, str], tuple[float, int, list[dict]]
+        ] = OrderedDict()
+
+    def _get_latest_cache(self, symbol: str, timeframe: str, limit: int) -> list[dict] | None:
+        key = (symbol, timeframe)
+        cached = self._latest_cache.get(key)
+        if cached is None:
+            return None
+        cached_at, requested_limit, bars = cached
+        if time.monotonic() - cached_at > _LATEST_CACHE_TTL.get(timeframe, 30.0) or requested_limit < limit:
+            self._latest_cache.pop(key, None)
+            return None
+        self._latest_cache.move_to_end(key)
+        return bars[-limit:]
+
+    def _set_latest_cache(self, symbol: str, timeframe: str, requested_limit: int, bars: list[dict]) -> None:
+        key = (symbol, timeframe)
+        self._latest_cache[key] = (time.monotonic(), requested_limit, list(bars))
+        self._latest_cache.move_to_end(key)
+        while len(self._latest_cache) > _LATEST_CACHE_MAX_ENTRIES:
+            self._latest_cache.popitem(last=False)
+
+    @staticmethod
+    def _needs_chip_enrichment(symbol: str, timeframe: str, bars: list[dict]) -> bool:
+        return (
+            bool(symbol)
+            and symbol[0].isdigit()
+            and timeframe == "1d"
+            and bool(bars)
+            and any(
+                item.get("turnover_rate") is None
+                or item.get("circulating_shares") is None
+                or item.get("adjustment_factor") is None
+                for item in bars
+            )
+        )
+
+    def _schedule_chip_enrichment(self, symbol: str, timeframe: str, limit: int) -> None:
+        key = (symbol, timeframe)
+        existing = self._enrichment_tasks.get(key)
+        if existing and not existing.done():
+            return
+
+        async def enrich() -> None:
+            try:
+                source = self._source(symbol)
+                logger.info("enriching chip fields for %s %s in background", symbol, timeframe)
+                fetched = await source.fetch_klines(symbol, timeframe, limit=limit)
+                if fetched:
+                    await self._store_call("upsert", symbol, timeframe, fetched)
+                    complete = await self._store_call("fetch_latest", symbol, timeframe, limit)
+                    self._set_latest_cache(symbol, timeframe, limit, complete)
+            except Exception:
+                logger.warning("chip field enrichment failed for %s %s", symbol, timeframe, exc_info=True)
+            finally:
+                self._enrichment_tasks.pop(key, None)
+
+        self._enrichment_tasks[key] = asyncio.create_task(enrich())
 
     def _source(self, symbol: str) -> DataAdapter:
         return self._futures_source if symbol and symbol[0].isalpha() else self._stock_source
@@ -82,12 +147,33 @@ class MarketDataManager:
         *,
         force_refresh: bool,
     ) -> tuple[list[dict], bool]:
+        if not force_refresh:
+            cached = self._get_latest_cache(symbol, timeframe, limit)
+            if cached is not None:
+                logger.info("market memory cache HIT %s %s (%s bars)", symbol, timeframe, len(cached))
+                return cached, True
+
         stored = await self._store_call("fetch_latest", symbol, timeframe, limit)
         if len(stored) >= limit and not force_refresh:
-            return stored[-limit:], True
+            if self._needs_chip_enrichment(symbol, timeframe, stored):
+                self._schedule_chip_enrichment(symbol, timeframe, limit)
+            result = stored[-limit:]
+            self._set_latest_cache(symbol, timeframe, limit, result)
+            return result, True
 
         source = self._source(symbol)
-        fetched = await source.fetch_klines(symbol, timeframe, limit=limit)
+        try:
+            fetched = await source.fetch_klines(symbol, timeframe, limit=limit)
+        except Exception:
+            if stored:
+                logger.warning(
+                    "market API unavailable for %s %s; returning %s stored bars",
+                    symbol, timeframe, len(stored), exc_info=True,
+                )
+                result = stored[-limit:]
+                self._set_latest_cache(symbol, timeframe, limit, result)
+                return result, True
+            raise
         await self._store_call("upsert", symbol, timeframe, fetched)
         if fetched:
             await self._store_call(
@@ -96,7 +182,9 @@ class MarketDataManager:
                 max(int(bar["open_time"]) for bar in fetched),
             )
         complete = await self._store_call("fetch_latest", symbol, timeframe, limit)
-        return complete[-limit:], False
+        result = complete[-limit:]
+        self._set_latest_cache(symbol, timeframe, limit, result)
+        return result, False
 
     async def _fetch_range(
         self,

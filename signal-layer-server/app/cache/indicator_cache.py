@@ -43,9 +43,11 @@ class IndicatorCache:
 
 
 def key_chan(symbol: str, timeframe: str) -> str:
-    return f"chan:{symbol}:{timeframe}"
+    # v2: 线段边界连续性修正 + 背驰详情原因，避免读取旧算法缓存。
+    return f"chan:v2:{symbol}:{timeframe}"
 
 
 def key_indicator(symbol: str, timeframe: str, indicator_type: str, params: dict[str, Any]) -> str:
     params_str = "_".join(f"{k}={v}" for k, v in sorted(params.items()))
-    return f"indicator:{symbol}:{timeframe}:{indicator_type}:{params_str}"
+    # v3: 筹码分布补充逐 K 线快照，隔离旧结构缓存。
+    return f"indicator:v3:{symbol}:{timeframe}:{indicator_type}:{params_str}"

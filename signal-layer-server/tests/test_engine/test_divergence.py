@@ -62,6 +62,8 @@ def test_bottom_divergence_creates_first_buy_point() -> None:
     assert divergence.reference_bi_index == 1
     assert divergence.current_bi_index == 3
     assert divergence.strength_ratio == 0.55
+    assert len(divergence.reasons) == 3
+    assert "新低" in divergence.reasons[0]
 
     points = identify_buy_sell_points(bis, [make_zhongshu("down")], divergences)
     first_buy = next(point for point in points if point.type == "buy1")
@@ -85,6 +87,7 @@ def test_top_divergence_creates_first_sell_point() -> None:
     assert divergence.type == "top"
     assert divergence.reference_bi_index == 1
     assert divergence.current_bi_index == 3
+    assert "新高" in divergence.reasons[0]
 
     points = identify_buy_sell_points(bis, [make_zhongshu("up")], divergences)
     first_sell = next(point for point in points if point.type == "sell1")
