@@ -1,7 +1,7 @@
 from __future__ import annotations
 
 from fastapi import APIRouter, Depends, HTTPException
-from sqlalchemy import insert, select
+from sqlalchemy import insert, select, update
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import selectinload
 
@@ -22,14 +22,17 @@ def role_response(role: Role) -> RoleResponse:
     return RoleResponse(
         id=role.id, code=role.code, name=role.name, description=role.description,
         built_in=role.built_in, enabled=role.enabled,
+        registration_default=bool(getattr(role, "registration_default", False)),
         permission_codes=sorted(permission.code for permission in role.permissions),
     )
 
 
 def module_response(module: Module) -> ModuleResponse:
-    return ModuleResponse(**{column: getattr(module, column) for column in (
-        "id", "code", "name", "icon", "component_key", "route_path", "api_prefixes", "api_permission", "sort_order", "enabled", "visible",
-    )})
+    values = {column: getattr(module, column) for column in (
+        "id", "code", "name", "icon", "component_key", "route_path", "api_prefixes", "api_permission", "sort_order", "enabled", "visible", "public_access",
+    )}
+    values["public_access"] = bool(values.get("public_access", False))
+    return ModuleResponse(**values)
 
 
 @router.get("/users", response_model=list[UserResponse], dependencies=[Depends(require_permission("admin.users"))])
@@ -69,7 +72,9 @@ async def create_role(body: RoleCreate, session: AsyncSession = Depends(get_sess
     if (await session.execute(select(Role).where(Role.code == body.code))).scalar_one_or_none():
         raise HTTPException(status_code=409, detail="角色编码已存在")
     permissions = (await session.execute(select(Permission).where(Permission.code.in_(body.permission_codes)))).scalars().all()
-    role = Role(code=body.code, name=body.name, description=body.description, enabled=body.enabled)
+    if body.registration_default:
+        await session.execute(update(Role).values(registration_default=False))
+    role = Role(code=body.code, name=body.name, description=body.description, enabled=body.enabled, registration_default=body.registration_default)
     role.permissions = list(permissions)
     session.add(role)
     await session.commit()
@@ -89,7 +94,9 @@ async def update_role(role_id: int, body: RoleUpdate, session: AsyncSession = De
             permission.code for permission in role.permissions
         }:
             raise HTTPException(status_code=400, detail="内置管理员始终拥有全部权限")
-    for field in ("name", "description", "enabled"):
+    if body.registration_default is True:
+        await session.execute(update(Role).where(Role.id != role_id).values(registration_default=False))
+    for field in ("name", "description", "enabled", "registration_default"):
         value = getattr(body, field)
         if value is not None:
             setattr(role, field, value)

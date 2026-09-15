@@ -14,6 +14,12 @@ export interface PriceProfilePoint {
   isProfit: boolean
 }
 
+export const MIN_VISIBLE_PROFILE_WEIGHT = 1e-8
+
+export function hasVisibleProfileWeight(point: PriceProfilePoint): boolean {
+  return Number.isFinite(point.weight) && point.weight > MIN_VISIBLE_PROFILE_WEIGHT
+}
+
 interface PriceProfileOptions {
   currentPrice: number
   peakPrice: number
@@ -37,7 +43,10 @@ class PriceProfileRenderer implements IPrimitivePaneRenderer {
 
   draw(target: CanvasRenderingTarget2D): void {
     if (this.points.length === 0) return
-    const maxWeight = Math.max(...this.points.map(point => point.weight), 0)
+    const maxWeight = Math.max(
+      ...this.points.filter(hasVisibleProfileWeight).map(point => point.weight),
+      0,
+    )
     if (maxWeight <= 0) return
 
     target.useMediaCoordinateSpace(scope => {
@@ -48,6 +57,7 @@ class PriceProfileRenderer implements IPrimitivePaneRenderer {
 
       for (let index = 0; index < this.points.length; index += 1) {
         const point = this.points[index]!
+        if (!hasVisibleProfileWeight(point)) continue
         const y = coordinates[index]
         if (y === null) continue
         const previousY = coordinates[Math.max(0, index - 1)]
@@ -56,8 +66,8 @@ class PriceProfileRenderer implements IPrimitivePaneRenderer {
           1.5,
           Math.min(6, Math.abs((nextY ?? y) - (previousY ?? y)) / 2 || 2),
         )
-        const width = Math.max(1, point.weight / maxWeight * maxWidth)
-        context.fillStyle = point.isProfit ? 'rgba(255,91,98,0.55)' : 'rgba(47,197,141,0.55)'
+        const width = point.weight / maxWeight * maxWidth
+        context.fillStyle = point.isProfit ? 'rgba(108,140,255,0.58)' : 'rgba(155,140,242,0.48)'
         context.fillRect(xEnd - width, y - binHeight / 2, width, binHeight)
 
         if (Math.abs(point.price - this.options.peakPrice) < 1e-6) {

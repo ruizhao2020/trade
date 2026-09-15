@@ -120,8 +120,8 @@ export function IndicatorInfoPanel({
               {chipMetrics.intraday_bars > 0 && <div className="flex justify-between"><span className="text-[var(--text-muted)]">分钟演进</span><span className="font-mono">{formatNumber(chipMetrics.intraday_bars, 0)} 根</span></div>}
             </div>
             <div className="mt-3 pt-3 border-t border-[var(--border-primary)] flex items-center gap-3 text-[10px] text-[var(--text-muted)]">
-              <span className="flex items-center gap-1"><span className="w-2 h-2 bg-[rgba(255,91,98,0.7)]" />获利筹码</span>
-              <span className="flex items-center gap-1"><span className="w-2 h-2 bg-[rgba(47,197,141,0.7)]" />套牢筹码</span>
+              <span className="flex items-center gap-1"><span className="w-2 h-2 bg-[rgba(108,140,255,0.8)]" />获利筹码</span>
+              <span className="flex items-center gap-1"><span className="w-2 h-2 bg-[rgba(155,140,242,0.75)]" />套牢筹码</span>
             </div>
           </section>
         )}

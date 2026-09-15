@@ -34,6 +34,7 @@ class ModuleResponse(BaseModel):
     sort_order: int
     enabled: bool
     visible: bool
+    public_access: bool
 
 
 class UserResponse(BaseModel):
@@ -69,6 +70,7 @@ class RoleResponse(BaseModel):
     description: str
     built_in: bool
     enabled: bool
+    registration_default: bool
     permission_codes: list[str]
 
 
@@ -77,6 +79,7 @@ class RoleCreate(BaseModel):
     name: str = Field(min_length=1, max_length=80)
     description: str = Field(default="", max_length=255)
     enabled: bool = True
+    registration_default: bool = False
     permission_codes: list[str] = Field(default_factory=list)
 
 
@@ -84,6 +87,7 @@ class RoleUpdate(BaseModel):
     name: Optional[str] = Field(default=None, min_length=1, max_length=80)
     description: Optional[str] = Field(default=None, max_length=255)
     enabled: Optional[bool] = None
+    registration_default: Optional[bool] = None
     permission_codes: Optional[list[str]] = None
 
 
@@ -103,6 +107,7 @@ class ModuleCreate(BaseModel):
     sort_order: int = 0
     enabled: bool = True
     visible: bool = True
+    public_access: bool = False
 
 
 class ModuleUpdate(BaseModel):
@@ -115,6 +120,7 @@ class ModuleUpdate(BaseModel):
     sort_order: Optional[int] = None
     enabled: Optional[bool] = None
     visible: Optional[bool] = None
+    public_access: Optional[bool] = None
 
 
 class PermissionCreate(BaseModel):

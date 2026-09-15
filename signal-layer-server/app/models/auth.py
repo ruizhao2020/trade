@@ -46,6 +46,7 @@ class Role(Base, TimestampMixin):
     description: Mapped[str] = mapped_column(String(255), nullable=False, default="")
     built_in: Mapped[bool] = mapped_column(Boolean, nullable=False, default=False)
     enabled: Mapped[bool] = mapped_column(Boolean, nullable=False, default=True)
+    registration_default: Mapped[bool] = mapped_column(Boolean, nullable=False, default=False)
     permissions: Mapped[list["Permission"]] = relationship(secondary=role_permissions, lazy="selectin")
 
 
@@ -63,6 +64,7 @@ class Module(Base, TimestampMixin):
     sort_order: Mapped[int] = mapped_column(Integer, nullable=False, default=0)
     enabled: Mapped[bool] = mapped_column(Boolean, nullable=False, default=True)
     visible: Mapped[bool] = mapped_column(Boolean, nullable=False, default=True)
+    public_access: Mapped[bool] = mapped_column(Boolean, nullable=False, default=False)
     permissions: Mapped[list["Permission"]] = relationship(back_populates="module", lazy="selectin")
 
 

@@ -13,6 +13,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.config import settings
 from app.models.auth import Module, Permission, Role, User, role_permissions, user_roles
+from app.models.notification import NotificationTemplate
 from app.models.template import Template
 
 
@@ -88,10 +89,11 @@ async def authenticate(session: AsyncSession, username: str, password: str) -> U
 
 
 MODULE_DEFINITIONS = [
-    ("indicators", "指标", "chart", "indicators", "/indicators", "/api/v1/indicator,/api/v1/klines,/api/v1/chan,/api/v1/symbols", "analysis.compute", 10),
-    ("strategy", "策略", "strategy", "strategy", "/strategy", "/api/v1/templates,/api/v1/signal", "strategy.view", 20),
-    ("screener", "选股", "filter", "screener", "/screener", "/api/v1/screener", "screener.view", 30),
-    ("admin", "系统", "settings", "admin", "/admin", "/api/v1/admin", "admin.view", 100),
+    ("indicators", "指标", "chart", "indicators", "/indicators", "/api/v1/indicator,/api/v1/klines,/api/v1/chan,/api/v1/symbols", "analysis.compute", 10, True),
+    ("strategy", "策略", "strategy", "strategy", "/strategy", "/api/v1/templates,/api/v1/signal", "strategy.view", 20, False),
+    ("screener", "选股", "filter", "screener", "/screener", "/api/v1/screener", "screener.view", 30, False),
+    ("admin", "系统", "settings", "admin", "/admin", "/api/v1/admin", "admin.view", 100, False),
+    ("notifications", "通知", "bell", "notifications", "/notifications", "/api/v1/notifications", "notifications.view", 40, False),
 ]
 
 PERMISSION_DEFINITIONS = [
@@ -109,17 +111,30 @@ PERMISSION_DEFINITIONS = [
     ("admin.users", "用户管理", "admin"),
     ("admin.roles", "角色管理", "admin"),
     ("admin.modules", "模块管理", "admin"),
+    ("notifications.view", "查看通知", "notifications"),
+    ("notifications.manage", "管理个人通知任务", "notifications"),
+    ("notifications.admin", "管理通知渠道和模板", "notifications"),
 ]
+
+NOTIFICATION_TEMPLATE_DEFAULTS = {
+    "screener_completed": ("定时选股完成", "【定时选股完成】\n策略：{{strategy_name}}\n市场：{{market}}\n扫描：{{scanned_count}} 个，命中：{{matched_count}} 个\n结果：{{screen_results}}\n时间：{{trigger_time}}"),
+    "screener_failed": ("定时选股失败", "【定时选股失败】\n策略：{{strategy_name}}\n原因：{{error}}\n时间：{{trigger_time}}"),
+    "entry": ("策略建仓", "【策略建仓】\n策略：{{strategy_name}}\n标的：{{symbol_name}}（{{symbol}}）\n价格：{{price}}\n建议仓位：{{position_size}}\n止损：{{stop_loss}}\n止盈：{{take_profit}}\n时间：{{trigger_time}}"),
+    "exit": ("策略清仓", "【策略清仓】\n策略：{{strategy_name}}\n标的：{{symbol_name}}（{{symbol}}）\n价格：{{price}}\n时间：{{trigger_time}}"),
+    "stop_loss": ("触发止损", "【触发止损】\n策略：{{strategy_name}}\n标的：{{symbol_name}}（{{symbol}}）\n价格：{{price}}\n止损价：{{stop_loss}}\n时间：{{trigger_time}}"),
+    "take_profit": ("触发止盈", "【触发止盈】\n策略：{{strategy_name}}\n标的：{{symbol_name}}（{{symbol}}）\n价格：{{price}}\n止盈价：{{take_profit}}\n时间：{{trigger_time}}"),
+    "scheduled": ("策略定时快照", "【策略定时推送】\n策略：{{strategy_name}}\n标的：{{symbol_name}}（{{symbol}}）\n最新价：{{price}}\n信号状态：{{signal_status}}\n时间：{{trigger_time}}"),
+}
 
 
 async def seed_access_control(session: AsyncSession):
     existing_modules = {item.code: item for item in (await session.execute(select(Module))).scalars()}
-    for code, name, icon, component_key, route_path, api_prefixes, api_permission, sort_order in MODULE_DEFINITIONS:
+    for code, name, icon, component_key, route_path, api_prefixes, api_permission, sort_order, public_access in MODULE_DEFINITIONS:
         if code not in existing_modules:
             module = Module(
                 code=code, name=name, icon=icon, component_key=component_key,
                 route_path=route_path, api_prefixes=api_prefixes,
-                api_permission=api_permission, sort_order=sort_order,
+                api_permission=api_permission, sort_order=sort_order, public_access=public_access,
             )
             session.add(module)
             existing_modules[code] = module
@@ -147,9 +162,11 @@ async def seed_access_control(session: AsyncSession):
         roles["admin"] = Role(code="admin", name="管理员", description="拥有全部权限", built_in=True)
         session.add(roles["admin"])
     if "member" not in roles:
-        roles["member"] = Role(code="member", name="普通用户", description="默认业务功能", built_in=True)
+        roles["member"] = Role(code="member", name="普通用户", description="默认业务功能", built_in=True, registration_default=True)
         session.add(roles["member"])
     await session.flush()
+    if not any(role.registration_default and role.enabled for role in roles.values()):
+        roles["member"].registration_default = True
     reset_role_ids = [roles["admin"].id]
     if member_created:
         reset_role_ids.append(roles["member"].id)
@@ -159,7 +176,7 @@ async def seed_access_control(session: AsyncSession):
     admin_permission_ids = [permission.id for permission in existing_permissions.values()]
     member_permission_ids = [
         permission.id for code, permission in existing_permissions.items()
-        if not code.startswith("admin.")
+        if not code.startswith("admin.") and code != "notifications.admin"
     ]
     if admin_permission_ids:
         await session.execute(insert(role_permissions), [
@@ -171,6 +188,26 @@ async def seed_access_control(session: AsyncSession):
             {"role_id": roles["member"].id, "permission_id": permission_id}
             for permission_id in member_permission_ids
         ])
+    else:
+        # 升级场景：为既有普通用户角色补上通知模块权限，不覆盖管理员已做的其他配置。
+        admin_notification_permission = existing_permissions.get("notifications.admin")
+        if admin_notification_permission:
+            await session.execute(delete(role_permissions).where(
+                role_permissions.c.role_id == roles["member"].id,
+                role_permissions.c.permission_id == admin_notification_permission.id,
+            ))
+        existing_member_permissions = set((await session.execute(
+            select(role_permissions.c.permission_id).where(role_permissions.c.role_id == roles["member"].id)
+        )).scalars().all())
+        missing_member_permissions = [
+            permission.id for code, permission in existing_permissions.items()
+            if not code.startswith("admin.") and code != "notifications.admin" and permission.id not in existing_member_permissions
+        ]
+        if missing_member_permissions:
+            await session.execute(insert(role_permissions), [
+                {"role_id": roles["member"].id, "permission_id": permission_id}
+                for permission_id in missing_member_permissions
+            ])
 
     users = (await session.execute(select(User))).scalars().all()
     if not users:
@@ -184,6 +221,10 @@ async def seed_access_control(session: AsyncSession):
         await session.flush()
         await session.execute(insert(user_roles).values(user_id=admin.id, role_id=roles["admin"].id))
         users = [admin]
+    existing_notification_templates = {item.event_type: item for item in (await session.execute(select(NotificationTemplate))).scalars()}
+    for event_type, (name, content) in NOTIFICATION_TEMPLATE_DEFAULTS.items():
+        if event_type not in existing_notification_templates:
+            session.add(NotificationTemplate(event_type=event_type, name=name, content=content, enabled=True))
     bootstrap_admin = next((user for user in users if user.username == settings.bootstrap_admin_username), users[0])
     # 兼容升级前没有归属人的策略数据，将其交给首个管理员。
     await session.execute(

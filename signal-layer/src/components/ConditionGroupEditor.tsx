@@ -60,6 +60,18 @@ const CHAN_SHAPE_OPTIONS = [
   { value: 'chan:zhongshu', label: '中枢数', element: 'zhongshu' as const },
 ]
 
+const CHIP_FIELD_OPTIONS = [
+  { field: 'peak_price', label: '主筹码峰' },
+  { field: 'average_cost', label: '平均成本' },
+  { field: 'profit_ratio', label: '获利盘比例' },
+  { field: 'range70_low', label: '70%成本下沿' },
+  { field: 'range70_high', label: '70%成本上沿' },
+  { field: 'concentration70', label: '70%集中度' },
+  { field: 'range90_low', label: '90%成本下沿' },
+  { field: 'range90_high', label: '90%成本上沿' },
+  { field: 'concentration90', label: '90%集中度' },
+]
+
 const selectArrow = `url("data:image/svg+xml,%3csvg xmlns='http://www.w3.org/2000/svg' fill='none' viewBox='0 0 8 5'%3e%3cpath stroke='%238B8B9E' stroke-linecap='round' stroke-linejoin='round' stroke-width='1.5' d='M1 1l3 3 3-3'/%3e%3c/svg%3e")`
 
 type IndicatorValue = Extract<ConditionValue, { source: 'indicator' }>
@@ -67,6 +79,7 @@ type IndicatorValue = Extract<ConditionValue, { source: 'indicator' }>
 const PARAM_LABELS: Record<string, string> = {
   period: '周期', fast: '快线', slow: '慢线', signal: '信号线',
   n: '计算周期', m1: 'K值平滑', m2: 'D值平滑', std: '标准差倍数',
+  bins: '价格档位', lookback: '回看天数', min_turnover_days: '最少有效天数',
   piv_len: '枢轴长度', atr_len: '波幅周期',
 }
 
@@ -198,6 +211,7 @@ export function ConditionGroupEditor({ groups, indicators, onChange, allowEmpty 
               // 缠论背驰和买卖点是独立事件条件，不需要操作符和右值
               const isChanSignal = leftSrc === 'chan' && ['divergence', 'buySellPoint'].includes((cond.left as {element?: string}).element ?? '')
               const isMaLeft = leftSrc === 'indicator' && (cond.left as IndicatorValue).indicatorType === 'ma'
+              const isChipLeft = leftSrc === 'indicator' && (cond.left as IndicatorValue).indicatorType === 'chip_distribution'
               const directionOperators: ConditionOperator[] = [
                 ConditionOperator.Rising,
                 ConditionOperator.Falling,
@@ -220,7 +234,7 @@ export function ConditionGroupEditor({ groups, indicators, onChange, allowEmpty 
                   updateCondition(gi, conditionIndex, { [side]: { source: 'price', field: val as 'open'|'high'|'low'|'close'|'volume' }, ...operatorUpdate })
                 } else if (src === 'indicator') {
                   const ind = indicators.find(i => i.type === val)
-                  const field = ind?.render.plots[0]?.field ?? 'value'
+                  const field = val === 'chip_distribution' ? CHIP_FIELD_OPTIONS[0]!.field : ind?.render.plots[0]?.field ?? 'value'
                   updateCondition(gi, conditionIndex, { [side]: { source: 'indicator', indicatorType: val, params: { ...(ind?.default_params ?? {}) }, field }, ...operatorUpdate })
                 } else if (src === 'chan') {
                   const opt = [...CHAN_OPTIONS, ...CHAN_SHAPE_OPTIONS].find(o => o.value === e.target.value)
@@ -254,7 +268,7 @@ export function ConditionGroupEditor({ groups, indicators, onChange, allowEmpty 
                   <select value={srcValue(cond.left)} onChange={onSrcChange('left')}
                     className={`${selClass} flex-1 min-w-[150px]`} style={selStyle}>
                     <optgroup label="价格">{PRICE_OPTIONS.map(o => <option key={o.value} value={o.value} className="bg-[var(--bg-secondary)] text-[var(--text-primary)]">{o.label}</option>)}</optgroup>
-                    <optgroup label="指标">{indicators.filter(i => i.type !== 'chip_distribution').map(i => <option key={`indicator:${i.type}`} value={`indicator:${i.type}`} className="bg-[var(--bg-secondary)] text-[var(--text-primary)]">{i.name}</option>)}</optgroup>
+                    <optgroup label="指标">{indicators.map(i => <option key={`indicator:${i.type}`} value={`indicator:${i.type}`} className="bg-[var(--bg-secondary)] text-[var(--text-primary)]">{i.name}</option>)}</optgroup>
                     <optgroup label="缠论·信号">{CHAN_OPTIONS.map(o => <option key={o.value} value={o.value} className="bg-[var(--bg-secondary)] text-[var(--text-primary)]">{o.label}</option>)}</optgroup>
                     <optgroup label="缠论·形态">{CHAN_SHAPE_OPTIONS.map(o => <option key={o.value} value={o.value} className="bg-[var(--bg-secondary)] text-[var(--text-primary)]">{o.label}</option>)}</optgroup>
                     <optgroup label="其他"><option value="constant" className="bg-[var(--bg-secondary)] text-[var(--text-primary)]">固定值</option></optgroup>
@@ -266,6 +280,12 @@ export function ConditionGroupEditor({ groups, indicators, onChange, allowEmpty 
                       onChange={e => updateCondition(gi, conditionIndex, { left: { ...cond.left, field: e.target.value } as ConditionValue })}
                       className={`${selClass} w-[90px] font-mono text-[12px]`} style={{ ...selStyle, paddingRight: '24px' }}>
                       {leftInfo.render.plots.map(p => <option key={p.field} value={p.field} className="bg-[var(--bg-secondary)] text-[var(--text-primary)]">{p.label || p.field}</option>)}
+                    </select>
+                  )}
+
+                  {isChipLeft && (
+                    <select value={(cond.left as IndicatorValue).field} aria-label="筹码分布字段" onChange={e => updateCondition(gi, conditionIndex, { left: { ...cond.left, field: e.target.value } as ConditionValue })} className={`${selClass} w-[120px]`} style={selStyle}>
+                      {CHIP_FIELD_OPTIONS.map(option => <option key={option.field} value={option.field}>{option.label}</option>)}
                     </select>
                   )}
 
@@ -306,7 +326,7 @@ export function ConditionGroupEditor({ groups, indicators, onChange, allowEmpty 
                           <select value={srcValue(cond.right)} onChange={onSrcChange('right')}
                             className={`${selClass} flex-1 min-w-[150px]`} style={selStyle}>
                             <optgroup label="价格">{PRICE_OPTIONS.map(o => <option key={o.value} value={o.value} className="bg-[var(--bg-secondary)] text-[var(--text-primary)]">{o.label}</option>)}</optgroup>
-                            <optgroup label="指标">{indicators.filter(i => i.type !== 'chip_distribution').map(i => <option key={`indicator:${i.type}`} value={`indicator:${i.type}`} className="bg-[var(--bg-secondary)] text-[var(--text-primary)]">{i.name}</option>)}</optgroup>
+                            <optgroup label="指标">{indicators.map(i => <option key={`indicator:${i.type}`} value={`indicator:${i.type}`} className="bg-[var(--bg-secondary)] text-[var(--text-primary)]">{i.name}</option>)}</optgroup>
                             <optgroup label="缠论·信号">{CHAN_OPTIONS.map(o => <option key={o.value} value={o.value} className="bg-[var(--bg-secondary)] text-[var(--text-primary)]">{o.label}</option>)}</optgroup>
                             <optgroup label="缠论·形态">{CHAN_SHAPE_OPTIONS.map(o => <option key={o.value} value={o.value} className="bg-[var(--bg-secondary)] text-[var(--text-primary)]">{o.label}</option>)}</optgroup>
                             <optgroup label="其他"><option value="constant" className="bg-[var(--bg-secondary)] text-[var(--text-primary)]">固定值</option></optgroup>
@@ -318,6 +338,12 @@ export function ConditionGroupEditor({ groups, indicators, onChange, allowEmpty 
                               onChange={e => updateCondition(gi, conditionIndex, { right: { ...cond.right, field: e.target.value } as ConditionValue })}
                               className={`${selClass} w-[90px] font-mono text-[12px]`} style={{ ...selStyle, paddingRight: '24px' }}>
                               {rightInfo.render.plots.map(p => <option key={p.field} value={p.field} className="bg-[var(--bg-secondary)] text-[var(--text-primary)]">{p.label || p.field}</option>)}
+                            </select>
+                          )}
+
+                          {rightSrc === 'indicator' && (cond.right as IndicatorValue).indicatorType === 'chip_distribution' && (
+                            <select value={(cond.right as IndicatorValue).field} aria-label="筹码分布右值字段" onChange={e => updateCondition(gi, conditionIndex, { right: { ...cond.right, field: e.target.value } as ConditionValue })} className={`${selClass} w-[120px]`} style={selStyle}>
+                              {CHIP_FIELD_OPTIONS.map(option => <option key={option.field} value={option.field}>{option.label}</option>)}
                             </select>
                           )}
 

@@ -31,6 +31,7 @@ def user_response(user: User, modules: list[Module] | None = None) -> UserRespon
                 api_prefixes=module.api_prefixes,
                 api_permission=module.api_permission,
                 sort_order=module.sort_order, enabled=module.enabled, visible=module.visible,
+                public_access=bool(getattr(module, "public_access", False)),
             )
             for module in allowed_modules
             if module.enabled and module.visible and f"{module.code}.view" in codes
@@ -50,7 +51,11 @@ async def register(body: RegisterRequest, session: AsyncSession = Depends(get_se
     )).scalar_one_or_none()
     if duplicate:
         raise HTTPException(status_code=409, detail="用户名或邮箱已存在")
-    member = (await session.execute(select(Role).where(Role.code == "member", Role.enabled.is_(True)))).scalar_one()
+    registration_role = (await session.execute(
+        select(Role).where(Role.registration_default.is_(True), Role.enabled.is_(True)).order_by(Role.id)
+    )).scalars().first()
+    if registration_role is None:
+        registration_role = (await session.execute(select(Role).where(Role.code == "member", Role.enabled.is_(True)))).scalar_one()
     user = User(
         username=body.username,
         email=body.email,
@@ -58,7 +63,7 @@ async def register(body: RegisterRequest, session: AsyncSession = Depends(get_se
         password_hash=hash_password(body.password),
         enabled=True,
     )
-    user.roles = [member]
+    user.roles = [registration_role]
     session.add(user)
     await session.commit()
     await session.refresh(user)

@@ -31,9 +31,11 @@ class ModuleAccessMiddleware(BaseHTTPMiddleware):
             if not matched:
                 return await call_next(request)
 
-            _, required_permission, module_enabled = matched
+            _, required_permission, module_enabled, public_access = matched
             if not module_enabled:
                 return JSONResponse({"detail": "模块已停用"}, status_code=403)
+            if public_access:
+                return await call_next(request)
             authorization = request.headers.get("Authorization", "")
             if not authorization.lower().startswith("bearer "):
                 return JSONResponse({"detail": "请先登录"}, status_code=401)

@@ -14,7 +14,16 @@
 | 应用库 | `permissions` | 模块与功能权限点 |
 | 应用库 | `user_roles` | 用户角色关系 |
 | 应用库 | `role_permissions` | 角色权限关系 |
+| 应用库 | `notification_channels` | 企业微信、飞书、浏览器通知渠道 |
+| 应用库 | `notification_templates` | 管理员维护的通知内容模板 |
+| 应用库 | `strategy_monitors` | 策略与标的的轮询监控配置 |
+| 应用库 | `notification_events` | 建仓、清仓、止损、止盈事件记录 |
+| 应用库 | `screener_schedules` | 个人定时策略选股任务 |
 | 行情库 | `stock_info` | A 股标的名称与行业信息 |
+
+权限配置说明：`modules.public_access` 控制模块接口是否允许匿名访问；默认“指标”模块开启，其他模块关闭。`roles.registration_default` 控制新注册用户自动绑定的角色，默认角色为“普通用户”。两项均可在系统管理页面配置。
+
+通知模块采用后台轮询已收盘行情（默认 60 秒，可按监控调整），触发事件后写入 `notification_events`，并投递到已启用的企业微信机器人、飞书机器人或浏览器通知渠道。它不依赖长连接实时行情；如需盘中实时提醒，可将轮询间隔调低并接入实时行情源。
 
 ## 不纳入脚本的动态表
 
@@ -48,7 +57,7 @@ mysql -u root -p signal_layer < database/mysql/001_app_schema.sql
 mysql -u root -p signal_layer < database/mysql/010_access_control_seed.sql
 ```
 
-初始化后会创建内置模块、14 个权限点、`admin/member` 角色及首个管理员。开发环境初始账号为 `admin / Admin123!`，首次登录后应立即修改密码。
+初始化后会创建内置模块、17 个权限点、`admin/member` 角色及首个管理员。开发环境初始账号为 `admin / Admin123!`，首次登录后应立即修改密码。
 
 MySQL 行情库固定表：
 

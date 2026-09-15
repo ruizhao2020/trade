@@ -9,7 +9,7 @@ from app.schemas.chan import (
 
 logger = logging.getLogger(__name__)
 
-router = APIRouter(prefix="/api/v1/chan", tags=["chan"], dependencies=[Depends(require_permission("analysis.compute"))])
+router = APIRouter(prefix="/api/v1/chan", tags=["chan"])
 
 
 @router.get("/{symbol}/{timeframe}", response_model=ChanAnalysisResponse)

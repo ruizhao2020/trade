@@ -16,6 +16,7 @@ import type {
   Time,
   SeriesMarker,
   ISeriesMarkersPluginApi,
+  Coordinate,
 } from 'lightweight-charts'
 import { LineSeries, createSeriesMarkers } from 'lightweight-charts'
 import type { CanvasRenderingTarget2D } from 'fancy-canvas'
@@ -30,7 +31,7 @@ import type {
   Duan,
   Bi,
 } from '../core/types.ts'
-import { arrangeSeriesMarkersVertically, buildDivergenceMarkerDetail, divergenceMarkerId, divergenceMarkerLabel } from './markerDetails.ts'
+import { arrangeSeriesMarkersVertically, buildBuySellMarkerDetail, buildDivergenceMarkerDetail, buySellMarkerId, buySellMarkerLabel, divergenceMarkerId, divergenceMarkerLabel } from './markerDetails.ts'
 
 class ZhongshuRenderer implements IPrimitivePaneRenderer {
   private readonly candleSeries: ISeriesApi<'Candlestick'>
@@ -181,6 +182,7 @@ function buildBiIndexMarkers(bis: Array<{ index: number; direction: 'up' | 'down
     price: first.startPrice,
     color: '#fbbf24',
     shape: 'circle',
+    size: 0.8,
     id: `chan:bi-point:0:${first.startTime}`,
     text: '0',
   })
@@ -193,6 +195,7 @@ function buildBiIndexMarkers(bis: Array<{ index: number; direction: 'up' | 'down
       price: b.endPrice,
       color: '#fbbf24',
       shape: 'circle',
+      size: 0.8,
       id: `chan:bi-point:${i + 1}:${b.endTime}`,
       text: `${i + 1}`,
     })
@@ -212,6 +215,7 @@ function buildDuanIndexMarkers(duans: Array<{ index: number; direction: 'up' | '
     price: first.startPrice,
     color: '#3b82f6',
     shape: 'square',
+    size: 0.8,
     id: `chan:duan-point:0:${first.startTime}`,
     text: 'D0',
   })
@@ -223,6 +227,7 @@ function buildDuanIndexMarkers(duans: Array<{ index: number; direction: 'up' | '
       price: d.endPrice,
       color: '#3b82f6',
       shape: 'square',
+      size: 0.8,
       id: `chan:duan-point:${i + 1}:${d.endTime}`,
       text: `D${i + 1}`,
     })
@@ -332,10 +337,6 @@ function buildBuySellMarkers(points: BuySellPoint[]): SeriesMarker<Time>[] {
     buy1: '#22c55e', buy2: '#16a34a', buy3: '#15803d',
     sell1: '#f87171', sell2: '#ef4444', sell3: '#dc2626',
   }
-  const labelMap: Record<string, string> = {
-    buy1: '一买', buy2: '二买', buy3: '三买',
-    sell1: '一卖', sell2: '二卖', sell3: '三卖',
-  }
   return points.map(p => {
     const isBuy = p.type.startsWith('buy')
     return {
@@ -345,8 +346,8 @@ function buildBuySellMarkers(points: BuySellPoint[]): SeriesMarker<Time>[] {
       color: colorMap[p.type] ?? '#fbbf24',
       shape: isBuy ? 'arrowUp' : 'arrowDown',
       size: 2,
-      id: `chan:buy-sell:${p.type}:${p.time}:${p.biIndex}`,
-      text: labelMap[p.type] ?? p.type,
+      id: buySellMarkerId(p),
+      text: buySellMarkerLabel(p),
     }
   })
 }
@@ -451,9 +452,16 @@ export class ChanRenderer {
       markers.push(...buildDivergenceMarkers(analysis.divergences))
     }
     if (options.showBuySellPoints && analysis.buySellPoints.length > 0) {
+      for (const item of analysis.buySellPoints) {
+        const detail = buildBuySellMarkerDetail(item)
+        this.markerDetails.set(detail.id, detail)
+      }
       markers.push(...buildBuySellMarkers(analysis.buySellPoints))
     }
-    const arrangedMarkers = arrangeSeriesMarkersVertically(markers)
+    const arrangedMarkers = arrangeSeriesMarkersVertically(markers, {
+      priceToCoordinate: (price) => this.candleSeries.priceToCoordinate(price),
+      coordinateToPrice: (coordinate) => this.candleSeries.coordinateToPrice(coordinate as Coordinate),
+    })
       .sort((a, b) => (a.time as number) - (b.time as number))
     if (arrangedMarkers.length > 0) {
       this.markersPlugin = createSeriesMarkers(this.candleSeries, arrangedMarkers)

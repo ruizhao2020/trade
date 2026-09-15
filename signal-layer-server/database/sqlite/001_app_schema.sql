@@ -41,6 +41,94 @@ CREATE TABLE IF NOT EXISTS klines (
 CREATE INDEX IF NOT EXISTS idx_symbol_tf ON klines (symbol, timeframe);
 CREATE INDEX IF NOT EXISTS idx_open_time ON klines (open_time);
 
+CREATE TABLE IF NOT EXISTS notification_channels (
+    id INTEGER NOT NULL PRIMARY KEY AUTOINCREMENT,
+    user_id INTEGER NOT NULL,
+    name VARCHAR(80) NOT NULL,
+    channel_type VARCHAR(20) NOT NULL,
+    webhook_url VARCHAR(1000),
+    enabled BOOLEAN NOT NULL DEFAULT 1,
+    is_shared BOOLEAN NOT NULL DEFAULT 0,
+    created_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    updated_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP
+);
+
+CREATE TABLE IF NOT EXISTS notification_templates (
+    id INTEGER NOT NULL PRIMARY KEY AUTOINCREMENT,
+    event_type VARCHAR(32) NOT NULL UNIQUE,
+    name VARCHAR(80) NOT NULL,
+    content VARCHAR(4000) NOT NULL,
+    enabled BOOLEAN NOT NULL DEFAULT 1,
+    updated_by INTEGER,
+    created_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    updated_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP
+);
+
+CREATE TABLE IF NOT EXISTS strategy_monitors (
+    id INTEGER NOT NULL PRIMARY KEY AUTOINCREMENT,
+    user_id INTEGER NOT NULL,
+    template_id VARCHAR(64) NOT NULL,
+    symbol VARCHAR(32) NOT NULL,
+    symbol_name VARCHAR(80) NOT NULL DEFAULT '',
+    channel_ids JSON NOT NULL DEFAULT '[]',
+    enabled BOOLEAN NOT NULL DEFAULT 1,
+    poll_interval_seconds INTEGER NOT NULL DEFAULT 60,
+    last_checked_at DATETIME,
+    last_bar_time BIGINT,
+    in_position BOOLEAN NOT NULL DEFAULT 0,
+    entry_price REAL,
+    stop_loss_price REAL,
+    take_profit_price REAL,
+    event_types JSON NOT NULL DEFAULT '["entry","exit","stop_loss","take_profit"]',
+    schedule_enabled BOOLEAN NOT NULL DEFAULT 0,
+    schedule_time VARCHAR(5) NOT NULL DEFAULT '09:30',
+    schedule_weekdays JSON NOT NULL DEFAULT '[1,2,3,4,5]',
+    last_schedule_key VARCHAR(32),
+    created_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    updated_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    UNIQUE (user_id, template_id, symbol)
+);
+
+CREATE TABLE IF NOT EXISTS notification_events (
+    id INTEGER NOT NULL PRIMARY KEY AUTOINCREMENT,
+    user_id INTEGER NOT NULL,
+    monitor_id INTEGER NOT NULL,
+    event_type VARCHAR(24) NOT NULL,
+    symbol VARCHAR(32) NOT NULL,
+    symbol_name VARCHAR(80) NOT NULL DEFAULT '',
+    template_name VARCHAR(100) NOT NULL,
+    timeframe VARCHAR(10) NOT NULL,
+    bar_time BIGINT NOT NULL,
+    price REAL NOT NULL,
+    title VARCHAR(160) NOT NULL,
+    content VARCHAR(2000) NOT NULL,
+    delivery_status JSON NOT NULL DEFAULT '{}',
+    is_read BOOLEAN NOT NULL DEFAULT 0,
+    created_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    updated_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    UNIQUE (monitor_id, event_type, bar_time)
+);
+
+CREATE TABLE IF NOT EXISTS screener_schedules (
+    id INTEGER NOT NULL PRIMARY KEY AUTOINCREMENT,
+    user_id INTEGER NOT NULL,
+    template_id VARCHAR(64) NOT NULL,
+    market VARCHAR(16) NOT NULL DEFAULT 'stock',
+    universe_limit INTEGER NOT NULL DEFAULT 50,
+    min_progress INTEGER NOT NULL DEFAULT 1,
+    schedule_time VARCHAR(5) NOT NULL DEFAULT '01:00',
+    schedule_weekdays JSON NOT NULL DEFAULT '[1,2,3,4,5]',
+    channel_ids JSON NOT NULL DEFAULT '[]',
+    enabled BOOLEAN NOT NULL DEFAULT 1,
+    last_run_key VARCHAR(32),
+    last_run_at DATETIME,
+    last_result_count INTEGER NOT NULL DEFAULT 0,
+    last_error VARCHAR(500),
+    created_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    updated_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    UNIQUE (user_id, template_id, market, schedule_time)
+);
+
 CREATE TABLE IF NOT EXISTS users (
     id            INTEGER      NOT NULL PRIMARY KEY AUTOINCREMENT,
     username      VARCHAR(50)  NOT NULL UNIQUE,
@@ -60,6 +148,7 @@ CREATE TABLE IF NOT EXISTS roles (
     description VARCHAR(255) NOT NULL DEFAULT '',
     built_in    BOOLEAN      NOT NULL DEFAULT 0,
     enabled     BOOLEAN      NOT NULL DEFAULT 1,
+    registration_default BOOLEAN NOT NULL DEFAULT 0,
     created_at  DATETIME     NOT NULL DEFAULT CURRENT_TIMESTAMP,
     updated_at  DATETIME     NOT NULL DEFAULT CURRENT_TIMESTAMP
 );
@@ -76,6 +165,7 @@ CREATE TABLE IF NOT EXISTS modules (
     sort_order    INTEGER      NOT NULL DEFAULT 0,
     enabled       BOOLEAN      NOT NULL DEFAULT 1,
     visible       BOOLEAN      NOT NULL DEFAULT 1,
+    public_access BOOLEAN      NOT NULL DEFAULT 0,
     created_at    DATETIME     NOT NULL DEFAULT CURRENT_TIMESTAMP,
     updated_at    DATETIME     NOT NULL DEFAULT CURRENT_TIMESTAMP
 );

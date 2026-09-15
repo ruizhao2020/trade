@@ -156,7 +156,7 @@ async def get_symbol_items(
     raise ValueError(f"不支持的市场类型: {market}，可选 stock / futures")
 
 
-@router.get("", dependencies=[Depends(require_permission("market.read"))])
+@router.get("")
 async def list_symbols(
     market: str = Query(default="stock", description="市场类型：stock=股票, futures=期货"),
     keyword: Optional[str] = Query(default=None, description="搜索关键字（股票代码或名称）"),

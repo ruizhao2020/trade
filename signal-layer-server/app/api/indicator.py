@@ -39,7 +39,7 @@ INDICATOR_META: dict[str, dict] = {
 }
 
 
-@router.get("/list", response_model=IndicatorListResponse, dependencies=[Depends(require_permission("analysis.compute"))])
+@router.get("/list", response_model=IndicatorListResponse)
 async def list_indicators():
     """返回所有可用指标的元信息(前端用于展示指标库)"""
     svc = get_indicator_service()
@@ -67,7 +67,7 @@ async def list_indicators():
     return IndicatorListResponse(indicators=indicators)
 
 
-@router.post("/calculate", response_model=IndicatorCalculateResponse, dependencies=[Depends(require_permission("indicators.calculate"))])
+@router.post("/calculate", response_model=IndicatorCalculateResponse)
 async def calculate_indicators(req: IndicatorCalculateRequest):
     logger.info(f"POST /indicator/calculate symbol={req.symbol} tf={req.timeframe} "
                 f"indicators={[i.type for i in req.indicators]}")

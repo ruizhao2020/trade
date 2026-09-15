@@ -9,7 +9,7 @@
 
 ## 条件值来源 (resolve)
 - price: K 线字段（open/high/low/close/volume），取最新一根的值
-- indicator: 指标计算结果（MA/MACD/RSI 等），通过 IndicatorService 获取
+- indicator: 指标计算结果（MA/MACD/RSI/筹码分布等），通过 IndicatorService 获取
 - chan: 缠论元素数量（买卖点存在性、笔数量、中枢数量等）
 - constant: 固定数值
 - timeframe: 切换到指定周期后递归解析 inner 值

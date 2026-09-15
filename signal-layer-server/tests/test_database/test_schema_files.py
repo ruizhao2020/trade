@@ -41,6 +41,7 @@ def test_sqlite_initialization_script_creates_fixed_tables():
         connection.close()
     assert "api_prefixes" in module_columns
     assert "api_permission" in module_columns
+    assert "public_access" in module_columns
 
 
 def test_sqlite_seed_creates_default_admin_roles_and_modules():
@@ -50,14 +51,16 @@ def test_sqlite_seed_creates_default_admin_roles_and_modules():
         seed_sql = (ROOT / "database/sqlite/010_access_control_seed.sql").read_text(encoding="utf-8")
         connection.executescript(seed_sql)
         connection.executescript(seed_sql)
-        assert connection.execute("SELECT COUNT(*) FROM modules").fetchone()[0] == 4
-        assert connection.execute("SELECT COUNT(*) FROM permissions").fetchone()[0] == 14
+        assert connection.execute("SELECT COUNT(*) FROM modules").fetchone()[0] == 5
+        assert connection.execute("SELECT COUNT(*) FROM permissions").fetchone()[0] == 17
         assert connection.execute("SELECT COUNT(*) FROM roles").fetchone()[0] == 2
         assert connection.execute("SELECT COUNT(*) FROM users WHERE username='admin'").fetchone()[0] == 1
+        assert connection.execute("SELECT public_access FROM modules WHERE code='indicators'").fetchone()[0] == 1
+        assert connection.execute("SELECT registration_default FROM roles WHERE code='member'").fetchone()[0] == 1
         admin_permissions = connection.execute(
             "SELECT COUNT(*) FROM role_permissions rp JOIN roles r ON r.id=rp.role_id WHERE r.code='admin'"
         ).fetchone()[0]
-        assert admin_permissions == 14
+        assert admin_permissions == 17
     finally:
         connection.close()
 

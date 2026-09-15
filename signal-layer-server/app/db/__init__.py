@@ -6,6 +6,7 @@ from app.models.base import Base
 from app.models.template import Template  # noqa: F401 — 确保模型注册到 Base.metadata
 from app.models.auth import Module, Permission, Role, User  # noqa: F401
 from app.models.kline import Kline  # noqa: F401 — 注册固定 K 线模型
+from app.models.notification import NotificationChannel, NotificationEvent, NotificationTemplate, ScreenerSchedule, StrategyMonitor  # noqa: F401
 from app.config import settings
 
 _engine = None
@@ -51,6 +52,16 @@ def _ensure_compat_columns(connection):
             connection.execute(text("ALTER TABLE modules ADD COLUMN api_prefixes VARCHAR(500) NOT NULL DEFAULT ''"))
         if "api_permission" not in module_columns:
             connection.execute(text("ALTER TABLE modules ADD COLUMN api_permission VARCHAR(100) NOT NULL DEFAULT ''"))
+        if "public_access" not in module_columns:
+            connection.execute(text("ALTER TABLE modules ADD COLUMN public_access BOOLEAN NOT NULL DEFAULT 0"))
+            connection.execute(text("UPDATE modules SET public_access = 1 WHERE code = 'indicators'"))
+    if "roles" in inspector.get_table_names():
+        role_columns = {column["name"] for column in inspector.get_columns("roles")}
+        if "registration_default" not in role_columns:
+            connection.execute(text("ALTER TABLE roles ADD COLUMN registration_default BOOLEAN NOT NULL DEFAULT 0"))
+            # 该字段首次加入时，历史系统只有 member 作为注册角色；直接设为默认。
+            # 后续管理员可在系统中切换为其他角色，迁移不会再次执行。
+            connection.execute(text("UPDATE roles SET registration_default = 1 WHERE code = 'member'"))
     if "klines" in inspector.get_table_names():
         kline_columns = {column["name"] for column in inspector.get_columns("klines")}
         additions = {
@@ -63,6 +74,32 @@ def _ensure_compat_columns(connection):
         for column, definition in additions.items():
             if column not in kline_columns:
                 connection.execute(text(f"ALTER TABLE klines ADD COLUMN {column} {definition}"))
+    if "strategy_monitors" in inspector.get_table_names():
+        monitor_columns = {column["name"] for column in inspector.get_columns("strategy_monitors")}
+        monitor_additions = {
+            "schedule_enabled": "BOOLEAN NOT NULL DEFAULT 0",
+            "schedule_time": "VARCHAR(5) NOT NULL DEFAULT '09:30'",
+            # Nullable keeps this migration compatible with older MySQL
+            # versions that do not allow JSON defaults in ALTER TABLE.
+            "schedule_weekdays": "JSON NULL",
+            "last_schedule_key": "VARCHAR(32) NULL",
+            "event_types": "JSON NULL",
+        }
+        for column, definition in monitor_additions.items():
+            if column not in monitor_columns:
+                connection.execute(text(f"ALTER TABLE strategy_monitors ADD COLUMN {column} {definition}"))
+    if "notification_channels" in inspector.get_table_names():
+        channel_columns = {column["name"] for column in inspector.get_columns("notification_channels")}
+        if "is_shared" not in channel_columns:
+            connection.execute(text("ALTER TABLE notification_channels ADD COLUMN is_shared BOOLEAN NOT NULL DEFAULT 0"))
+    if "notification_events" in inspector.get_table_names() and connection.dialect.name == "mysql":
+        # Scheduled screener results reuse the event table but do not have a
+        # strategy monitor row. Remove the old FK left by the first version of
+        # the notification schema; runtime models already treat these ids as
+        # source identifiers rather than relational references.
+        foreign_keys = inspect(connection).get_foreign_keys("notification_events")
+        if any(item.get("name") == "fk_notification_event_monitor" for item in foreign_keys):
+            connection.execute(text("ALTER TABLE notification_events DROP FOREIGN KEY fk_notification_event_monitor"))
 
 
 def _ensure_mysql_utf8mb4(connection):
@@ -72,6 +109,7 @@ def _ensure_mysql_utf8mb4(connection):
     fixed_tables = (
         "templates", "users", "roles", "modules", "permissions",
         "user_roles", "role_permissions", "klines",
+        "notification_channels", "notification_templates", "strategy_monitors", "notification_events", "screener_schedules",
     )
     inspector = inspect(connection)
     existing = set(inspector.get_table_names())

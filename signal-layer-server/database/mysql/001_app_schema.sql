@@ -32,6 +32,7 @@ CREATE TABLE IF NOT EXISTS roles (
     description VARCHAR(255) NOT NULL DEFAULT '',
     built_in    TINYINT(1)   NOT NULL DEFAULT 0,
     enabled     TINYINT(1)   NOT NULL DEFAULT 1,
+    registration_default TINYINT(1) NOT NULL DEFAULT 0,
     created_at  DATETIME     NOT NULL DEFAULT CURRENT_TIMESTAMP,
     updated_at  DATETIME     NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
@@ -48,6 +49,7 @@ CREATE TABLE IF NOT EXISTS modules (
     sort_order    INT          NOT NULL DEFAULT 0,
     enabled       TINYINT(1)   NOT NULL DEFAULT 1,
     visible       TINYINT(1)   NOT NULL DEFAULT 1,
+    public_access TINYINT(1)   NOT NULL DEFAULT 0,
     created_at    DATETIME     NOT NULL DEFAULT CURRENT_TIMESTAMP,
     updated_at    DATETIME     NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
@@ -102,4 +104,102 @@ CREATE TABLE IF NOT EXISTS klines (
     UNIQUE KEY uk_symbol_tf_time (symbol, timeframe, open_time),
     INDEX idx_symbol_tf (symbol, timeframe),
     INDEX idx_open_time (open_time)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
+
+CREATE TABLE IF NOT EXISTS notification_channels (
+    id INT NOT NULL AUTO_INCREMENT PRIMARY KEY,
+    user_id INT NOT NULL,
+    name VARCHAR(80) NOT NULL,
+    channel_type VARCHAR(20) NOT NULL,
+    webhook_url VARCHAR(1000),
+    enabled TINYINT(1) NOT NULL DEFAULT 1,
+    is_shared TINYINT(1) NOT NULL DEFAULT 0,
+    created_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    updated_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
+    INDEX idx_notification_channel_user (user_id),
+    CONSTRAINT fk_notification_channel_user FOREIGN KEY (user_id) REFERENCES users(id) ON DELETE CASCADE
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
+
+CREATE TABLE IF NOT EXISTS notification_templates (
+    id INT NOT NULL AUTO_INCREMENT PRIMARY KEY,
+    event_type VARCHAR(32) NOT NULL UNIQUE,
+    name VARCHAR(80) NOT NULL,
+    content VARCHAR(4000) NOT NULL,
+    enabled TINYINT(1) NOT NULL DEFAULT 1,
+    updated_by INT NULL,
+    created_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    updated_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
+
+CREATE TABLE IF NOT EXISTS strategy_monitors (
+    id INT NOT NULL AUTO_INCREMENT PRIMARY KEY,
+    user_id INT NOT NULL,
+    template_id VARCHAR(64) NOT NULL,
+    symbol VARCHAR(32) NOT NULL,
+    symbol_name VARCHAR(80) NOT NULL DEFAULT '',
+    channel_ids JSON NOT NULL,
+    enabled TINYINT(1) NOT NULL DEFAULT 1,
+    poll_interval_seconds INT NOT NULL DEFAULT 60,
+    last_checked_at DATETIME NULL,
+    last_bar_time BIGINT NULL,
+    in_position TINYINT(1) NOT NULL DEFAULT 0,
+    entry_price DOUBLE NULL,
+    stop_loss_price DOUBLE NULL,
+    take_profit_price DOUBLE NULL,
+    event_types JSON NULL,
+    schedule_enabled TINYINT(1) NOT NULL DEFAULT 0,
+    schedule_time VARCHAR(5) NOT NULL DEFAULT '09:30',
+    schedule_weekdays JSON NULL,
+    last_schedule_key VARCHAR(32) NULL,
+    created_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    updated_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
+    UNIQUE KEY uk_monitor_user_template_symbol (user_id, template_id, symbol),
+    INDEX idx_strategy_monitor_enabled (enabled, last_checked_at),
+    CONSTRAINT fk_strategy_monitor_user FOREIGN KEY (user_id) REFERENCES users(id) ON DELETE CASCADE,
+    CONSTRAINT fk_strategy_monitor_template FOREIGN KEY (template_id) REFERENCES templates(id) ON DELETE CASCADE
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
+
+CREATE TABLE IF NOT EXISTS notification_events (
+    id INT NOT NULL AUTO_INCREMENT PRIMARY KEY,
+    user_id INT NOT NULL,
+    monitor_id INT NOT NULL,
+    event_type VARCHAR(24) NOT NULL,
+    symbol VARCHAR(32) NOT NULL,
+    symbol_name VARCHAR(80) NOT NULL DEFAULT '',
+    template_name VARCHAR(100) NOT NULL,
+    timeframe VARCHAR(10) NOT NULL,
+    bar_time BIGINT NOT NULL,
+    price DOUBLE NOT NULL,
+    title VARCHAR(160) NOT NULL,
+    content VARCHAR(2000) NOT NULL,
+    delivery_status JSON NOT NULL,
+    is_read TINYINT(1) NOT NULL DEFAULT 0,
+    created_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    updated_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
+    UNIQUE KEY uk_monitor_event_bar (monitor_id, event_type, bar_time),
+    INDEX idx_notification_event_user (user_id, is_read, created_at),
+    CONSTRAINT fk_notification_event_user FOREIGN KEY (user_id) REFERENCES users(id) ON DELETE CASCADE
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
+
+CREATE TABLE IF NOT EXISTS screener_schedules (
+    id INT NOT NULL AUTO_INCREMENT PRIMARY KEY,
+    user_id INT NOT NULL,
+    template_id VARCHAR(64) NOT NULL,
+    market VARCHAR(16) NOT NULL DEFAULT 'stock',
+    universe_limit INT NOT NULL DEFAULT 50,
+    min_progress INT NOT NULL DEFAULT 1,
+    schedule_time VARCHAR(5) NOT NULL DEFAULT '01:00',
+    schedule_weekdays JSON NULL,
+    channel_ids JSON NULL,
+    enabled TINYINT(1) NOT NULL DEFAULT 1,
+    last_run_key VARCHAR(32) NULL,
+    last_run_at DATETIME NULL,
+    last_result_count INT NOT NULL DEFAULT 0,
+    last_error VARCHAR(500) NULL,
+    created_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    updated_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
+    UNIQUE KEY uk_screener_schedule_user_template_time (user_id, template_id, market, schedule_time),
+    INDEX idx_screener_schedule_enabled (enabled, last_run_at),
+    CONSTRAINT fk_screener_schedule_user FOREIGN KEY (user_id) REFERENCES users(id) ON DELETE CASCADE,
+    CONSTRAINT fk_screener_schedule_template FOREIGN KEY (template_id) REFERENCES templates(id) ON DELETE CASCADE
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;

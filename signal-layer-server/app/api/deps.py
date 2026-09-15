@@ -11,6 +11,7 @@ from app.services.data_service import DataService
 from app.services.chan_service import ChanService
 from app.services.indicator_service import IndicatorService
 from app.services.condition_service import ConditionService
+from app.services.notification_service import NotificationService
 
 
 _redis: Redis | None = None
@@ -19,6 +20,7 @@ _data_service: DataService | None = None
 _chan_service: ChanService | None = None
 _indicator_service: IndicatorService | None = None
 _condition_service: ConditionService | None = None
+_notification_service: NotificationService | None = None
 
 
 async def get_redis() -> Redis:
@@ -61,7 +63,7 @@ def get_condition_service() -> ConditionService:
 
 
 async def init_services():
-    global _redis, _cache_instance, _chan_service, _indicator_service, _condition_service
+    global _redis, _cache_instance, _chan_service, _indicator_service, _condition_service, _notification_service
 
     try:
         await init_db()
@@ -84,10 +86,18 @@ async def init_services():
     logger.info("IndicatorService initialized")
     _condition_service = ConditionService(_indicator_service)
     logger.info("ConditionService initialized")
+    _notification_service = NotificationService(
+        get_data_service(), _chan_service, _indicator_service, _condition_service,
+    )
+    _notification_service.start()
+    logger.info("NotificationService initialized")
 
 
 async def shutdown_services():
-    global _redis
+    global _redis, _notification_service
+    if _notification_service:
+        await _notification_service.stop()
+        _notification_service = None
     if _redis:
         logger.info("Closing Redis connection...")
         await _redis.close()

@@ -9,7 +9,7 @@ from app.schemas.kline import KlineResponse, KlineItem
 
 logger = logging.getLogger(__name__)
 
-router = APIRouter(prefix="/api/v1/klines", tags=["klines"], dependencies=[Depends(require_permission("market.read"))])
+router = APIRouter(prefix="/api/v1/klines", tags=["klines"])
 
 
 @router.get("/{symbol}", response_model=KlineResponse)

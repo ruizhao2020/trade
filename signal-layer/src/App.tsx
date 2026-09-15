@@ -34,6 +34,30 @@ import { fetchCurrentUser, logout } from './api/auth.ts'
 import type { AuthUser } from './api/auth.ts'
 import { getAccessToken } from './api/client.ts'
 import { ChangePasswordDialog } from './components/ChangePasswordDialog.tsx'
+import { NotificationWorkspace } from './components/NotificationWorkspace.tsx'
+
+const GUEST_USER: AuthUser = {
+  id: 0,
+  username: 'guest',
+  display_name: '访客',
+  enabled: true,
+  role_codes: [],
+  permission_codes: [],
+  modules: [{
+    id: 0,
+    code: 'indicators',
+    name: '指标',
+    icon: 'chart',
+    component_key: 'indicators',
+    route_path: '/indicators',
+    api_prefixes: '/api/v1/indicator,/api/v1/klines,/api/v1/chan,/api/v1/symbols',
+    api_permission: 'analysis.compute',
+    sort_order: 10,
+    enabled: true,
+    visible: true,
+    public_access: true,
+  }],
+}
 
 const DEFAULT_CHAN_OPTIONS: ChanRenderOptions = {
   showFenxing: false,
@@ -93,7 +117,7 @@ function CollapseIcon({ collapsed }: { collapsed: boolean }) {
   )
 }
 
-function WorkbenchApp({ user, onLogout, onUserChange }: { user: AuthUser; onLogout: () => void; onUserChange: (user: AuthUser) => void }) {
+function WorkbenchApp({ user, onLogout, onUserChange, onLogin }: { user: AuthUser; onLogout: () => void; onUserChange: (user: AuthUser) => void; onLogin?: () => void }) {
   const initialModule = user.modules[0]?.component_key || user.modules[0]?.code || ''
   const [activeModule, setActiveModule] = useState<WorkspaceModule>(initialModule)
   const [timeframe, setTimeframe] = useState<SupportedTimeframeId>('1d')
@@ -264,7 +288,7 @@ function WorkbenchApp({ user, onLogout, onUserChange }: { user: AuthUser; onLogo
 
   return (
     <div className="flex h-full w-full overflow-hidden bg-[var(--bg-primary)]">
-      <WorkspaceNav active={effectiveActiveModule} onChange={setActiveModule} modules={user.modules} user={user} onLogout={onLogout} onChangePassword={() => setPasswordDialogOpen(true)} />
+      <WorkspaceNav active={effectiveActiveModule} onChange={setActiveModule} modules={user.modules} user={user} onLogout={onLogout} onChangePassword={() => setPasswordDialogOpen(true)} onLogin={onLogin} />
       <main className="flex-1 min-w-0 flex flex-col overflow-hidden">
         {effectiveActiveModule === 'indicators' && (
           <>
@@ -315,7 +339,9 @@ function WorkbenchApp({ user, onLogout, onUserChange }: { user: AuthUser; onLogo
           <AdminWorkspace currentUser={user} onModulesChanged={() => { void fetchCurrentUser().then(onUserChange) }} />
         )}
 
-        {!['indicators', 'strategy', 'screener', 'admin'].includes(effectiveActiveModule) && (
+        {effectiveActiveModule === 'notifications' && <NotificationWorkspace />}
+
+        {!['indicators', 'strategy', 'screener', 'admin', 'notifications'].includes(effectiveActiveModule) && (
           <div className="flex-1 flex items-center justify-center text-[var(--text-muted)]">
             <div className="text-center"><div className="text-[14px] text-[var(--text-secondary)]">模块已配置</div><div className="mt-1 text-[11px]">页面组件尚未接入：{effectiveActiveModule}</div></div>
           </div>
@@ -328,13 +354,14 @@ function WorkbenchApp({ user, onLogout, onUserChange }: { user: AuthUser; onLogo
 
 function App() {
   const [user, setUser] = useState<AuthUser | null>(null)
+  const [guestMode, setGuestMode] = useState(() => !getAccessToken())
   const [initializing, setInitializing] = useState(() => Boolean(getAccessToken()))
 
   useEffect(() => {
     const handleUnauthorized = () => setUser(null)
     window.addEventListener('signal-layer:unauthorized', handleUnauthorized)
     if (getAccessToken()) {
-      fetchCurrentUser().then(setUser).catch(() => logout()).finally(() => setInitializing(false))
+      fetchCurrentUser().then((nextUser) => { setUser(nextUser); setGuestMode(false) }).catch(() => logout()).finally(() => setInitializing(false))
     }
     return () => window.removeEventListener('signal-layer:unauthorized', handleUnauthorized)
   }, [])
@@ -342,8 +369,9 @@ function App() {
   if (initializing) {
     return <div className="h-full flex items-center justify-center bg-[var(--bg-primary)] text-[var(--text-muted)]">正在验证登录状态…</div>
   }
-  if (!user) return <LoginScreen onAuthenticated={setUser} />
-  return <WorkbenchApp user={user} onLogout={() => { logout(); setUser(null) }} onUserChange={setUser} />
+  if (!user && !guestMode) return <LoginScreen onAuthenticated={(nextUser) => { setUser(nextUser); setGuestMode(false) }} onGuest={() => setGuestMode(true)} />
+  if (!user) return <WorkbenchApp user={GUEST_USER} onLogout={() => setGuestMode(false)} onLogin={() => setGuestMode(false)} onUserChange={setUser} />
+  return <WorkbenchApp user={user} onLogout={() => { logout(); setUser(null); setGuestMode(true) }} onUserChange={setUser} />
 }
 
 export default App

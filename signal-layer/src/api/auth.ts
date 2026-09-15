@@ -12,6 +12,7 @@ export interface AuthModule {
   sort_order: number
   enabled: boolean
   visible: boolean
+  public_access: boolean
 }
 
 export interface AuthUser {

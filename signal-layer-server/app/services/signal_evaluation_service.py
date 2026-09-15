@@ -33,7 +33,12 @@ def required_kline_limit(
         for requirement in requirements.values()
         if requirement.indicator_type == "ma"
     ]
-    return max(requested_limit, max(ma_periods, default=0) + 1)
+    chip_lookbacks = [
+        int(requirement.params.get("lookback", 0))
+        for requirement in requirements.values()
+        if requirement.indicator_type == "chip_distribution"
+    ]
+    return max(requested_limit, max(ma_periods, default=0) + 1, max(chip_lookbacks, default=0))
 
 
 def _collect_requirements(
@@ -102,6 +107,23 @@ async def load_template_context(
         chan_data[timeframe] = await chan_service.analyze(symbol, timeframe, klines)
         indicator_data[timeframe] = {}
 
+        daily_klines_for_chip = None
+        if any(
+            requirement.indicator_type == "chip_distribution"
+            for requirement in indicator_requirements.get(timeframe, {}).values()
+        ) and timeframe != "1d":
+            chip_lookback = max(
+                int(requirement.params.get("lookback", 500))
+                for requirement in indicator_requirements[timeframe].values()
+                if requirement.indicator_type == "chip_distribution"
+            )
+            daily_result = await data_service.fetch_klines(
+                symbol=symbol,
+                timeframe="1d",
+                limit=min(max(chip_lookback, 500), 1000),
+            )
+            daily_klines_for_chip = daily_result["data"]
+
         for key, requirement in indicator_requirements.get(timeframe, {}).items():
             try:
                 result = await indicator_service.calculate(
@@ -110,6 +132,9 @@ async def load_template_context(
                     requirement.indicator_type,
                     requirement.params,
                     klines,
+                    context={"daily_klines": daily_klines_for_chip}
+                    if requirement.indicator_type == "chip_distribution" and daily_klines_for_chip
+                    else None,
                 )
                 indicator_data[timeframe][key] = result.values
                 # 保留旧的 type-only 键，兼容尚未携带 params 的调用方。
