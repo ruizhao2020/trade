@@ -10,6 +10,8 @@ interface Props {
   chanOptions: ChanRenderOptions
   onChanChange: (options: ChanRenderOptions) => void
   analysis?: ChanAnalysis
+  visibleChanFeatures?: string[]
+  chanFeatureLabels?: Record<string, string>
 }
 
 type ChanToggleKey = 'showFenxing' | 'showBi' | 'showDuan' | 'showZhongshu' | 'showDivergences' | 'showBuySellPoints'
@@ -62,6 +64,8 @@ export function IndicatorWorkbenchToolbar({
   chanOptions,
   onChanChange,
   analysis,
+  visibleChanFeatures,
+  chanFeatureLabels,
 }: Props) {
   const [available, setAvailable] = useState<IndicatorInfo[]>([])
   const [activeType, setActiveType] = useState('ma')
@@ -100,7 +104,14 @@ export function IndicatorWorkbenchToolbar({
   const activeIndicator = selectedIndicators.find((item) => item.type === activeType)
   const activeInfo = available.find((item) => item.type === activeType)
   const maCount = selectedIndicators.filter((item) => item.type === 'ma').length
-  const chanCount = CHAN_ITEMS.filter((item) => Boolean(chanOptions[item.key])).length
+  const chanFeatureCode: Record<ChanToggleKey, string> = {
+    showFenxing: 'fenxing', showBi: 'bi', showDuan: 'duan', showZhongshu: 'zhongshu',
+    showDivergences: 'divergence', showBuySellPoints: 'buy_sell_points',
+  }
+  const visibleChanItems = visibleChanFeatures
+    ? CHAN_ITEMS.filter((item) => visibleChanFeatures.includes(chanFeatureCode[item.key]))
+    : CHAN_ITEMS
+  const chanCount = visibleChanItems.filter((item) => Boolean(chanOptions[item.key])).length
   const chanEnabled = chanCount > 0
 
   function toggleMa(period: number) {
@@ -153,8 +164,8 @@ export function IndicatorWorkbenchToolbar({
       showDuan: enabled,
       showZhongshu: enabled,
       showZhongshuAxis: enabled,
-      showBuySellPoints: enabled,
-      showDivergences: enabled,
+      showBuySellPoints: visibleChanFeatures ? enabled && visibleChanFeatures.includes('buy_sell_points') : enabled,
+      showDivergences: visibleChanFeatures ? enabled && visibleChanFeatures.includes('divergence') : enabled,
     })
   }
 
@@ -249,7 +260,7 @@ export function IndicatorWorkbenchToolbar({
         {activeType === 'chan' && (
           <>
             <span className="text-[10px] text-[var(--text-muted)] mr-1">缠论子指标</span>
-            {CHAN_ITEMS.map((item) => {
+            {visibleChanItems.map((item) => {
               const enabled = Boolean(chanOptions[item.key])
               const count = item.key === 'showZhongshu' && chanOptions.zsLevel === 'duan'
                 ? analysis?.duanZhongshus.length ?? 0
@@ -263,7 +274,7 @@ export function IndicatorWorkbenchToolbar({
                   className={`h-7 px-2.5 rounded border flex items-center gap-1.5 text-[11px] transition-colors ${enabled ? 'border-[var(--border-accent)] bg-[var(--bg-tertiary)] text-[var(--text-primary)]' : 'border-[var(--border-primary)] text-[var(--text-muted)]'}`}
                 >
                   <span className="w-1.5 h-1.5 rounded-full" style={{ backgroundColor: enabled ? item.color : 'transparent', border: `1px solid ${item.color}` }} />
-                  {item.label}
+                  {chanFeatureLabels?.[chanFeatureCode[item.key]] ?? item.label}
                   {count > 0 && <span className="font-mono text-[10px] text-[var(--text-muted)]">{count}</span>}
                 </button>
               )

@@ -49,5 +49,5 @@ def key_chan(symbol: str, timeframe: str) -> str:
 
 def key_indicator(symbol: str, timeframe: str, indicator_type: str, params: dict[str, Any]) -> str:
     params_str = "_".join(f"{k}={v}" for k, v in sorted(params.items()))
-    # v3: 筹码分布补充逐 K 线快照，隔离旧结构缓存。
-    return f"indicator:v3:{symbol}:{timeframe}:{indicator_type}:{params_str}"
+    # v4: 缓存增加输入起点和数量，防止短历史结果污染长区间请求。
+    return f"indicator:v4:{symbol}:{timeframe}:{indicator_type}:{params_str}"

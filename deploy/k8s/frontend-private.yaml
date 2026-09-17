@@ -1,0 +1,55 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: signal-layer-frontend-private
+  labels:
+    app.kubernetes.io/name: signal-layer-frontend-private
+    app.kubernetes.io/part-of: signal-layer
+spec:
+  replicas: 2
+  selector:
+    matchLabels:
+      app.kubernetes.io/name: signal-layer-frontend-private
+  template:
+    metadata:
+      labels:
+        app.kubernetes.io/name: signal-layer-frontend-private
+        app.kubernetes.io/part-of: signal-layer
+    spec:
+      affinity:
+        podAffinity:
+          preferredDuringSchedulingIgnoredDuringExecution:
+            - weight: 50
+              podAffinityTerm:
+                topologyKey: kubernetes.io/hostname
+                labelSelector:
+                  matchLabels:
+                    app.kubernetes.io/name: signal-layer-frontend-public
+      containers:
+        - name: frontend
+          image: ghcr.io/your-org/signal-layer-frontend:private
+          imagePullPolicy: IfNotPresent
+          ports:
+            - name: http
+              containerPort: 80
+          readinessProbe:
+            httpGet: { path: /healthz, port: http }
+          livenessProbe:
+            httpGet: { path: /healthz, port: http }
+          resources:
+            requests: { cpu: 25m, memory: 32Mi }
+            limits: { cpu: 250m, memory: 128Mi }
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: signal-layer-frontend-private
+  labels:
+    app.kubernetes.io/part-of: signal-layer
+spec:
+  selector:
+    app.kubernetes.io/name: signal-layer-frontend-private
+  ports:
+    - name: http
+      port: 80
+      targetPort: http

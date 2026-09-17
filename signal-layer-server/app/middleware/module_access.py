@@ -46,7 +46,10 @@ class ModuleAccessMiddleware(BaseHTTPMiddleware):
             user = (await session.execute(select(User).where(User.id == user_id))).scalar_one_or_none()
             if not user or not user.enabled:
                 return JSONResponse({"detail": "用户不存在或已停用"}, status_code=401)
-            if required_permission not in permission_codes(user):
+            user_permissions = permission_codes(user)
+            if "private.access" not in user_permissions:
+                return JSONResponse({"detail": "私有研究工作区权限未开通"}, status_code=403)
+            if required_permission not in user_permissions:
                 return JSONResponse({"detail": f"缺少模块权限：{required_permission}"}, status_code=403)
             request.state.current_user = user
             break

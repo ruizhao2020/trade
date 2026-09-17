@@ -75,4 +75,8 @@ async def get_klines(
         to_time=result.get("to_time"),
         count=data_count,
         cached=result.get("cached", False),
+        stale=result.get("stale", False),
+        refresh_failed=result.get("refresh_failed", False),
+        expected_time=result.get("expected_time"),
+        status_message=result.get("status_message"),
     )

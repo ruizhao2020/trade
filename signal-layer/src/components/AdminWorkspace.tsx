@@ -6,13 +6,16 @@ import {
   fetchNotificationTemplatesForAdmin, createNotificationChannelForAdmin,
   updateNotificationChannelForAdmin, deleteNotificationChannelForAdmin,
   updateNotificationTemplateForAdmin,
+  fetchPublicIndicatorPolicies, fetchPublicIndicatorFeaturePolicies,
+  updatePublicIndicatorPolicy, updatePublicIndicatorFeaturePolicy,
+  createPublicIndicatorFeaturePolicy,
 } from '../api/admin.ts'
-import type { AdminNotificationChannel, AdminNotificationTemplate, PermissionItem, RoleItem } from '../api/admin.ts'
+import type { AdminNotificationChannel, AdminNotificationTemplate, PermissionItem, PublicIndicatorFeaturePolicy, PublicIndicatorPolicy, RoleItem } from '../api/admin.ts'
 
-type Tab = 'users' | 'roles' | 'modules' | 'notifications'
+type Tab = 'users' | 'roles' | 'modules' | 'public-display' | 'notifications'
 
-function Toggle({ value, onChange }: { value: boolean; onChange: (value: boolean) => void }) {
-  return <button type="button" aria-pressed={value} onClick={() => onChange(!value)} className={`w-10 h-5 rounded-full p-0.5 transition-colors ${value ? 'bg-[var(--accent)]' : 'bg-[var(--border-accent)]'}`}><span className={`block w-4 h-4 rounded-full bg-white transition-transform ${value ? 'translate-x-5' : ''}`} /></button>
+function Toggle({ value, onChange, disabled = false }: { value: boolean; onChange: (value: boolean) => void; disabled?: boolean }) {
+  return <button type="button" disabled={disabled} aria-pressed={value} onClick={() => onChange(!value)} className={`w-10 h-5 rounded-full p-0.5 transition-colors disabled:opacity-35 disabled:cursor-not-allowed ${value ? 'bg-[var(--accent)]' : 'bg-[var(--border-accent)]'}`}><span className={`block w-4 h-4 rounded-full bg-white transition-transform ${value ? 'translate-x-5' : ''}`} /></button>
 }
 
 const NOTIFICATION_EVENT_LABEL: Record<string, string> = {
@@ -74,6 +77,76 @@ function TemplateEditor({ template, onChange, onSaved }: { template: AdminNotifi
   return <div className="p-3 rounded-lg bg-[var(--bg-tertiary)] border border-[var(--border-primary)]"><div className="flex items-center gap-3"><input value={name} onChange={(event) => setName(event.target.value)} className="flex-1 h-8 px-2 rounded-md bg-[var(--bg-secondary)] border border-[var(--border-primary)] text-[11px]" /><span className="text-[10px] text-[var(--text-muted)]">{NOTIFICATION_EVENT_LABEL[template.event_type] || template.event_type}</span><Toggle value={template.enabled} onChange={(enabled) => void updateNotificationTemplateForAdmin(template.id, { enabled }).then((next) => { onChange(next); return onSaved() }).catch((error) => setMessage(error instanceof Error ? error.message.replace(/^Error:\s*/, '') : '更新失败'))} /></div><textarea value={content} onChange={(event) => setContent(event.target.value)} className="mt-2 w-full min-h-24 p-2 rounded-md bg-[var(--bg-secondary)] border border-[var(--border-primary)] text-[11px] leading-5 outline-none focus:border-[var(--accent)]" /><div className="mt-2 flex items-center justify-end gap-3">{message && <span role="status" className={`text-[10px] ${message === '已保存' ? 'text-[var(--accent-green)]' : 'text-[var(--accent-red)]'}`}>{message}</span>}<button type="button" disabled={saving} onClick={() => void save()} className="h-7 px-3 rounded-md bg-[var(--accent)] text-white text-[10px] disabled:opacity-50">{saving ? '保存中…' : '保存模板'}</button></div></div>
 }
 
+function PublicDisplayPanel({ indicators, features, onIndicatorsChange, onFeaturesChange }: { indicators: PublicIndicatorPolicy[]; features: PublicIndicatorFeaturePolicy[]; onIndicatorsChange: (items: PublicIndicatorPolicy[]) => void; onFeaturesChange: (items: PublicIndicatorFeaturePolicy[]) => void }) {
+  const [expandedTypes, setExpandedTypes] = useState<string[]>([])
+  const updateIndicator = async (item: PublicIndicatorPolicy, values: Partial<PublicIndicatorPolicy>) => {
+    const next = await updatePublicIndicatorPolicy(item.id, values)
+    onIndicatorsChange(indicators.map((candidate) => candidate.id === next.id ? next : candidate))
+    if (values.public_visible === false) {
+      onFeaturesChange(features.map((feature) => feature.indicator_type === item.indicator_type
+        ? { ...feature, public_visible: false, show_details: false }
+        : feature))
+    }
+  }
+  const updateFeature = async (item: PublicIndicatorFeaturePolicy, values: Partial<PublicIndicatorFeaturePolicy>) => {
+    const next = await updatePublicIndicatorFeaturePolicy(item.id, values)
+    onFeaturesChange(features.map((candidate) => candidate.id === next.id ? next : candidate))
+  }
+  const featuresFor = (indicatorType: string) => features.filter((item) => item.indicator_type === indicatorType)
+  const toggleExpanded = (indicatorType: string) => setExpandedTypes((current) => current.includes(indicatorType)
+    ? current.filter((item) => item !== indicatorType)
+    : [...current, indicatorType])
+  const addFeature = async (indicatorType: string) => {
+    const featureCode = window.prompt('子功能编码，例如 divergence 或 histogram')?.trim()
+    if (!featureCode) return
+    const displayName = window.prompt('公开显示名称')?.trim()
+    if (!displayName) return
+    const next = await createPublicIndicatorFeaturePolicy({ indicator_type: indicatorType, feature_code: featureCode, display_name: displayName })
+    onFeaturesChange([...features, next])
+  }
+  return <div className="max-w-6xl mx-auto space-y-5">
+    <div className="px-4 py-3 rounded-lg border border-[rgba(108,140,255,.25)] bg-[rgba(108,140,255,.06)] text-[11px] leading-5 text-[var(--text-secondary)]">新增指标及其线条、标记会被自动发现，并默认保持私有。点击主指标展开子指标；关闭主指标后，全部子指标会同步关闭。</div>
+    <section className="rounded-xl border border-[var(--border-primary)] bg-[var(--bg-secondary)] overflow-hidden">
+      <div className="px-5 py-4 border-b border-[var(--border-primary)] text-[13px] font-semibold">公开指标</div>
+      <div className="divide-y divide-[var(--border-primary)]">
+        {indicators.map((item) => {
+          const expanded = expandedTypes.includes(item.indicator_type)
+          const childFeatures = featuresFor(item.indicator_type)
+          return <div key={item.id}>
+            <div className="min-h-14 px-5 py-3 flex items-center gap-5">
+              <button type="button" onClick={() => toggleExpanded(item.indicator_type)} className="min-w-0 flex-1 flex items-center gap-2 text-left">
+                <svg viewBox="0 0 12 12" fill="none" className={`w-3 h-3 shrink-0 text-[var(--text-muted)] transition-transform ${expanded ? 'rotate-90' : ''}`} aria-hidden="true"><path d="m4 2.5 4 3.5-4 3.5" stroke="currentColor" strokeWidth="1.4" strokeLinecap="round" strokeLinejoin="round" /></svg>
+                <span className="text-[12px] font-semibold text-[var(--text-primary)]">{item.display_name}</span>
+                <code className="text-[9px] text-[var(--text-muted)]">{item.indicator_type}</code>
+                {childFeatures.length > 0 && <span className="text-[9px] text-[var(--text-muted)]">{childFeatures.filter((feature) => feature.public_visible).length}/{childFeatures.length} 子项</span>}
+              </button>
+              <div className="flex items-center gap-8 shrink-0">
+                <label className="flex items-center gap-2 text-[11px] text-[var(--text-secondary)]">公开显示<Toggle value={item.public_visible} onChange={(public_visible) => void updateIndicator(item, { public_visible })} /></label>
+                <label className="flex items-center gap-2 text-[11px] text-[var(--text-secondary)]">显示参数<Toggle disabled={!item.public_visible} value={item.show_parameters} onChange={(show_parameters) => void updateIndicator(item, { show_parameters })} /></label>
+                <label className="flex items-center gap-2 text-[11px] text-[var(--text-secondary)]">显示详情<Toggle disabled={!item.public_visible} value={item.show_details} onChange={(show_details) => void updateIndicator(item, { show_details })} /></label>
+                <label className="flex items-center gap-2 text-[11px] text-[var(--text-secondary)]">信号标记<Toggle disabled={!item.public_visible} value={item.show_markers} onChange={(show_markers) => void updateIndicator(item, { show_markers })} /></label>
+              </div>
+            </div>
+            {expanded && <div className="px-5 pb-4 ml-5">
+              <div className="flex items-center gap-3 mb-3"><span className="text-[10px] text-[var(--text-muted)]">公开名称</span><input defaultValue={item.display_name} onBlur={(event) => { if (event.target.value !== item.display_name) void updateIndicator(item, { display_name: event.target.value }) }} className="h-8 w-56 px-2 rounded-md border border-[var(--border-primary)] bg-[var(--bg-tertiary)] text-[11px]" /><button type="button" onClick={() => void addFeature(item.indicator_type)} className="ml-auto h-7 px-3 rounded-md border border-[var(--border-primary)] text-[10px] text-[var(--text-secondary)] hover:bg-[var(--bg-tertiary)]">添加子指标</button></div>
+              <div className="rounded-lg border border-[var(--border-primary)] bg-[var(--bg-primary)] divide-y divide-[var(--border-primary)]">
+                {childFeatures.length === 0 && <div className="px-4 py-3 text-[10px] text-[var(--text-muted)]">该指标暂无可单独配置的子指标</div>}
+                {childFeatures.map((feature) => <div key={feature.id} className="min-h-12 px-4 py-2 flex items-center gap-5">
+                  <div className="min-w-0 flex-1"><input defaultValue={feature.display_name} onBlur={(event) => { if (event.target.value !== feature.display_name) void updateFeature(feature, { display_name: event.target.value }) }} className="h-8 w-56 max-w-full px-2 rounded-md border border-[var(--border-primary)] bg-[var(--bg-tertiary)] text-[11px]" /><code className="ml-2 text-[9px] text-[var(--text-muted)]">{feature.feature_code}</code></div>
+                  <div className="flex items-center gap-8 shrink-0">
+                    <label className="flex items-center gap-2 text-[11px] text-[var(--text-secondary)]">公开显示<Toggle disabled={!item.public_visible} value={feature.public_visible} onChange={(public_visible) => void updateFeature(feature, { public_visible })} /></label>
+                    <label className="flex items-center gap-2 text-[11px] text-[var(--text-secondary)]">显示详情<Toggle disabled={!item.public_visible || !feature.public_visible} value={feature.show_details} onChange={(show_details) => void updateFeature(feature, { show_details })} /></label>
+                  </div>
+                </div>)}
+              </div>
+            </div>}
+          </div>
+        })}
+      </div>
+    </section>
+  </div>
+}
+
 export function AdminWorkspace({ currentUser, onModulesChanged }: { currentUser: AuthUser; onModulesChanged: () => void }) {
   const [tab, setTab] = useState<Tab>('users')
   const [users, setUsers] = useState<AuthUser[]>([])
@@ -82,14 +155,16 @@ export function AdminWorkspace({ currentUser, onModulesChanged }: { currentUser:
   const [permissions, setPermissions] = useState<PermissionItem[]>([])
   const [notificationChannels, setNotificationChannels] = useState<AdminNotificationChannel[]>([])
   const [notificationTemplates, setNotificationTemplates] = useState<AdminNotificationTemplate[]>([])
+  const [publicIndicators, setPublicIndicators] = useState<PublicIndicatorPolicy[]>([])
+  const [publicIndicatorFeatures, setPublicIndicatorFeatures] = useState<PublicIndicatorFeaturePolicy[]>([])
   const [error, setError] = useState('')
 
   const load = useCallback(async () => {
     try {
-      const [nextUsers, nextRoles, nextModules, nextPermissions, nextChannels, nextTemplates] = await Promise.all([
-        fetchUsers(), fetchRoles(), fetchModules(), fetchPermissions(), fetchNotificationChannelsForAdmin(), fetchNotificationTemplatesForAdmin(),
+      const [nextUsers, nextRoles, nextModules, nextPermissions, nextChannels, nextTemplates, nextPublicIndicators, nextPublicFeatures] = await Promise.all([
+        fetchUsers(), fetchRoles(), fetchModules(), fetchPermissions(), fetchNotificationChannelsForAdmin(), fetchNotificationTemplatesForAdmin(), fetchPublicIndicatorPolicies(), fetchPublicIndicatorFeaturePolicies(),
       ])
-      setUsers(nextUsers); setRoles(nextRoles); setModules(nextModules); setPermissions(nextPermissions); setNotificationChannels(nextChannels); setNotificationTemplates(nextTemplates); setError('')
+      setUsers(nextUsers); setRoles(nextRoles); setModules(nextModules); setPermissions(nextPermissions); setNotificationChannels(nextChannels); setNotificationTemplates(nextTemplates); setPublicIndicators(nextPublicIndicators); setPublicIndicatorFeatures(nextPublicFeatures); setError('')
     } catch (loadError) {
       setError(loadError instanceof Error ? loadError.message : String(loadError))
     }
@@ -123,7 +198,7 @@ export function AdminWorkspace({ currentUser, onModulesChanged }: { currentUser:
       </header>
       <div className="h-14 px-7 flex items-center border-b border-[var(--border-primary)] bg-[var(--bg-secondary)]">
         <div className="inline-flex items-center gap-1.5 p-1 rounded-lg border border-[var(--border-primary)] bg-[var(--bg-primary)] shadow-[0_4px_14px_rgba(0,0,0,.08)]" role="tablist" aria-label="系统管理页签">
-          {([['users', '用户管理'], ['roles', '角色权限'], ['modules', '模块配置'], ['notifications', '通知配置']] as const).map(([key, label]) => <button key={key} type="button" role="tab" aria-selected={tab === key} onClick={() => setTab(key)} className={`h-9 px-5 rounded-md text-[12px] font-medium transition-all ${tab === key ? 'bg-[var(--bg-surface)] text-[var(--text-primary)] shadow-[0_2px_8px_rgba(0,0,0,.16)] ring-1 ring-[var(--border-accent)]' : 'text-[var(--text-muted)] hover:text-[var(--text-secondary)] hover:bg-[var(--bg-tertiary)]'}`}>{label}</button>)}
+          {([['users', '用户管理'], ['roles', '角色权限'], ['modules', '模块配置'], ['public-display', '公开展示'], ['notifications', '通知配置']] as const).map(([key, label]) => <button key={key} type="button" role="tab" aria-selected={tab === key} onClick={() => setTab(key)} className={`h-9 px-5 rounded-md text-[12px] font-medium transition-all ${tab === key ? 'bg-[var(--bg-surface)] text-[var(--text-primary)] shadow-[0_2px_8px_rgba(0,0,0,.16)] ring-1 ring-[var(--border-accent)]' : 'text-[var(--text-muted)] hover:text-[var(--text-secondary)] hover:bg-[var(--bg-tertiary)]'}`}>{label}</button>)}
         </div>
       </div>
       <div className="flex-1 overflow-auto p-7">
@@ -155,6 +230,7 @@ export function AdminWorkspace({ currentUser, onModulesChanged }: { currentUser:
         )}
 
         {tab === 'notifications' && <NotificationAdminPanel channels={notificationChannels} templates={notificationTemplates} onReload={load} onChannelsChange={setNotificationChannels} onTemplatesChange={setNotificationTemplates} />}
+        {tab === 'public-display' && <PublicDisplayPanel indicators={publicIndicators} features={publicIndicatorFeatures} onIndicatorsChange={setPublicIndicators} onFeaturesChange={setPublicIndicatorFeatures} />}
       </div>
     </div>
   )

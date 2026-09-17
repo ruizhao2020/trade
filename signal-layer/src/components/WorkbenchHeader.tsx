@@ -5,11 +5,11 @@ import type { SupportedTimeframeId } from '../core/constants.ts'
 
 interface Props {
   title: string
-  market: 'stock' | 'futures'
+  market: string
   symbol: string
   symbolName: string
   timeframe: SupportedTimeframeId
-  onMarketChange: (market: 'stock' | 'futures') => void
+  onMarketChange: (market: string) => void
   onSymbolChange: (symbol: string, name: string) => void
   onTimeframeChange: (timeframe: SupportedTimeframeId) => void
   trailing?: ReactNode

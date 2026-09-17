@@ -12,9 +12,10 @@ from sqlalchemy import delete, insert, select, update
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.config import settings
-from app.models.auth import Module, Permission, Role, User, role_permissions, user_roles
+from app.models.auth import Module, Permission, PublicIndicatorFeaturePolicy, PublicIndicatorPolicy, Role, User, role_permissions, user_roles
 from app.models.notification import NotificationTemplate
 from app.models.template import Template
+from app.models.content import ContentTemplate
 
 
 def _b64encode(data: bytes) -> str:
@@ -94,11 +95,13 @@ MODULE_DEFINITIONS = [
     ("screener", "选股", "filter", "screener", "/screener", "/api/v1/screener", "screener.view", 30, False),
     ("admin", "系统", "settings", "admin", "/admin", "/api/v1/admin", "admin.view", 100, False),
     ("notifications", "通知", "bell", "notifications", "/notifications", "/api/v1/notifications", "notifications.view", 40, False),
+    ("content", "内容", "file", "content", "/content", "/api/v1/content", "content.view", 50, False),
 ]
 
 PERMISSION_DEFINITIONS = [
     ("market.read", "读取行情", None),
     ("analysis.compute", "计算行情分析", None),
+    ("private.access", "访问私有研究工作区", None),
     ("indicators.view", "查看指标", "indicators"),
     ("indicators.calculate", "计算指标", "indicators"),
     ("strategy.view", "查看策略", "strategy"),
@@ -114,6 +117,9 @@ PERMISSION_DEFINITIONS = [
     ("notifications.view", "查看通知", "notifications"),
     ("notifications.manage", "管理个人通知任务", "notifications"),
     ("notifications.admin", "管理通知渠道和模板", "notifications"),
+    ("content.view", "查看内容草稿", "content"),
+    ("content.generate", "生成分析文章", "content"),
+    ("content.manage", "审核内容草稿", "content"),
 ]
 
 NOTIFICATION_TEMPLATE_DEFAULTS = {
@@ -126,8 +132,43 @@ NOTIFICATION_TEMPLATE_DEFAULTS = {
     "scheduled": ("策略定时快照", "【策略定时推送】\n策略：{{strategy_name}}\n标的：{{symbol_name}}（{{symbol}}）\n最新价：{{price}}\n信号状态：{{signal_status}}\n时间：{{trigger_time}}"),
 }
 
+PUBLIC_INDICATOR_DEFAULTS = [
+    ("chan", "缠论", True, False, True, False, 5),
+    ("ma", "移动平均线", True, True, True, False, 10),
+    ("macd", "MACD", True, True, True, False, 20),
+    ("kdj", "KDJ", True, True, True, False, 30),
+    ("rsi", "RSI", True, True, True, False, 40),
+    ("bollinger", "布林带", True, True, True, False, 50),
+    ("volume", "成交量", True, True, True, False, 60),
+    ("chip_distribution", "筹码分布", True, False, True, False, 70),
+    ("liquidity_sweep", "流动性结构", False, False, False, False, 80),
+]
+PUBLIC_FEATURE_DEFAULTS = [
+    ("chan", "fenxing", "分型", True, False, 10),
+    ("chan", "bi", "笔", True, False, 20),
+    ("chan", "duan", "线段", True, False, 30),
+    ("chan", "zhongshu", "中枢", True, False, 40),
+    ("chan", "divergence", "力度变化", False, False, 50),
+    ("chan", "buy_sell_points", "结构节点", False, False, 60),
+]
+
 
 async def seed_access_control(session: AsyncSession):
+    existing_public_indicators = {item.indicator_type for item in (await session.execute(select(PublicIndicatorPolicy))).scalars()}
+    for indicator_type, display_name, visible, params, details, markers, order in PUBLIC_INDICATOR_DEFAULTS:
+        if indicator_type not in existing_public_indicators:
+            session.add(PublicIndicatorPolicy(
+                indicator_type=indicator_type, display_name=display_name, public_visible=visible,
+                show_parameters=params, show_details=details, show_markers=markers, sort_order=order,
+            ))
+    existing_public_features = {(item.indicator_type, item.feature_code) for item in (await session.execute(select(PublicIndicatorFeaturePolicy))).scalars()}
+    for indicator_type, feature_code, display_name, visible, details, order in PUBLIC_FEATURE_DEFAULTS:
+        if (indicator_type, feature_code) not in existing_public_features:
+            session.add(PublicIndicatorFeaturePolicy(
+                indicator_type=indicator_type, feature_code=feature_code, display_name=display_name,
+                public_visible=visible, show_details=details, sort_order=order,
+            ))
+    await session.flush()
     existing_modules = {item.code: item for item in (await session.execute(select(Module))).scalars()}
     for code, name, icon, component_key, route_path, api_prefixes, api_permission, sort_order, public_access in MODULE_DEFINITIONS:
         if code not in existing_modules:
@@ -164,6 +205,10 @@ async def seed_access_control(session: AsyncSession):
     if "member" not in roles:
         roles["member"] = Role(code="member", name="普通用户", description="默认业务功能", built_in=True, registration_default=True)
         session.add(roles["member"])
+    researcher_created = "researcher" not in roles
+    if researcher_created:
+        roles["researcher"] = Role(code="researcher", name="研究用户", description="允许访问私有完整研究工作区", built_in=True)
+        session.add(roles["researcher"])
     await session.flush()
     if not any(role.registration_default and role.enabled for role in roles.values()):
         roles["member"].registration_default = True
@@ -176,7 +221,7 @@ async def seed_access_control(session: AsyncSession):
     admin_permission_ids = [permission.id for permission in existing_permissions.values()]
     member_permission_ids = [
         permission.id for code, permission in existing_permissions.items()
-        if not code.startswith("admin.") and code != "notifications.admin"
+        if not code.startswith("admin.") and code not in {"notifications.admin", "private.access"}
     ]
     if admin_permission_ids:
         await session.execute(insert(role_permissions), [
@@ -190,24 +235,40 @@ async def seed_access_control(session: AsyncSession):
         ])
     else:
         # 升级场景：为既有普通用户角色补上通知模块权限，不覆盖管理员已做的其他配置。
-        admin_notification_permission = existing_permissions.get("notifications.admin")
-        if admin_notification_permission:
+        member_forbidden_permissions = [
+            item.id for code, item in existing_permissions.items()
+            if code in {"notifications.admin", "private.access"}
+        ]
+        if member_forbidden_permissions:
             await session.execute(delete(role_permissions).where(
                 role_permissions.c.role_id == roles["member"].id,
-                role_permissions.c.permission_id == admin_notification_permission.id,
+                role_permissions.c.permission_id.in_(member_forbidden_permissions),
             ))
         existing_member_permissions = set((await session.execute(
             select(role_permissions.c.permission_id).where(role_permissions.c.role_id == roles["member"].id)
         )).scalars().all())
         missing_member_permissions = [
             permission.id for code, permission in existing_permissions.items()
-            if not code.startswith("admin.") and code != "notifications.admin" and permission.id not in existing_member_permissions
+            if not code.startswith("admin.") and code not in {"notifications.admin", "private.access"} and permission.id not in existing_member_permissions
         ]
         if missing_member_permissions:
             await session.execute(insert(role_permissions), [
                 {"role_id": roles["member"].id, "permission_id": permission_id}
                 for permission_id in missing_member_permissions
             ])
+    researcher_permission_ids = [
+        permission.id for code, permission in existing_permissions.items()
+        if not code.startswith("admin.") and code != "notifications.admin"
+    ]
+    existing_researcher_permissions = set((await session.execute(
+        select(role_permissions.c.permission_id).where(role_permissions.c.role_id == roles["researcher"].id)
+    )).scalars().all())
+    missing_researcher_permissions = [item for item in researcher_permission_ids if item not in existing_researcher_permissions]
+    if missing_researcher_permissions:
+        await session.execute(insert(role_permissions), [
+            {"role_id": roles["researcher"].id, "permission_id": permission_id}
+            for permission_id in missing_researcher_permissions
+        ])
 
     users = (await session.execute(select(User))).scalars().all()
     if not users:
@@ -225,6 +286,15 @@ async def seed_access_control(session: AsyncSession):
     for event_type, (name, content) in NOTIFICATION_TEMPLATE_DEFAULTS.items():
         if event_type not in existing_notification_templates:
             session.add(NotificationTemplate(event_type=event_type, name=name, content=content, enabled=True))
+    if await session.get(ContentTemplate, "stock_technical_overview") is None:
+        session.add(ContentTemplate(
+            id="stock_technical_overview",
+            name="标的综合技术观察",
+            description="从趋势、动量、量价和公开结构指标生成中性研究稿。",
+            sections=["summary", "trend", "momentum", "volume", "structure", "risk"],
+            enabled=True,
+            built_in=True,
+        ))
     bootstrap_admin = next((user for user in users if user.username == settings.bootstrap_admin_username), users[0])
     # 兼容升级前没有归属人的策略数据，将其交给首个管理员。
     await session.execute(

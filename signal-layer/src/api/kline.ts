@@ -24,6 +24,10 @@ export interface ApiKlineResponse {
   from_time: number | null
   to_time: number | null
   count: number
+  stale?: boolean
+  refresh_failed?: boolean
+  expected_time?: number | null
+  status_message?: string | null
 }
 
 export interface FrontendKline {
@@ -47,6 +51,11 @@ export interface FrontendKlineResponse {
   timeframe: string
   data: FrontendKline[]
   count: number
+  toTime?: number | null
+  stale: boolean
+  refreshFailed: boolean
+  expectedTime?: number | null
+  statusMessage?: string | null
 }
 
 function toFrontend(item: ApiKlineItem): FrontendKline {
@@ -75,7 +84,11 @@ export async function fetchKlines(
     console.log(`[SL:API] GET /klines/${symbol}`, { timeframe, limit })
     const raw = await api.get<ApiKlineResponse>(`/klines/${symbol}`, { timeframe, limit: String(limit) })
     console.log(`[SL:API] GET /klines/${symbol} -> OK ${raw.count} candles`)
-    return { symbol: raw.symbol, timeframe: raw.timeframe, data: raw.data.map(toFrontend), count: raw.count }
+    return {
+      symbol: raw.symbol, timeframe: raw.timeframe, data: raw.data.map(toFrontend), count: raw.count,
+      toTime: raw.to_time, stale: Boolean(raw.stale), refreshFailed: Boolean(raw.refresh_failed),
+      expectedTime: raw.expected_time, statusMessage: raw.status_message,
+    }
   })
 }
 
@@ -92,5 +105,9 @@ export async function fetchKlineRange(
     end_time: String(endTime),
     limit: '10000',
   })
-  return { symbol: raw.symbol, timeframe: raw.timeframe, data: raw.data.map(toFrontend), count: raw.count }
+  return {
+    symbol: raw.symbol, timeframe: raw.timeframe, data: raw.data.map(toFrontend), count: raw.count,
+    toTime: raw.to_time, stale: Boolean(raw.stale), refreshFailed: Boolean(raw.refresh_failed),
+    expectedTime: raw.expected_time, statusMessage: raw.status_message,
+  }
 }

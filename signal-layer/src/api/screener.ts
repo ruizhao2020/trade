@@ -20,6 +20,8 @@ interface ApiScreenerResponse {
   scanned_count: number
   matched_count: number
   failed_count: number
+  target_count: number
+  stopped_early: boolean
   results: ApiScreenerMatch[]
 }
 
@@ -36,17 +38,21 @@ export interface ScreenerResponse {
   scannedCount: number
   matchedCount: number
   failedCount: number
+  targetCount: number
+  stoppedEarly: boolean
   results: ScreenerMatch[]
 }
 
 export async function runScreener(
   template: ConditionTemplate,
-  options: { market?: 'stock' | 'futures'; limit?: number; minProgress?: number; concurrency?: number } = {},
+  options: { market?: string; limit?: number; offset?: number; targetCount?: number; minProgress?: number; concurrency?: number } = {},
 ): Promise<ScreenerResponse> {
   const raw = await api.post<ApiScreenerResponse>('/screener/run', {
     template: templateToSnake(template),
     market: options.market ?? 'stock',
-    limit: options.limit ?? 24,
+    limit: options.limit ?? 500,
+    offset: options.offset ?? 0,
+    target_count: options.targetCount ?? 10,
     min_progress: options.minProgress ?? 1,
     concurrency: options.concurrency ?? 4,
     kline_limit: 200,
@@ -57,6 +63,8 @@ export async function runScreener(
     scannedCount: raw.scanned_count,
     matchedCount: raw.matched_count,
     failedCount: raw.failed_count,
+    targetCount: raw.target_count,
+    stoppedEarly: raw.stopped_early,
     results: raw.results.map((result) => ({
       item: {
         symbol: result.symbol,

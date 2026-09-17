@@ -8,12 +8,16 @@ from sqlalchemy.orm import selectinload
 from app.api.auth import user_response
 from app.api.security import require_permission
 from app.db import get_session
-from app.models.auth import Module, Permission, Role, User, role_permissions
+from app.models.auth import Module, Permission, PublicIndicatorFeaturePolicy, PublicIndicatorPolicy, Role, User, role_permissions
 from app.schemas.auth import (
     ModuleCreate, ModuleResponse, ModuleUpdate, PermissionCreate, PermissionResponse,
     RoleCreate, RoleResponse, RoleUpdate, UserResponse, UserRoleUpdate,
 )
 from app.services.module_access_service import invalidate_module_rules
+from app.schemas.site import (
+    PublicIndicatorFeaturePolicyCreate, PublicIndicatorFeaturePolicyResponse, PublicIndicatorFeaturePolicyUpdate,
+    PublicIndicatorPolicyResponse, PublicIndicatorPolicyUpdate,
+)
 
 router = APIRouter(prefix="/api/v1/admin", tags=["admin"])
 
@@ -180,3 +184,70 @@ async def create_permission(body: PermissionCreate, session: AsyncSession = Depe
         id=permission.id, code=permission.code, name=permission.name,
         description=permission.description, module_code=module.code if module else None,
     )
+
+
+@router.get("/public-indicators", response_model=list[PublicIndicatorPolicyResponse], dependencies=[Depends(require_permission("admin.modules"))])
+async def list_public_indicators(session: AsyncSession = Depends(get_session)):
+    return list((await session.execute(
+        select(PublicIndicatorPolicy).order_by(PublicIndicatorPolicy.sort_order, PublicIndicatorPolicy.id)
+    )).scalars().all())
+
+
+@router.put("/public-indicators/{policy_id}", response_model=PublicIndicatorPolicyResponse, dependencies=[Depends(require_permission("admin.modules"))])
+async def update_public_indicator(policy_id: int, body: PublicIndicatorPolicyUpdate, session: AsyncSession = Depends(get_session)):
+    item = await session.get(PublicIndicatorPolicy, policy_id)
+    if not item:
+        raise HTTPException(status_code=404, detail="公开指标配置不存在")
+    for field, value in body.model_dump(exclude_none=True).items():
+        setattr(item, field, value)
+    if body.public_visible is False:
+        item.show_parameters = False
+        item.show_details = False
+        item.show_markers = False
+        await session.execute(update(PublicIndicatorFeaturePolicy).where(
+            PublicIndicatorFeaturePolicy.indicator_type == item.indicator_type
+        ).values(public_visible=False, show_details=False))
+    await session.commit()
+    await session.refresh(item)
+    return item
+
+
+@router.get("/public-indicator-features", response_model=list[PublicIndicatorFeaturePolicyResponse], dependencies=[Depends(require_permission("admin.modules"))])
+async def list_public_indicator_features(session: AsyncSession = Depends(get_session)):
+    return list((await session.execute(
+        select(PublicIndicatorFeaturePolicy).order_by(PublicIndicatorFeaturePolicy.indicator_type, PublicIndicatorFeaturePolicy.sort_order, PublicIndicatorFeaturePolicy.id)
+    )).scalars().all())
+
+
+@router.post("/public-indicator-features", response_model=PublicIndicatorFeaturePolicyResponse, status_code=201, dependencies=[Depends(require_permission("admin.modules"))])
+async def create_public_indicator_feature(body: PublicIndicatorFeaturePolicyCreate, session: AsyncSession = Depends(get_session)):
+    parent = await session.scalar(select(PublicIndicatorPolicy).where(
+        PublicIndicatorPolicy.indicator_type == body.indicator_type
+    ))
+    if not parent:
+        raise HTTPException(status_code=400, detail="请先创建或自动发现对应的主指标")
+    exists = await session.scalar(select(PublicIndicatorFeaturePolicy).where(
+        PublicIndicatorFeaturePolicy.indicator_type == body.indicator_type,
+        PublicIndicatorFeaturePolicy.feature_code == body.feature_code,
+    ))
+    if exists:
+        raise HTTPException(status_code=409, detail="该指标子功能已存在")
+    item = PublicIndicatorFeaturePolicy(**body.model_dump())
+    session.add(item)
+    await session.commit()
+    await session.refresh(item)
+    return item
+
+
+@router.put("/public-indicator-features/{policy_id}", response_model=PublicIndicatorFeaturePolicyResponse, dependencies=[Depends(require_permission("admin.modules"))])
+async def update_public_indicator_feature(policy_id: int, body: PublicIndicatorFeaturePolicyUpdate, session: AsyncSession = Depends(get_session)):
+    item = await session.get(PublicIndicatorFeaturePolicy, policy_id)
+    if not item:
+        raise HTTPException(status_code=404, detail="公开缠论配置不存在")
+    for field, value in body.model_dump(exclude_none=True).items():
+        setattr(item, field, value)
+    if body.public_visible is False:
+        item.show_details = False
+    await session.commit()
+    await session.refresh(item)
+    return item

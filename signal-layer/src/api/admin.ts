@@ -64,3 +64,30 @@ export const updateNotificationChannelForAdmin = (id: number, values: { name?: s
 export const deleteNotificationChannelForAdmin = (id: number) => api.delete(`/notifications/admin/channels/${id}`)
 export const fetchNotificationTemplatesForAdmin = () => api.get<AdminNotificationTemplate[]>('/notifications/admin/templates')
 export const updateNotificationTemplateForAdmin = (id: number, values: { name?: string; content?: string; enabled?: boolean }) => api.put<AdminNotificationTemplate>(`/notifications/admin/templates/${id}`, values)
+
+export interface PublicIndicatorPolicy {
+  id: number
+  indicator_type: string
+  display_name: string
+  public_visible: boolean
+  show_parameters: boolean
+  show_details: boolean
+  show_markers: boolean
+  sort_order: number
+}
+
+export interface PublicIndicatorFeaturePolicy {
+  id: number
+  indicator_type: string
+  feature_code: string
+  display_name: string
+  public_visible: boolean
+  show_details: boolean
+  sort_order: number
+}
+
+export const fetchPublicIndicatorPolicies = () => api.get<PublicIndicatorPolicy[]>('/admin/public-indicators')
+export const updatePublicIndicatorPolicy = (id: number, values: Partial<PublicIndicatorPolicy>) => api.put<PublicIndicatorPolicy>(`/admin/public-indicators/${id}`, values)
+export const fetchPublicIndicatorFeaturePolicies = () => api.get<PublicIndicatorFeaturePolicy[]>('/admin/public-indicator-features')
+export const createPublicIndicatorFeaturePolicy = (values: { indicator_type: string; feature_code: string; display_name: string; public_visible?: boolean; show_details?: boolean; sort_order?: number }) => api.post<PublicIndicatorFeaturePolicy>('/admin/public-indicator-features', values)
+export const updatePublicIndicatorFeaturePolicy = (id: number, values: Partial<PublicIndicatorFeaturePolicy>) => api.put<PublicIndicatorFeaturePolicy>(`/admin/public-indicator-features/${id}`, values)

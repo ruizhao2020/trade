@@ -64,6 +64,40 @@ CREATE TABLE IF NOT EXISTS notification_templates (
     updated_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP
 );
 
+CREATE TABLE IF NOT EXISTS content_templates (
+    id VARCHAR(64) NOT NULL PRIMARY KEY,
+    user_id INTEGER,
+    name VARCHAR(100) NOT NULL,
+    description VARCHAR(500) NOT NULL DEFAULT '',
+    sections JSON NOT NULL DEFAULT '[]',
+    enabled BOOLEAN NOT NULL DEFAULT 1,
+    built_in BOOLEAN NOT NULL DEFAULT 0,
+    created_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    updated_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP
+);
+
+CREATE TABLE IF NOT EXISTS article_drafts (
+    id INTEGER NOT NULL PRIMARY KEY AUTOINCREMENT,
+    user_id INTEGER NOT NULL,
+    template_id VARCHAR(64) NOT NULL,
+    title VARCHAR(200) NOT NULL,
+    symbol VARCHAR(32) NOT NULL,
+    symbol_name VARCHAR(100) NOT NULL,
+    market VARCHAR(16) NOT NULL,
+    as_of DATETIME NOT NULL,
+    timeframes JSON NOT NULL DEFAULT '[]',
+    structured_data JSON NOT NULL DEFAULT '{}',
+    chart_specs JSON NOT NULL DEFAULT '[]',
+    standard_markdown TEXT NOT NULL,
+    platform_variants JSON NOT NULL DEFAULT '{}',
+    status VARCHAR(24) NOT NULL DEFAULT 'draft',
+    reviewed_at DATETIME,
+    created_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    updated_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP
+);
+CREATE INDEX IF NOT EXISTS idx_article_draft_user ON article_drafts (user_id, created_at);
+CREATE INDEX IF NOT EXISTS idx_article_draft_symbol ON article_drafts (symbol, as_of);
+
 CREATE TABLE IF NOT EXISTS strategy_monitors (
     id INTEGER NOT NULL PRIMARY KEY AUTOINCREMENT,
     user_id INTEGER NOT NULL,
@@ -196,4 +230,30 @@ CREATE TABLE IF NOT EXISTS role_permissions (
     PRIMARY KEY (role_id, permission_id),
     FOREIGN KEY (role_id) REFERENCES roles(id) ON DELETE CASCADE,
     FOREIGN KEY (permission_id) REFERENCES permissions(id) ON DELETE CASCADE
+);
+
+CREATE TABLE IF NOT EXISTS public_indicator_policies (
+    id INTEGER NOT NULL PRIMARY KEY AUTOINCREMENT,
+    indicator_type VARCHAR(64) NOT NULL UNIQUE,
+    display_name VARCHAR(100) NOT NULL DEFAULT '',
+    public_visible BOOLEAN NOT NULL DEFAULT 1,
+    show_parameters BOOLEAN NOT NULL DEFAULT 1,
+    show_details BOOLEAN NOT NULL DEFAULT 1,
+    show_markers BOOLEAN NOT NULL DEFAULT 0,
+    sort_order INTEGER NOT NULL DEFAULT 0,
+    created_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    updated_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP
+);
+
+CREATE TABLE IF NOT EXISTS public_indicator_feature_policies (
+    id INTEGER NOT NULL PRIMARY KEY AUTOINCREMENT,
+    indicator_type VARCHAR(64) NOT NULL,
+    feature_code VARCHAR(100) NOT NULL,
+    display_name VARCHAR(100) NOT NULL,
+    public_visible BOOLEAN NOT NULL DEFAULT 0,
+    show_details BOOLEAN NOT NULL DEFAULT 0,
+    sort_order INTEGER NOT NULL DEFAULT 0,
+    created_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    updated_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    UNIQUE (indicator_type, feature_code)
 );

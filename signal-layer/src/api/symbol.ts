@@ -30,6 +30,18 @@ export interface SymbolListResponse {
   symbols: SymbolItem[]
 }
 
+export interface MarketItem {
+  id: string
+  name: string
+  description: string
+  default_symbol: string
+  default_symbol_name: string
+  enabled: boolean
+  sort_order: number
+}
+
+export const fetchMarkets = () => api.get<{ markets: MarketItem[] }>('/symbols/markets')
+
 /**
  * 查询品种列表。
  * @param market  market 类型：stock / futures

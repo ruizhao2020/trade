@@ -3,7 +3,7 @@ from __future__ import annotations
 from datetime import datetime
 from typing import Optional
 
-from sqlalchemy import Boolean, DateTime, ForeignKey, Index, Integer, String, Table, Column
+from sqlalchemy import Boolean, DateTime, ForeignKey, Index, Integer, String, Table, Column, UniqueConstraint
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 
 from app.models.base import Base, TimestampMixin
@@ -79,3 +79,35 @@ class Permission(Base, TimestampMixin):
     module: Mapped[Optional[Module]] = relationship(back_populates="permissions")
 
     __table_args__ = (Index("idx_permission_module", "module_id"),)
+
+
+class PublicIndicatorPolicy(Base, TimestampMixin):
+    """Administrator-controlled public exposure for each indicator."""
+    __tablename__ = "public_indicator_policies"
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
+    indicator_type: Mapped[str] = mapped_column(String(64), unique=True, nullable=False)
+    display_name: Mapped[str] = mapped_column(String(100), nullable=False, default="")
+    public_visible: Mapped[bool] = mapped_column(Boolean, nullable=False, default=True)
+    show_parameters: Mapped[bool] = mapped_column(Boolean, nullable=False, default=True)
+    show_details: Mapped[bool] = mapped_column(Boolean, nullable=False, default=True)
+    show_markers: Mapped[bool] = mapped_column(Boolean, nullable=False, default=False)
+    sort_order: Mapped[int] = mapped_column(Integer, nullable=False, default=0)
+
+
+class PublicIndicatorFeaturePolicy(Base, TimestampMixin):
+    """Generic public visibility of any indicator's plots, markers or structures."""
+    __tablename__ = "public_indicator_feature_policies"
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
+    indicator_type: Mapped[str] = mapped_column(String(64), nullable=False)
+    feature_code: Mapped[str] = mapped_column(String(100), nullable=False)
+    display_name: Mapped[str] = mapped_column(String(100), nullable=False)
+    public_visible: Mapped[bool] = mapped_column(Boolean, nullable=False, default=False)
+    show_details: Mapped[bool] = mapped_column(Boolean, nullable=False, default=False)
+    sort_order: Mapped[int] = mapped_column(Integer, nullable=False, default=0)
+
+    __table_args__ = (
+        UniqueConstraint("indicator_type", "feature_code", name="uk_public_indicator_feature"),
+        Index("idx_public_indicator_feature", "indicator_type", "sort_order"),
+    )

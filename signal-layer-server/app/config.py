@@ -62,7 +62,11 @@ class Settings(BaseSettings):
     token_expire_minutes: int = 1440
     bootstrap_admin_username: str = "admin"
     bootstrap_admin_password: str = "Admin123!"
-    cors_origins: str = "http://localhost:4173,http://127.0.0.1:4173"
+    cors_origins: str = (
+        "http://localhost:4173,http://127.0.0.1:4173,"
+        "http://localhost:4174,http://127.0.0.1:4174,"
+        "http://localhost:4175,http://127.0.0.1:4175"
+    )
 
     @property
     def database_url(self) -> str:

@@ -249,3 +249,21 @@ input:-webkit-autofill:active {
 .action-secondary:hover { background: var(--bg-tertiary); color: var(--text-primary); }
 .icon-button { width: 2rem; color: var(--text-muted); }
 .icon-button:hover { color: var(--accent-red); background: var(--bg-tertiary); }
+
+/* Content task reuses the market/symbol selector in a narrow sidebar. */
+.content-symbol-selector > div {
+  width: 100%;
+  align-items: stretch;
+  flex-direction: column;
+}
+.content-symbol-selector select,
+.content-symbol-selector input {
+  width: 100%;
+}
+.content-symbol-selector > div > div:last-child {
+  width: 100%;
+}
+.content-symbol-selector > div > div:last-child > div {
+  width: 100%;
+  max-width: 100%;
+}

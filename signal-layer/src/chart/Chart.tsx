@@ -17,6 +17,9 @@ interface Props {
   /** 指标计算结果(可选) */
   indicatorResults?: IndicatorResult[]
   onCursorTimeChange?: (time: number | null) => void
+  chanDetailFeatures?: string[]
+  snapshotRequestId?: number
+  onSnapshot?: (dataUrl: string) => void
 }
 
 /**
@@ -27,7 +30,7 @@ interface Props {
  *   2) 删除多周期图层逻辑 - 单周期
  *   3) 缠论叠加交给 ChanRenderer
  */
-export function Chart({ klineData, chanAnalysis, chanOptions, indicatorResults, onCursorTimeChange }: Props) {
+export function Chart({ klineData, chanAnalysis, chanOptions, indicatorResults, onCursorTimeChange, chanDetailFeatures, snapshotRequestId, onSnapshot }: Props) {
   const containerRef = useRef<HTMLDivElement>(null)
   const popupRef = useRef<HTMLDivElement>(null)
   const chartRef = useRef<IChartApi | null>(null)
@@ -179,11 +182,11 @@ export function Chart({ klineData, chanAnalysis, chanOptions, indicatorResults, 
   useEffect(() => {
     if (!chanRendererRef.current) return
     if (chanAnalysis && chanOptions) {
-      chanRendererRef.current.render(chanAnalysis, chanOptions)
+      chanRendererRef.current.render(chanAnalysis, chanOptions, chanDetailFeatures)
     } else {
       chanRendererRef.current.clear()
     }
-  }, [chanAnalysis, chanOptions])
+  }, [chanAnalysis, chanOptions, chanDetailFeatures])
 
   // 指标渲染
   useEffect(() => {
@@ -194,6 +197,14 @@ export function Chart({ klineData, chanAnalysis, chanOptions, indicatorResults, 
       indicatorRendererRef.current.clear()
     }
   }, [indicatorResults])
+
+  useEffect(() => {
+    if (!snapshotRequestId || !chartRef.current || !onSnapshot) return
+    const frame = window.requestAnimationFrame(() => {
+      onSnapshot(chartRef.current!.takeScreenshot().toDataURL('image/png'))
+    })
+    return () => window.cancelAnimationFrame(frame)
+  }, [snapshotRequestId, onSnapshot])
 
   return (
     <div className="absolute inset-0">

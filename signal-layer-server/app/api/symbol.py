@@ -24,6 +24,11 @@ logger = logging.getLogger(__name__)
 
 router = APIRouter(prefix="/api/v1/symbols", tags=["symbols"])
 
+MARKET_DEFINITIONS = [
+    {"id": "stock", "name": "股票", "description": "沪深 A 股与指数", "default_symbol": "000001_sz", "default_symbol_name": "平安银行", "enabled": True, "sort_order": 10},
+    {"id": "futures", "name": "期货", "description": "国内期货主力连续", "default_symbol": "RB0", "default_symbol_name": "螺纹钢连续", "enabled": True, "sort_order": 20},
+]
+
 
 # ---- 期货列表缓存 ------------------------------------------------------------
 # 期货主力合约列表变化极不频繁（主力连续代码 RB0/V0 基本固定），
@@ -35,7 +40,7 @@ _FUTURES_CACHE_TTL = 24 * 3600  # 24 小时
 
 # ---- MySQL A 股列表 ---------------------------------------------------------
 
-def _fetch_stock_symbols(keyword: Optional[str], limit: int) -> tuple[list[dict], int]:
+def _fetch_stock_symbols(keyword: Optional[str], limit: int, offset: int = 0) -> tuple[list[dict], int]:
     """从 MySQL stock_info 表读取股票列表，支持关键字搜索。
 
     返回 (符号列表, 符合条件的总数)。
@@ -60,8 +65,8 @@ def _fetch_stock_symbols(keyword: Optional[str], limit: int) -> tuple[list[dict]
 
         # 2. 查当前页数据
         cur.execute(
-            f"SELECT code, name, industry FROM stock_info {where} ORDER BY code LIMIT %s",
-            (*params, limit),
+            f"SELECT code, name, industry FROM stock_info {where} ORDER BY code LIMIT %s OFFSET %s",
+            (*params, limit, offset),
         )
         rows = cur.fetchall()
         symbols = [
@@ -134,10 +139,16 @@ _warmup_futures_symbols()
 
 # ---- 路由 -------------------------------------------------------------------
 
+@router.get("/markets")
+async def list_markets():
+    """返回可用市场目录；新增市场适配器后只需注册市场定义。"""
+    return {"markets": [item for item in MARKET_DEFINITIONS if item["enabled"]]}
+
 async def get_symbol_items(
     market: str,
     keyword: Optional[str],
     limit: int,
+    offset: int = 0,
 ) -> tuple[list[dict], int]:
     """返回标的列表和匹配总数，供 HTTP 路由及选股服务复用。"""
     if market == "futures":
@@ -150,9 +161,9 @@ async def get_symbol_items(
             ]
         else:
             filtered = all_symbols
-        return filtered[:limit], len(filtered)
+        return filtered[offset:offset + limit], len(filtered)
     if market == "stock":
-        return await asyncio.to_thread(_fetch_stock_symbols, keyword, limit)
+        return await asyncio.to_thread(_fetch_stock_symbols, keyword, limit, offset)
     raise ValueError(f"不支持的市场类型: {market}，可选 stock / futures")
 
 
@@ -161,10 +172,11 @@ async def list_symbols(
     market: str = Query(default="stock", description="市场类型：stock=股票, futures=期货"),
     keyword: Optional[str] = Query(default=None, description="搜索关键字（股票代码或名称）"),
     limit: int = Query(default=200, ge=1, le=2000),
+    offset: int = Query(default=0, ge=0),
 ):
     """查询品种列表。"""
     try:
-        symbols, total = await get_symbol_items(market, keyword, limit)
+        symbols, total = await get_symbol_items(market, keyword, limit, offset)
         return {"market": market, "total": total, "count": len(symbols), "symbols": symbols}
     except ValueError as error:
         raise HTTPException(status_code=400, detail=str(error)) from error

@@ -12,6 +12,8 @@ interface Props {
   indicators: IndicatorDisplay[]
   results: IndicatorResult[]
   cursorTime?: number | null
+  visibleChanFeatures?: string[]
+  visibleIndicatorDetails?: string[]
 }
 
 function formatNumber(value: number | undefined, digits = 2) {
@@ -36,11 +38,14 @@ export function IndicatorInfoPanel({
   indicators,
   results,
   cursorTime,
+  visibleChanFeatures,
+  visibleIndicatorDetails,
 }: Props) {
   const latest = klineData.at(-1)
   const previous = klineData.at(-2)
   const change = latest && previous ? ((latest.close - previous.close) / previous.close) * 100 : undefined
-  const chipResult = results.find(result => result.type === 'chip_distribution')
+  const detailResults = visibleIndicatorDetails ? results.filter((result) => visibleIndicatorDetails.includes(result.type)) : results
+  const chipResult = detailResults.find(result => result.type === 'chip_distribution')
   const chipSnapshot = findProfileSnapshot(chipResult?.profileData, cursorTime)
   const chipMetrics = chipSnapshot?.metrics ?? chipResult?.values[0]
   const chipTimeLabel = chipSnapshot
@@ -48,7 +53,7 @@ export function IndicatorInfoPanel({
         month: '2-digit', day: '2-digit', hour: '2-digit', minute: '2-digit', hour12: false,
       })
     : ''
-  const latestIndicatorValues: Array<{ key: string; label: string; value?: number; text?: string }> = results.flatMap((result) => {
+  const latestIndicatorValues: Array<{ key: string; label: string; value?: number; text?: string }> = detailResults.flatMap((result) => {
     const last = result.values.at(-1)
     if (!last) return []
     if (result.type === 'chip_distribution') return []
@@ -154,8 +159,8 @@ export function IndicatorInfoPanel({
             <div className="flex justify-between"><span className="text-[var(--text-muted)]">笔</span><span className="font-mono">{analysis?.bis.length ?? 0}</span></div>
             <div className="flex justify-between"><span className="text-[var(--text-muted)]">线段</span><span className="font-mono">{analysis?.duans.length ?? 0}</span></div>
             <div className="flex justify-between"><span className="text-[var(--text-muted)]">中枢</span><span className="font-mono">{chanOptions.zsLevel === 'duan' ? analysis?.duanZhongshus.length ?? 0 : analysis?.zhongshus.length ?? 0}</span></div>
-            <div className="flex justify-between"><span className="text-[var(--text-muted)]">背驰</span><span className="font-mono">{analysis?.divergences.length ?? 0}</span></div>
-            <div className="flex justify-between"><span className="text-[var(--text-muted)]">买卖点</span><span className="font-mono">{analysis?.buySellPoints.length ?? 0}</span></div>
+            {(!visibleChanFeatures || visibleChanFeatures.includes('divergence')) && <div className="flex justify-between"><span className="text-[var(--text-muted)]">背驰</span><span className="font-mono">{analysis?.divergences.length ?? 0}</span></div>}
+            {(!visibleChanFeatures || visibleChanFeatures.includes('buy_sell_points')) && <div className="flex justify-between"><span className="text-[var(--text-muted)]">买卖点</span><span className="font-mono">{analysis?.buySellPoints.length ?? 0}</span></div>}
           </div>
         </section>
       </div>

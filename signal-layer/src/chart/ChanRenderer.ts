@@ -381,7 +381,7 @@ export class ChanRenderer {
     this.candleSeries = candleSeries
   }
 
-  render(analysis: ChanAnalysis, options: ChanRenderOptions): void {
+  render(analysis: ChanAnalysis, options: ChanRenderOptions, detailFeatures?: string[]): void {
     this.clear()
 
     if (options.showBi && analysis.bis.length > 0) {
@@ -445,14 +445,14 @@ export class ChanRenderer {
       markers.push(...buildFenxingMarkers(analysis.fenxings, chanKLineTimes))
     }
     if (options.showDivergences && analysis.divergences.length > 0) {
-      for (const item of analysis.divergences) {
+      for (const item of detailFeatures?.includes('divergence') === false ? [] : analysis.divergences) {
         const detail = buildDivergenceMarkerDetail(item, analysis.buySellPoints)
         this.markerDetails.set(detail.id, detail)
       }
       markers.push(...buildDivergenceMarkers(analysis.divergences))
     }
     if (options.showBuySellPoints && analysis.buySellPoints.length > 0) {
-      for (const item of analysis.buySellPoints) {
+      for (const item of detailFeatures?.includes('buy_sell_points') === false ? [] : analysis.buySellPoints) {
         const detail = buildBuySellMarkerDetail(item)
         this.markerDetails.set(detail.id, detail)
       }

@@ -82,6 +82,33 @@ CREATE TABLE IF NOT EXISTS role_permissions (
     CONSTRAINT fk_role_permissions_permission FOREIGN KEY (permission_id) REFERENCES permissions(id) ON DELETE CASCADE
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
 
+CREATE TABLE IF NOT EXISTS public_indicator_policies (
+    id INT NOT NULL AUTO_INCREMENT PRIMARY KEY,
+    indicator_type VARCHAR(64) NOT NULL UNIQUE,
+    display_name VARCHAR(100) NOT NULL DEFAULT '',
+    public_visible TINYINT(1) NOT NULL DEFAULT 1,
+    show_parameters TINYINT(1) NOT NULL DEFAULT 1,
+    show_details TINYINT(1) NOT NULL DEFAULT 1,
+    show_markers TINYINT(1) NOT NULL DEFAULT 0,
+    sort_order INT NOT NULL DEFAULT 0,
+    created_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    updated_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
+
+CREATE TABLE IF NOT EXISTS public_indicator_feature_policies (
+    id INT NOT NULL AUTO_INCREMENT PRIMARY KEY,
+    indicator_type VARCHAR(64) NOT NULL,
+    feature_code VARCHAR(100) NOT NULL,
+    display_name VARCHAR(100) NOT NULL,
+    public_visible TINYINT(1) NOT NULL DEFAULT 0,
+    show_details TINYINT(1) NOT NULL DEFAULT 0,
+    sort_order INT NOT NULL DEFAULT 0,
+    created_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    updated_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
+    UNIQUE KEY uk_public_indicator_feature (indicator_type, feature_code),
+    INDEX idx_public_indicator_feature (indicator_type, sort_order)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
+
 CREATE TABLE IF NOT EXISTS klines (
     id          BIGINT        NOT NULL AUTO_INCREMENT PRIMARY KEY,
     symbol      VARCHAR(20)   NOT NULL,
@@ -129,6 +156,40 @@ CREATE TABLE IF NOT EXISTS notification_templates (
     updated_by INT NULL,
     created_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
     updated_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
+
+CREATE TABLE IF NOT EXISTS content_templates (
+    id VARCHAR(64) NOT NULL PRIMARY KEY,
+    user_id INT NULL,
+    name VARCHAR(100) NOT NULL,
+    description VARCHAR(500) NOT NULL DEFAULT '',
+    sections JSON NOT NULL,
+    enabled TINYINT(1) NOT NULL DEFAULT 1,
+    built_in TINYINT(1) NOT NULL DEFAULT 0,
+    created_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    updated_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
+
+CREATE TABLE IF NOT EXISTS article_drafts (
+    id INT NOT NULL AUTO_INCREMENT PRIMARY KEY,
+    user_id INT NOT NULL,
+    template_id VARCHAR(64) NOT NULL,
+    title VARCHAR(200) NOT NULL,
+    symbol VARCHAR(32) NOT NULL,
+    symbol_name VARCHAR(100) NOT NULL,
+    market VARCHAR(16) NOT NULL,
+    as_of DATETIME NOT NULL,
+    timeframes JSON NOT NULL,
+    structured_data JSON NOT NULL,
+    chart_specs JSON NOT NULL,
+    standard_markdown LONGTEXT NOT NULL,
+    platform_variants JSON NOT NULL,
+    status VARCHAR(24) NOT NULL DEFAULT 'draft',
+    reviewed_at DATETIME NULL,
+    created_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    updated_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
+    INDEX idx_article_draft_user (user_id, created_at),
+    INDEX idx_article_draft_symbol (symbol, as_of)
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
 
 CREATE TABLE IF NOT EXISTS strategy_monitors (

@@ -8,6 +8,7 @@ import { WorkbenchHeader } from './components/WorkbenchHeader.tsx'
 import { WorkspaceNav } from './components/WorkspaceNav.tsx'
 import type { WorkspaceModule } from './components/WorkspaceNav.tsx'
 import { fetchKlines } from './api/kline.ts'
+import type { FrontendKlineResponse } from './api/kline.ts'
 import { fetchChanAnalysis } from './api/chan.ts'
 import { calculateIndicators } from './api/indicator.ts'
 import { runBacktest } from './api/signal.ts'
@@ -35,29 +36,7 @@ import type { AuthUser } from './api/auth.ts'
 import { getAccessToken } from './api/client.ts'
 import { ChangePasswordDialog } from './components/ChangePasswordDialog.tsx'
 import { NotificationWorkspace } from './components/NotificationWorkspace.tsx'
-
-const GUEST_USER: AuthUser = {
-  id: 0,
-  username: 'guest',
-  display_name: '访客',
-  enabled: true,
-  role_codes: [],
-  permission_codes: [],
-  modules: [{
-    id: 0,
-    code: 'indicators',
-    name: '指标',
-    icon: 'chart',
-    component_key: 'indicators',
-    route_path: '/indicators',
-    api_prefixes: '/api/v1/indicator,/api/v1/klines,/api/v1/chan,/api/v1/symbols',
-    api_permission: 'analysis.compute',
-    sort_order: 10,
-    enabled: true,
-    visible: true,
-    public_access: true,
-  }],
-}
+import { ContentWorkspace } from './components/ContentWorkspace.tsx'
 
 const DEFAULT_CHAN_OPTIONS: ChanRenderOptions = {
   showFenxing: false,
@@ -121,7 +100,7 @@ function WorkbenchApp({ user, onLogout, onUserChange, onLogin }: { user: AuthUse
   const initialModule = user.modules[0]?.component_key || user.modules[0]?.code || ''
   const [activeModule, setActiveModule] = useState<WorkspaceModule>(initialModule)
   const [timeframe, setTimeframe] = useState<SupportedTimeframeId>('1d')
-  const [market, setMarket] = useState<'stock' | 'futures'>('futures')
+  const [market, setMarket] = useState('futures')
   const [symbol, setSymbol] = useState('RB0')
   const [symbolName, setSymbolName] = useState('螺纹钢连续')
   const [klineData, setKlineData] = useState<RawKline[]>([])
@@ -138,6 +117,7 @@ function WorkbenchApp({ user, onLogout, onUserChange, onLogin }: { user: AuthUse
   const [strategyTradeScan, setStrategyTradeScan] = useState<{ key: string; result: BacktestResult | null }>({ key: '', result: null })
   const [passwordDialogOpen, setPasswordDialogOpen] = useState(false)
   const [indicatorCursorTime, setIndicatorCursorTime] = useState<number | null>(null)
+  const [marketDataStatus, setMarketDataStatus] = useState<Pick<FrontendKlineResponse, 'toTime' | 'stale' | 'refreshFailed' | 'statusMessage'> | null>(null)
 
   const templates = useAppStore((state) => state.templates)
   const activeTemplateId = useAppStore((state) => state.activeTemplateId)
@@ -168,6 +148,7 @@ function WorkbenchApp({ user, onLogout, onUserChange, onLogin }: { user: AuthUse
       if (!cancelled) {
         setLoading(true)
         setError(null)
+        setMarketDataStatus(null)
       }
     })
     const requestSymbol = symbol
@@ -175,6 +156,7 @@ function WorkbenchApp({ user, onLogout, onUserChange, onLogin }: { user: AuthUse
       .then(([klineResponse, chanResponse]) => {
         if (cancelled) return
         setKlineData(klineResponse.data as RawKline[])
+        setMarketDataStatus(klineResponse)
         setChanAnalysis(chanResponse)
       })
       .catch((loadError) => {
@@ -223,7 +205,7 @@ function WorkbenchApp({ user, onLogout, onUserChange, onLogin }: { user: AuthUse
   }, [strategyRequestKey, strategyRequests, klineData, symbol, timeframe])
 
   useEffect(() => {
-    if (effectiveActiveModule !== 'strategy' || !activeTemplate?.enabled || !strategyTradeKey) return
+    if (!['strategy', 'screener'].includes(effectiveActiveModule) || !activeTemplate?.enabled || !strategyTradeKey) return
     let cancelled = false
     runBacktest(symbol, activeTemplate, 300)
       .then((result) => {
@@ -253,20 +235,18 @@ function WorkbenchApp({ user, onLogout, onUserChange, onLogin }: { user: AuthUse
     [strategyIndicatorResults, strategyRequestKey, strategyRequests.length, strategyTradeMarkers],
   )
 
-  const handleMarketChange = useCallback((nextMarket: 'stock' | 'futures') => {
+  const handleMarketChange = useCallback((nextMarket: string) => {
     setIndicatorCursorTime(null)
     setMarket(nextMarket)
-    setSymbol(nextMarket === 'stock' ? '300843_sz' : 'RB0')
-    setSymbolName(nextMarket === 'stock' ? '胜蓝股份' : '螺纹钢连续')
   }, [])
   const handleSymbolChange = useCallback((nextSymbol: string, nextName: string) => {
     setIndicatorCursorTime(null)
     setSymbol(nextSymbol)
     setSymbolName(nextName)
   }, [])
-  const handleScreenSymbol = useCallback((nextSymbol: string, nextName: string) => {
+  const handleScreenSymbol = useCallback((nextSymbol: string, nextName: string, nextMarket: string) => {
     setIndicatorCursorTime(null)
-    setMarket('stock')
+    setMarket(nextMarket)
     setSymbol(nextSymbol)
     setSymbolName(nextName)
     if (activeTemplate && isSupportedTimeframeId(activeTemplate.primaryTimeframeId)) setTimeframe(activeTemplate.primaryTimeframeId)
@@ -285,6 +265,11 @@ function WorkbenchApp({ user, onLogout, onUserChange, onLogin }: { user: AuthUse
     onSymbolChange: handleSymbolChange,
     onTimeframeChange: handleTimeframeChange,
   }
+  const dataStatusBadge = marketDataStatus?.stale ? (
+    <span title={marketDataStatus.statusMessage || undefined} className="h-7 px-2.5 rounded-md border border-[rgba(240,163,90,.35)] bg-[rgba(240,163,90,.08)] flex items-center text-[10px] text-[var(--accent-orange)] whitespace-nowrap">
+      数据截至 {marketDataStatus.toTime ? new Date(marketDataStatus.toTime).toLocaleDateString('zh-CN') : '未知'}{marketDataStatus.refreshFailed ? ' · 更新失败' : ' · 暂无更新'}
+    </span>
+  ) : null
 
   return (
     <div className="flex h-full w-full overflow-hidden bg-[var(--bg-primary)]">
@@ -292,11 +277,9 @@ function WorkbenchApp({ user, onLogout, onUserChange, onLogin }: { user: AuthUse
       <main className="flex-1 min-w-0 flex flex-col overflow-hidden">
         {effectiveActiveModule === 'indicators' && (
           <>
-            <WorkbenchHeader title="指标分析" {...headerProps} trailing={chanAnalysis && (
-              <div className="hidden xl:flex items-center gap-3 text-[10px] text-[var(--text-muted)] font-mono whitespace-nowrap">
+            <WorkbenchHeader title="指标分析" {...headerProps} trailing={<div className="hidden xl:flex items-center gap-3">{dataStatusBadge}{chanAnalysis && <div className="flex items-center gap-3 text-[10px] text-[var(--text-muted)] font-mono whitespace-nowrap">
                 <span>笔 {chanAnalysis.bis.length}</span><span>段 {chanAnalysis.duans.length}</span><span>中枢 {chanOptions.zsLevel === 'duan' ? chanAnalysis.duanZhongshus.length : chanAnalysis.zhongshus.length}</span><span>背驰 {chanAnalysis.divergences.length}</span><span>买卖点 {chanAnalysis.buySellPoints.length}</span>
-              </div>
-            )} />
+              </div>}</div>} />
             <IndicatorWorkbenchToolbar selectedIndicators={selectedIndicators} onIndicatorChange={setSelectedIndicators} chanOptions={chanOptions} onChanChange={setChanOptions} analysis={chanAnalysis ?? undefined} />
             <div className="flex flex-1 min-h-0 overflow-hidden">
               <ChartStage loading={loading} error={error} klineData={klineData} chanAnalysis={chanAnalysis} chanOptions={chanOptions} indicatorResults={selectedIndicators.length > 0 ? indicatorResults : []} onCursorTimeChange={setIndicatorCursorTime} />
@@ -307,7 +290,7 @@ function WorkbenchApp({ user, onLogout, onUserChange, onLogin }: { user: AuthUse
 
         {effectiveActiveModule === 'strategy' && (
           <>
-            <WorkbenchHeader title="策略执行" {...headerProps} />
+            <WorkbenchHeader title="策略执行" {...headerProps} trailing={dataStatusBadge} />
             <div className="h-11 px-4 flex items-center gap-2 border-b border-[var(--border-primary)] bg-[var(--bg-secondary)] shrink-0 overflow-x-auto">
               <span className="text-[10px] font-semibold uppercase tracking-[0.12em] text-[var(--text-muted)] shrink-0">策略指标</span>
               {strategyUsesChan && <span className="h-7 px-2.5 rounded-md bg-[var(--bg-tertiary)] flex items-center text-[11px] text-[var(--text-secondary)] whitespace-nowrap">{timeframeLabel(timeframe)} · 缠论</span>}
@@ -331,7 +314,7 @@ function WorkbenchApp({ user, onLogout, onUserChange, onLogin }: { user: AuthUse
         {effectiveActiveModule === 'screener' && (
           <>
             <div className="h-14 px-4 flex items-center gap-3 border-b border-[var(--border-primary)] bg-[var(--bg-secondary)] shrink-0"><h1 className="text-[15px] font-semibold tracking-tight">策略选股</h1><span className="text-[11px] text-[var(--text-muted)]">使用已有策略批量评估候选标的</span></div>
-            <ScreenerWorkspace selectedSymbol={symbol} selectedName={symbolName} onSelectSymbol={handleScreenSymbol} chart={<ChartStage loading={loading} error={error} klineData={klineData} chanAnalysis={chanAnalysis} chanOptions={strategyChanOptions} indicatorResults={strategyIndicatorResults.key === strategyRequestKey ? strategyIndicatorResults.results : []} />} />
+            <ScreenerWorkspace selectedSymbol={symbol} selectedName={symbolName} onSelectSymbol={handleScreenSymbol} chart={<ChartStage loading={loading} error={error} klineData={klineData} chanAnalysis={chanAnalysis} chanOptions={strategyChanOptions} indicatorResults={strategyResults} />} />
           </>
         )}
 
@@ -341,7 +324,9 @@ function WorkbenchApp({ user, onLogout, onUserChange, onLogin }: { user: AuthUse
 
         {effectiveActiveModule === 'notifications' && <NotificationWorkspace />}
 
-        {!['indicators', 'strategy', 'screener', 'admin', 'notifications'].includes(effectiveActiveModule) && (
+        {effectiveActiveModule === 'content' && <ContentWorkspace />}
+
+        {!['indicators', 'strategy', 'screener', 'admin', 'notifications', 'content'].includes(effectiveActiveModule) && (
           <div className="flex-1 flex items-center justify-center text-[var(--text-muted)]">
             <div className="text-center"><div className="text-[14px] text-[var(--text-secondary)]">模块已配置</div><div className="mt-1 text-[11px]">页面组件尚未接入：{effectiveActiveModule}</div></div>
           </div>
@@ -354,14 +339,13 @@ function WorkbenchApp({ user, onLogout, onUserChange, onLogin }: { user: AuthUse
 
 function App() {
   const [user, setUser] = useState<AuthUser | null>(null)
-  const [guestMode, setGuestMode] = useState(() => !getAccessToken())
   const [initializing, setInitializing] = useState(() => Boolean(getAccessToken()))
 
   useEffect(() => {
     const handleUnauthorized = () => setUser(null)
     window.addEventListener('signal-layer:unauthorized', handleUnauthorized)
     if (getAccessToken()) {
-      fetchCurrentUser().then((nextUser) => { setUser(nextUser); setGuestMode(false) }).catch(() => logout()).finally(() => setInitializing(false))
+      fetchCurrentUser().then(setUser).catch(() => logout()).finally(() => setInitializing(false))
     }
     return () => window.removeEventListener('signal-layer:unauthorized', handleUnauthorized)
   }, [])
@@ -369,9 +353,11 @@ function App() {
   if (initializing) {
     return <div className="h-full flex items-center justify-center bg-[var(--bg-primary)] text-[var(--text-muted)]">正在验证登录状态…</div>
   }
-  if (!user && !guestMode) return <LoginScreen onAuthenticated={(nextUser) => { setUser(nextUser); setGuestMode(false) }} onGuest={() => setGuestMode(true)} />
-  if (!user) return <WorkbenchApp user={GUEST_USER} onLogout={() => setGuestMode(false)} onLogin={() => setGuestMode(false)} onUserChange={setUser} />
-  return <WorkbenchApp user={user} onLogout={() => { logout(); setUser(null); setGuestMode(true) }} onUserChange={setUser} />
+  if (!user) return <LoginScreen onAuthenticated={setUser} />
+  if (!user.permission_codes.includes('private.access')) {
+    return <div className="h-full w-full grid place-items-center bg-[var(--bg-primary)]"><div className="w-[400px] p-7 rounded-xl border border-[var(--border-primary)] bg-[var(--bg-secondary)] text-center"><div className="text-[15px] font-semibold">私有工作区权限未开通</div><p className="mt-2 text-[11px] leading-5 text-[var(--text-muted)]">账户已经创建，但需要管理员授予“研究用户”角色后才能进入完整工作区。</p><button type="button" onClick={() => { logout(); setUser(null) }} className="mt-5 h-9 px-4 rounded-md bg-[var(--accent)] text-white text-[12px]">返回登录</button></div></div>
+  }
+  return <WorkbenchApp user={user} onLogout={() => { logout(); setUser(null) }} onUserChange={setUser} />
 }
 
 export default App

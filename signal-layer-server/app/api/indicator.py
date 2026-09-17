@@ -1,7 +1,11 @@
 import logging
-from fastapi import APIRouter, HTTPException, Depends
-from app.api.security import require_permission
+from fastapi import APIRouter, HTTPException, Depends, Request
+from app.api.security import optional_user, require_permission
 from app.api.deps import get_data_service, get_indicator_service
+from app.db import get_session
+from sqlalchemy.ext.asyncio import AsyncSession
+from app.services.public_site_service import ensure_public_indicator, public_indicator_feature_map, public_indicator_map
+from app.services.auth_service import permission_codes
 from app.schemas.indicator import (
     IndicatorCalculateRequest, IndicatorCalculateResponse,
     IndicatorResultItem, IndicatorInfo, IndicatorListResponse,
@@ -40,10 +44,13 @@ INDICATOR_META: dict[str, dict] = {
 
 
 @router.get("/list", response_model=IndicatorListResponse)
-async def list_indicators():
+async def list_indicators(request: Request, user = Depends(optional_user), session: AsyncSession = Depends(get_session)):
     """返回所有可用指标的元信息(前端用于展示指标库)"""
     svc = get_indicator_service()
     available = svc.available_indicators
+    private_access = user is not None and "private.access" in permission_codes(user)
+    is_public = not private_access or request.headers.get("x-signal-surface", "").lower() == "public"
+    policies = await public_indicator_map(session)
     indicators: list[IndicatorInfo] = []
     for ind_type in sorted(available):
         meta = INDICATOR_META.get(ind_type, {})
@@ -57,20 +64,40 @@ async def list_indicators():
             render = result.render
         except Exception:
             render = None
+        features = []
+        if render:
+            features.extend((plot.field, plot.label or plot.field, False) for plot in render.plots)
+            features.extend((f"marker:{marker.field}", marker.field, True) for marker in render.markers)
+        policy = await ensure_public_indicator(session, ind_type, meta.get("name", ind_type), features)
+        policies[ind_type] = policy
+        if is_public and not policy.public_visible:
+            continue
+        if is_public and render:
+            feature_map = await public_indicator_feature_map(session, ind_type)
+            render = render.model_copy(update={
+                "plots": [plot for plot in render.plots if not feature_map or feature_map.get(plot.field) and feature_map[plot.field].public_visible],
+                "markers": [marker for marker in render.markers if policy.show_markers and feature_map.get(f"marker:{marker.field}") and feature_map[f"marker:{marker.field}"].public_visible],
+            })
         indicators.append(IndicatorInfo(
             type=ind_type,
-            name=meta.get("name", ind_type),
-            description=meta.get("description", ""),
-            default_params=meta.get("default_params", {}),
+            name=(policy.display_name if is_public and policy and policy.display_name else meta.get("name", ind_type)),
+            description=meta.get("description", "") if not is_public or not policy or policy.show_details else "",
+            default_params=meta.get("default_params", {}) if not is_public or not policy or policy.show_parameters else {},
             render=render,
         ))
+    await session.commit()
     return IndicatorListResponse(indicators=indicators)
 
 
 @router.post("/calculate", response_model=IndicatorCalculateResponse)
-async def calculate_indicators(req: IndicatorCalculateRequest):
+async def calculate_indicators(req: IndicatorCalculateRequest, request: Request, user = Depends(optional_user), session: AsyncSession = Depends(get_session)):
     logger.info(f"POST /indicator/calculate symbol={req.symbol} tf={req.timeframe} "
                 f"indicators={[i.type for i in req.indicators]}")
+    private_access = user is not None and "private.access" in permission_codes(user)
+    public_surface = not private_access or request.headers.get("x-signal-surface", "").lower() == "public"
+    policies = await public_indicator_map(session) if public_surface else {}
+    if public_surface and any(not policies.get(item.type) or not policies[item.type].public_visible for item in req.indicators):
+        raise HTTPException(status_code=403, detail="该指标仅在受限研究工作区提供")
     ds = get_data_service()
     requires_chip_data = any(ind.type == "chip_distribution" for ind in req.indicators)
     if requires_chip_data and (
@@ -141,11 +168,22 @@ async def calculate_indicators(req: IndicatorCalculateRequest):
                 klines=klines,
                 context=indicator_context if ind.type == "chip_distribution" else None,
             )
+            policy = policies.get(ind.type)
+            public_render = result.render
+            public_values = result.values
+            if public_surface and result.render and policy:
+                feature_map = await public_indicator_feature_map(session, ind.type)
+                public_plots = [plot for plot in result.render.plots if not feature_map or feature_map.get(plot.field) and feature_map[plot.field].public_visible]
+                public_markers = [marker for marker in result.render.markers if policy.show_markers and feature_map.get(f"marker:{marker.field}") and feature_map[f"marker:{marker.field}"].public_visible]
+                public_render = result.render.model_copy(update={"plots": public_plots, "markers": public_markers})
+                if not policy.show_details:
+                    allowed_fields = {"time", *(plot.field for plot in public_plots), *(marker.field for marker in public_markers)}
+                    public_values = [{key: value for key, value in row.items() if key in allowed_fields} for row in result.values]
             results.append(IndicatorResultItem(
                 type=result.type,
                 params=result.params,
-                values=result.values,
-                render=result.render,
+                values=public_values,
+                render=public_render,
                 profile_data=result.profile_data,
                 cached=False,
             ))

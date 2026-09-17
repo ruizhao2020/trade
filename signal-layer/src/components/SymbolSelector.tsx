@@ -10,17 +10,17 @@
  */
 
 import { useState, useEffect, useRef, useCallback } from 'react'
-import { fetchSymbols, type SymbolItem } from '../api/symbol.ts'
+import { fetchMarkets, fetchSymbols, type MarketItem, type SymbolItem } from '../api/symbol.ts'
 
 interface Props {
   /** 当前品种类型 */
-  market: 'stock' | 'futures'
+  market: string
   /** 当前标的 symbol */
   symbol: string
   /** 当前标的名称（用于展示） */
   symbolName: string
   /** 品种变更回调 */
-  onMarketChange: (market: 'stock' | 'futures') => void
+  onMarketChange: (market: string) => void
   /** 标的变更回调 */
   onSymbolChange: (symbol: string, name: string) => void
 }
@@ -30,7 +30,15 @@ export function SymbolSelector({ market, symbol, symbolName, onMarketChange, onS
   const [options, setOptions] = useState<SymbolItem[]>([])
   const [open, setOpen] = useState(false)
   const [loading, setLoading] = useState(false)
+  const [markets, setMarkets] = useState<MarketItem[]>([
+    { id: 'stock', name: '股票', description: '沪深 A 股与指数', default_symbol: '000001_sz', default_symbol_name: '平安银行', enabled: true, sort_order: 10 },
+    { id: 'futures', name: '期货', description: '国内期货主力连续', default_symbol: 'RB0', default_symbol_name: '螺纹钢连续', enabled: true, sort_order: 20 },
+  ])
   const selectorRef = useRef<HTMLDivElement>(null)
+
+  useEffect(() => {
+    fetchMarkets().then((response) => setMarkets(response.markets)).catch(() => {})
+  }, [])
 
   /** 加载标的列表。keyword 作为参数传入，避免闭包捕获旧值 */
   const loadSymbols = useCallback(async (kw?: string) => {
@@ -46,11 +54,13 @@ export function SymbolSelector({ market, symbol, symbolName, onMarketChange, onS
     }
   }, [market])
 
-  const handleMarketSelect = (nextMarket: 'stock' | 'futures') => {
+  const handleMarketSelect = (nextMarket: string) => {
     setKeyword('')
     setOptions([])
     setOpen(false)
     onMarketChange(nextMarket)
+    const definition = markets.find((item) => item.id === nextMarket)
+    if (definition) onSymbolChange(definition.default_symbol, definition.default_symbol_name)
   }
 
   // keyword 变化时，防抖 300ms 后搜索（用最新 keyword）
@@ -86,21 +96,14 @@ export function SymbolSelector({ market, symbol, symbolName, onMarketChange, onS
   return (
     <div className="flex items-center gap-2.5 relative shrink-0" ref={selectorRef}>
       {/* 品种选择 */}
-      <div className="h-9 flex items-center gap-0.5 bg-[var(--bg-primary)] border border-[var(--border-primary)] rounded-md p-0.5 shrink-0">
-        {(['stock', 'futures'] as const).map(m => (
-          <button
-            key={m}
-            onClick={() => handleMarketSelect(m)}
-            className={`h-7 text-[12px] px-3 rounded font-medium transition-colors duration-150 ${
-              market === m
-                ? 'bg-[var(--bg-surface)] text-[var(--text-primary)]'
-                : 'text-[var(--text-secondary)] hover:text-[var(--text-primary)]'
-            }`}
-          >
-            {m === 'stock' ? '股票' : '期货'}
-          </button>
-        ))}
-      </div>
+      <select
+        value={market}
+        onChange={(event) => handleMarketSelect(event.target.value)}
+        aria-label="选择市场"
+        className="w-28 h-9 px-3 rounded-md bg-[var(--bg-primary)] border border-[var(--border-primary)] text-[12px] text-[var(--text-primary)] outline-none focus:border-[var(--accent)] shrink-0"
+      >
+        {markets.map((item) => <option key={item.id} value={item.id}>{item.name}</option>)}
+      </select>
 
       {/* 标的搜索选择 */}
       <div className="relative shrink-0">

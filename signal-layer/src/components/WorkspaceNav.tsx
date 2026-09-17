@@ -10,6 +10,7 @@ interface Props {
   onLogout: () => void
   onChangePassword: () => void
   onLogin?: () => void
+  showAuthEntry?: boolean
 }
 
 function NavIcon({ type }: { type: string }) {
@@ -35,6 +36,9 @@ function NavIcon({ type }: { type: string }) {
   if (type === 'bell' || type === 'notifications') {
     return <svg viewBox="0 0 20 20" fill="none" aria-hidden="true"><path d="M5.2 8.3a4.8 4.8 0 0 1 9.6 0v2.1c0 1.1.4 2.1 1.2 2.9H4c.8-.8 1.2-1.8 1.2-2.9V8.3Z" stroke="currentColor" strokeWidth="1.5" strokeLinejoin="round"/><path d="M8 16h4" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round"/></svg>
   }
+  if (type === 'file' || type === 'content') {
+    return <svg viewBox="0 0 20 20" fill="none" aria-hidden="true"><path d="M5 2.8h6.2L15 6.6v10.6H5V2.8Z" stroke="currentColor" strokeWidth="1.5" strokeLinejoin="round"/><path d="M11 2.8v4h4M7.5 10h5M7.5 13h5" stroke="currentColor" strokeWidth="1.3" strokeLinecap="round"/></svg>
+  }
   return (
     <svg viewBox="0 0 20 20" fill="none" aria-hidden="true">
       <path d="M3 15.5 7 9l3 3 5-8 2 3" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round" />
@@ -43,7 +47,7 @@ function NavIcon({ type }: { type: string }) {
   )
 }
 
-export function WorkspaceNav({ active, onChange, modules, user, onLogout, onChangePassword, onLogin }: Props) {
+export function WorkspaceNav({ active, onChange, modules, user, onLogout, onChangePassword, onLogin, showAuthEntry = true }: Props) {
   return (
     <nav className="w-[72px] shrink-0 border-r border-[var(--border-primary)] bg-[var(--bg-nav)] flex flex-col items-center px-2 py-3 select-none">
       <div className="w-9 h-9 rounded-lg bg-[var(--accent)] text-white flex items-center justify-center mb-4 shadow-[0_8px_24px_rgba(108,140,255,0.18)]">
@@ -81,7 +85,7 @@ export function WorkspaceNav({ active, onChange, modules, user, onLogout, onChan
           <span className="w-7 h-7 rounded-full bg-[rgba(108,140,255,.10)] border border-[rgba(108,140,255,.24)] flex items-center justify-center text-[11px] font-semibold text-[#b9c9ff]">{(user.display_name || user.username).slice(0, 1).toUpperCase()}</span>
         </div>
         {user.id !== 0 && <button type="button" onClick={onChangePassword} className="w-full h-7 rounded-md text-[10px] text-[var(--text-muted)] hover:text-[var(--text-secondary)] hover:bg-[var(--bg-tertiary)]">改密</button>}
-        <button type="button" onClick={user.id === 0 ? onLogin : onLogout} className="w-full h-7 rounded-md text-[10px] text-[var(--text-muted)] hover:text-[var(--accent-red)] hover:bg-[var(--bg-tertiary)]">{user.id === 0 ? '登录 / 注册' : '退出'}</button>
+        {(user.id !== 0 || showAuthEntry) && <button type="button" onClick={user.id === 0 ? onLogin : onLogout} className="w-full h-7 rounded-md text-[10px] text-[var(--text-muted)] hover:text-[var(--accent-red)] hover:bg-[var(--bg-tertiary)]">{user.id === 0 ? '登录 / 注册' : '退出'}</button>}
       </div>
     </nav>
   )

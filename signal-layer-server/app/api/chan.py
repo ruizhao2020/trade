@@ -1,7 +1,11 @@
 import logging
-from fastapi import APIRouter, HTTPException, Query, Depends
-from app.api.security import require_permission
+from fastapi import APIRouter, HTTPException, Query, Depends, Request
+from app.api.security import optional_user, require_permission
+from app.services.auth_service import permission_codes
 from app.api.deps import get_data_service, get_chan_service
+from app.db import get_session
+from sqlalchemy.ext.asyncio import AsyncSession
+from app.services.public_site_service import public_indicator_feature_map, public_indicator_map
 from app.schemas.chan import (
     ChanAnalysisResponse, BiSchema, DuanSchema,
     ZhongshuSchema, BuySellPointSchema, DivergenceSchema,
@@ -14,9 +18,12 @@ router = APIRouter(prefix="/api/v1/chan", tags=["chan"])
 
 @router.get("/{symbol}/{timeframe}", response_model=ChanAnalysisResponse)
 async def get_chan_analysis(
+    request: Request,
     symbol: str,
     timeframe: str,
     limit: int = Query(default=200, ge=10, le=500),
+    user = Depends(optional_user),
+    session: AsyncSession = Depends(get_session),
 ):
     logger.info(f"GET /chan/{symbol}/{timeframe} limit={limit}")
     ds = get_data_service()
@@ -107,6 +114,35 @@ async def get_chan_analysis(
         )
         for item in result.divergences
     ]
+
+    # The public build receives structural Chan data only. Action-oriented
+    # signals and divergence reasons are available exclusively to the private
+    # surface; this is enforced at the API response layer, not just in React.
+    private_access = user is not None and "private.access" in permission_codes(user)
+    if not private_access or request.headers.get("x-signal-surface", "").lower() == "public":
+        indicator_policies = await public_indicator_map(session)
+        policies = await public_indicator_feature_map(session, "chan")
+        chan_policy = indicator_policies.get("chan")
+        if not chan_policy or not chan_policy.public_visible:
+            bis, duans, zhongshus, duan_zhongshus, divergences, points = [], [], [], [], [], []
+            policies = {}
+        if not policies.get("bi") or not policies["bi"].public_visible:
+            bis = []
+        if not policies.get("duan") or not policies["duan"].public_visible:
+            duans = []
+        if not policies.get("zhongshu") or not policies["zhongshu"].public_visible:
+            zhongshus = []
+            duan_zhongshus = []
+        divergence_policy = policies.get("divergence")
+        if not divergence_policy or not divergence_policy.public_visible:
+            divergences = []
+        elif not divergence_policy.show_details:
+            divergences = [item.model_copy(update={"reasons": []}) for item in divergences]
+        point_policy = policies.get("buy_sell_points")
+        if not point_policy or not point_policy.public_visible:
+            points = []
+        elif not point_policy.show_details:
+            points = [item.model_copy(update={"reason": None, "divergence_index": None}) for item in points]
 
     actual_cached = False
 

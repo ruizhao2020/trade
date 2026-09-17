@@ -26,3 +26,7 @@ class KlineResponse(BaseModel):
     to_time: Optional[int] = None
     count: int
     cached: bool = False
+    stale: bool = False
+    refresh_failed: bool = False
+    expected_time: Optional[int] = None
+    status_message: Optional[str] = None

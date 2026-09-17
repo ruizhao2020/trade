@@ -83,15 +83,39 @@ class IndicatorService:
 
         if cached and klines:
             data_end = cached.get("data_end_time", 0)
+            data_start = cached.get("data_start_time")
+            data_count = int(cached.get("data_count", 0))
+            requested_start = int(klines[0]["open_time"])
             last_time = klines[-1]["open_time"]
-            if data_end == last_time:
+            # 缓存必须完整覆盖当前请求区间。仅终点相同但历史更短的缓存
+            # （例如先算200根，再请求500根）不能复用。
+            if (
+                data_end == last_time
+                and data_start is not None
+                and int(data_start) <= requested_start
+                and data_count >= len(klines)
+            ):
                 logger.info(f"Indicator cache HIT {symbol} {timeframe} {indicator_type} params={params}")
+                requested_end = int(last_time)
+                values = [
+                    item for item in cached["values"]
+                    if requested_start <= int(float(item.get("time", 0))) <= requested_end
+                ]
+                profile_data = cached.get("profile_data")
+                if profile_data and isinstance(profile_data, dict):
+                    profile_data = {
+                        **profile_data,
+                        "snapshots": [
+                            item for item in profile_data.get("snapshots", [])
+                            if requested_start <= int(float(item.get("time", 0))) <= requested_end
+                        ],
+                    }
                 return IndicatorResult(
                     type=cached["type"],
                     params=cached["params"],
-                    values=cached["values"],
+                    values=values,
                     render=cached.get("render"),
-                    profile_data=cached.get("profile_data"),
+                    profile_data=profile_data,
                 )
 
         calc = self._registry.get(indicator_type)
@@ -116,7 +140,9 @@ class IndicatorService:
             "values": result.values,
             "render": result.render.model_dump() if result.render else None,
             "profile_data": result.profile_data.model_dump() if result.profile_data else None,
+            "data_start_time": klines[0]["open_time"] if klines else 0,
             "data_end_time": klines[-1]["open_time"] if klines else 0,
+            "data_count": len(klines),
         }
         await self._cache.set(cache_key, cache_data)
 

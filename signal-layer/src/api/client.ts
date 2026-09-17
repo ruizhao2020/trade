@@ -15,6 +15,8 @@
  */
 
 /** 后端 API 基地址。开发环境默认 localhost:8000，生产环境通过环境变量覆盖 */
+import { getAppSurface } from '../surface.ts'
+
 const BASE = import.meta.env.VITE_API_BASE ?? 'http://localhost:8000/api/v1'
 const TOKEN_KEY = 'signal_layer_access_token'
 
@@ -43,6 +45,7 @@ class ApiClient {
     console.log(`[SL:API] ${method} ${path}`, body ? { body } : undefined)
     const token = getAccessToken()
     const headers: Record<string, string> = {}
+    headers['X-Signal-Surface'] = getAppSurface()
     if (body) headers['Content-Type'] = 'application/json'
     if (token) headers.Authorization = `Bearer ${token}`
     const res = await fetch(`${BASE}${path}`, {

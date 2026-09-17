@@ -1,6 +1,6 @@
 import asyncio
 
-from app.market_data.manager import MarketDataManager
+from app.market_data.manager import MarketDataManager, expected_latest_daily_open_time
 from app.market_data.ranges import TimeRange, merge_ranges
 
 
@@ -71,6 +71,16 @@ class FailingSource(RangeSource):
         raise RuntimeError("行情源暂时不可用")
 
 
+class TailSource(RangeSource):
+    def __init__(self, latest_time):
+        super().__init__()
+        self.latest_time = latest_time
+
+    async def fetch_klines(self, symbol, timeframe, start_time=None, end_time=None, limit=500):
+        self.calls.append((start_time, end_time))
+        return [bar(self.latest_time)]
+
+
 def test_manager_fetches_only_the_missing_range_and_then_uses_db():
     store = MemoryStore()
     source = RangeSource()
@@ -131,6 +141,39 @@ def test_latest_request_returns_stored_rows_when_api_is_unavailable():
     values, cached = asyncio.run(manager.fetch("000001_sz", "1d", limit=5))
 
     assert [item["open_time"] for item in values] == [0, 1, 2]
+    assert cached is True
+
+
+def test_latest_daily_refreshes_stale_tail_even_when_db_has_enough_rows():
+    now_ms = 1_789_632_000_000  # 2026-09-17 00:00:00 UTC
+    expected = expected_latest_daily_open_time(now_ms)
+    day = 86_400_000
+    store = MemoryStore()
+    store.upsert("RB0", "1d", [bar(expected - day * index) for index in range(9, 4, -1)])
+    source = TailSource(expected)
+    manager = MarketDataManager(store, source, source, now_ms=lambda: now_ms)
+
+    values, cached = asyncio.run(manager.fetch("RB0", "1d", limit=5))
+
+    assert values[-1]["open_time"] == expected
+    assert source.calls == [(expected - day * 5 + 1, expected)]
+    assert cached is False
+    assert manager.latest_status("RB0", "1d")["stale"] is False
+
+
+def test_latest_daily_uses_db_when_last_bar_is_fresh():
+    now_ms = 1_789_632_000_000
+    expected = expected_latest_daily_open_time(now_ms)
+    day = 86_400_000
+    store = MemoryStore()
+    store.upsert("RB0", "1d", [bar(expected - day * index) for index in range(4, -1, -1)])
+    source = RangeSource()
+    manager = MarketDataManager(store, source, source, now_ms=lambda: now_ms)
+
+    values, cached = asyncio.run(manager.fetch("RB0", "1d", limit=5))
+
+    assert values[-1]["open_time"] == expected
+    assert source.calls == []
     assert cached is True
 
 

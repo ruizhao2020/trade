@@ -51,6 +51,7 @@ class DataService:
             end_time=end_time,
             force_refresh=force_refresh,
         )
+        status = self._manager.latest_status(symbol, timeframe) if start_time is None else {}
         return {
             "symbol": symbol,
             "timeframe": timeframe,
@@ -59,6 +60,10 @@ class DataService:
             "to_time": bars[-1]["open_time"] if bars else None,
             "count": len(bars),
             "cached": from_database,
+            "stale": bool(status.get("stale", False)),
+            "refresh_failed": bool(status.get("refresh_failed", False)),
+            "expected_time": status.get("expected_time"),
+            "status_message": status.get("message"),
         }
 
     async def subscribe(self, symbol: str, timeframe: str, on_kline):

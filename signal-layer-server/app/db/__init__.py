@@ -4,9 +4,10 @@ from sqlalchemy import inspect, text
 from sqlalchemy.ext.asyncio import create_async_engine, async_sessionmaker, AsyncSession
 from app.models.base import Base
 from app.models.template import Template  # noqa: F401 — 确保模型注册到 Base.metadata
-from app.models.auth import Module, Permission, Role, User  # noqa: F401
+from app.models.auth import Module, Permission, PublicIndicatorFeaturePolicy, PublicIndicatorPolicy, Role, User  # noqa: F401
 from app.models.kline import Kline  # noqa: F401 — 注册固定 K 线模型
 from app.models.notification import NotificationChannel, NotificationEvent, NotificationTemplate, ScreenerSchedule, StrategyMonitor  # noqa: F401
+from app.models.content import ArticleDraft, ContentTemplate  # noqa: F401
 from app.config import settings
 
 _engine = None
@@ -41,6 +42,22 @@ async def init_db():
 def _ensure_compat_columns(connection):
     """为 create_all 无法更新的旧数据库补齐新增列。"""
     inspector = inspect(connection)
+    table_names = set(inspector.get_table_names())
+    if "public_chan_feature_policies" in table_names and "public_indicator_feature_policies" in table_names:
+        if connection.dialect.name == "mysql":
+            connection.execute(text(
+                "INSERT IGNORE INTO public_indicator_feature_policies "
+                "(indicator_type, feature_code, display_name, public_visible, show_details, sort_order, created_at, updated_at) "
+                "SELECT 'chan', feature_code, display_name, public_visible, show_details, sort_order, created_at, updated_at "
+                "FROM public_chan_feature_policies"
+            ))
+        else:
+            connection.execute(text(
+                "INSERT OR IGNORE INTO public_indicator_feature_policies "
+                "(indicator_type, feature_code, display_name, public_visible, show_details, sort_order, created_at, updated_at) "
+                "SELECT 'chan', feature_code, display_name, public_visible, show_details, sort_order, created_at, updated_at "
+                "FROM public_chan_feature_policies"
+            ))
     if "templates" not in inspector.get_table_names():
         return
     columns = {column["name"] for column in inspector.get_columns("templates")}
@@ -100,6 +117,10 @@ def _ensure_compat_columns(connection):
         foreign_keys = inspect(connection).get_foreign_keys("notification_events")
         if any(item.get("name") == "fk_notification_event_monitor" for item in foreign_keys):
             connection.execute(text("ALTER TABLE notification_events DROP FOREIGN KEY fk_notification_event_monitor"))
+    if "content_templates" in inspector.get_table_names():
+        content_template_columns = {column["name"] for column in inspector.get_columns("content_templates")}
+        if "user_id" not in content_template_columns:
+            connection.execute(text("ALTER TABLE content_templates ADD COLUMN user_id INTEGER NULL"))
 
 
 def _ensure_mysql_utf8mb4(connection):
@@ -108,8 +129,9 @@ def _ensure_mysql_utf8mb4(connection):
         return
     fixed_tables = (
         "templates", "users", "roles", "modules", "permissions",
-        "user_roles", "role_permissions", "klines",
+        "user_roles", "role_permissions", "klines", "public_indicator_policies", "public_indicator_feature_policies",
         "notification_channels", "notification_templates", "strategy_monitors", "notification_events", "screener_schedules",
+        "content_templates", "article_drafts",
     )
     inspector = inspect(connection)
     existing = set(inspector.get_table_names())
