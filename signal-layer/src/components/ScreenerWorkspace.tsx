@@ -1,6 +1,6 @@
 import { useEffect, useMemo, useRef, useState } from 'react'
 import type { ReactNode } from 'react'
-import { runScreener, type ScreenerMatch } from '../api/screener.ts'
+import { runScreener, type ScreenerMatch, type ScreenerSignalState } from '../api/screener.ts'
 import { fetchTemplates } from '../api/template.ts'
 import { useAppStore } from '../store/useAppStore.ts'
 import { fetchMarkets, type MarketItem } from '../api/symbol.ts'
@@ -10,6 +10,20 @@ interface Props {
   selectedName: string
   chart: ReactNode
   onSelectSymbol: (symbol: string, name: string, market: string) => void
+}
+
+const SIGNAL_STATES: { value: ScreenerSignalState; label: string; color: string }[] = [
+  { value: 'ready', label: '信号就绪', color: 'var(--accent-green)' },
+  { value: 'partial', label: '部分满足', color: 'var(--accent-orange)' },
+  { value: 'evaluating', label: '未满足', color: 'var(--text-muted)' },
+]
+
+function signalStateLabel(state: string): string {
+  return SIGNAL_STATES.find((item) => item.value === state)?.label ?? state
+}
+
+function signalStateColor(state: string): string {
+  return SIGNAL_STATES.find((item) => item.value === state)?.color ?? 'var(--text-secondary)'
 }
 
 function CollapseIcon({ collapsed }: { collapsed: boolean }) {
@@ -26,9 +40,10 @@ export function ScreenerWorkspace({ selectedSymbol, selectedName, chart, onSelec
   const addTemplate = useAppStore((state) => state.addTemplate)
   const setActiveTemplateId = useAppStore((state) => state.setActiveTemplateId)
   const [collapsed, setCollapsed] = useState(false)
-  const [market, setMarket] = useState('stock')
+  const [market, setMarket] = useState('')
   const [markets, setMarkets] = useState<MarketItem[]>([])
   const [targetCount, setTargetCount] = useState(10)
+  const [selectedStates, setSelectedStates] = useState<ScreenerSignalState[]>(['ready', 'partial'])
   const [scanning, setScanning] = useState(false)
   const [progress, setProgress] = useState({ done: 0, total: 0 })
   const [results, setResults] = useState<ScreenerMatch[]>([])
@@ -45,23 +60,22 @@ export function ScreenerWorkspace({ selectedSymbol, selectedName, chart, onSelec
     fetchTemplates()
       .then((list) => {
         list.forEach((template) => addTemplate(template))
-        if (!activeTemplateId && list[0]) setActiveTemplateId(list[0].id)
       })
       .catch(() => {})
-  }, [activeTemplateId, addTemplate, setActiveTemplateId, templates.length])
+  }, [addTemplate, templates.length])
 
   useEffect(() => {
     fetchMarkets().then((response) => setMarkets(response.markets)).catch(() => {})
   }, [])
 
-  const activeTemplate = templates.find((template) => template.id === activeTemplateId) ?? templates[0]
+  const activeTemplate = templates.find((template) => template.id === activeTemplateId)
   const conditionCount = useMemo(
     () => activeTemplate?.conditionGroups.reduce((total, group) => total + group.conditions.filter((condition) => condition.enabled).length, 0) ?? 0,
     [activeTemplate],
   )
 
   async function runScreen() {
-    if (!activeTemplate) return
+    if (!activeTemplate || !market) return
     setScanning(true)
     setError(null)
     setResults([])
@@ -81,7 +95,8 @@ export function ScreenerWorkspace({ selectedSymbol, selectedName, chart, onSelec
           limit: Math.min(batchSize, maxCandidates - offset),
           offset,
           targetCount: remaining,
-          minProgress: 1,
+          states: selectedStates,
+          minProgress: selectedStates.includes('evaluating') ? 0 : 1,
           concurrency: batchSize,
         })
         universeTotal = response.universeTotal
@@ -136,6 +151,17 @@ export function ScreenerWorkspace({ selectedSymbol, selectedName, chart, onSelec
     window.localStorage?.setItem('signal-layer-screener-result-width', String(Math.round(resultWidth)))
   }, [resultWidth])
 
+  function toggleState(state: ScreenerSignalState) {
+    if (scanning) return
+    if (selectedStates.includes(state) && selectedStates.length === 1) return
+    setSelectedStates((current) => {
+      if (!current.includes(state)) return [...current, state]
+      return current.filter((item) => item !== state)
+    })
+    setResults([])
+    setProgress({ done: 0, total: 0 })
+  }
+
   const filters = (
     <div className="flex flex-col h-full min-h-0">
       <div className="px-4 pt-3 pb-4 space-y-3">
@@ -146,6 +172,7 @@ export function ScreenerWorkspace({ selectedSymbol, selectedName, chart, onSelec
             onChange={(event) => setActiveTemplateId(event.target.value || null)}
             className="w-full h-9 px-3 rounded-md border border-[var(--border-primary)] bg-[var(--bg-tertiary)] text-[12px] text-[var(--text-primary)] outline-none focus:border-[var(--accent)]"
           >
+            <option value="">请选择策略</option>
             {templates.length === 0 && <option value="">暂无策略</option>}
             {templates.map((template) => <option key={template.id} value={template.id}>{template.name}{template.enabled ? '' : '（已停用）'}</option>)}
           </select>
@@ -153,12 +180,37 @@ export function ScreenerWorkspace({ selectedSymbol, selectedName, chart, onSelec
         <div className="grid grid-cols-[1fr_88px] gap-2">
           <label className="block text-[10px] font-semibold uppercase tracking-[0.12em] text-[var(--text-muted)]">市场
             <select value={market} onChange={(event) => setMarket(event.target.value)} className="mt-1.5 w-full h-9 px-3 rounded-md border border-[var(--border-primary)] bg-[var(--bg-tertiary)] text-[12px] text-[var(--text-primary)] outline-none focus:border-[var(--accent)]">
+              <option value="">请选择市场</option>
               {markets.map((item) => <option key={item.id} value={item.id}>{item.name}</option>)}
             </select>
           </label>
           <label className="block text-[10px] font-semibold uppercase tracking-[0.12em] text-[var(--text-muted)]">选出数量
             <input type="number" min="1" max="100" value={targetCount} onChange={(event) => setTargetCount(Math.min(100, Math.max(1, Number(event.target.value) || 1)))} className="mt-1.5 w-full h-9 px-2 rounded-md border border-[var(--border-primary)] bg-[var(--bg-tertiary)] text-[12px] font-mono text-[var(--text-primary)] outline-none focus:border-[var(--accent)]" />
           </label>
+        </div>
+        <div>
+          <div className="flex items-center justify-between mb-1.5">
+            <span className="text-[10px] font-semibold uppercase tracking-[0.12em] text-[var(--text-muted)]">信号状态</span>
+            <span className="text-[9px] text-[var(--text-muted)]">可多选</span>
+          </div>
+          <div className="grid grid-cols-3 gap-1.5">
+            {SIGNAL_STATES.map((item) => {
+              const selected = selectedStates.includes(item.value)
+              return (
+                <button
+                  type="button"
+                  key={item.value}
+                  aria-pressed={selected}
+                  disabled={scanning}
+                  onClick={() => toggleState(item.value)}
+                  className={`h-8 rounded-md border text-[10px] transition-colors disabled:opacity-60 ${selected ? 'border-[var(--border-accent)] bg-[rgba(108,140,255,.12)]' : 'border-[var(--border-primary)] bg-[var(--bg-primary)] text-[var(--text-muted)] hover:border-[var(--border-accent)]'}`}
+                  style={selected ? { color: item.color } : undefined}
+                >
+                  {item.label}
+                </button>
+              )
+            })}
+          </div>
         </div>
         <div className="grid grid-cols-2 gap-2">
           <div className="rounded-md border border-[var(--border-primary)] bg-[var(--bg-primary)] px-3 py-2">
@@ -189,10 +241,10 @@ export function ScreenerWorkspace({ selectedSymbol, selectedName, chart, onSelec
         <button
           type="button"
           onClick={runScreen}
-          disabled={!activeTemplate || !activeTemplate.enabled || scanning}
+          disabled={!activeTemplate || !activeTemplate.enabled || !market || scanning}
           className="w-full h-9 rounded-md bg-[var(--accent)] text-white text-[12px] font-medium hover:bg-[var(--accent-hover)] disabled:opacity-40 disabled:cursor-not-allowed transition-colors"
         >
-          {scanning ? `扫描中 ${progress.done}/${progress.total}` : activeTemplate && !activeTemplate.enabled ? '策略已停用' : '开始选股'}
+          {scanning ? `扫描中 ${progress.done}/${progress.total}` : activeTemplate && !activeTemplate.enabled ? '策略已停用' : !activeTemplate ? '请选择策略' : !market ? '请选择市场' : '开始选股'}
         </button>
         {error && <div className="mt-2 text-[10px] text-[var(--accent-red)] break-all">{error}</div>}
       </div>
@@ -227,7 +279,7 @@ export function ScreenerWorkspace({ selectedSymbol, selectedName, chart, onSelec
               </tr>
             </thead>
             <tbody>
-              {results.map(({ item, isReady, progressPercent }) => {
+              {results.map(({ item, state, progressPercent }) => {
                 const selected = selectedSymbol === item.symbol
                 return (
                   <tr
@@ -240,7 +292,7 @@ export function ScreenerWorkspace({ selectedSymbol, selectedName, chart, onSelec
                       <div className="text-[10px] text-[var(--text-muted)] mt-0.5"><span className="font-mono">{item.symbol}</span>{item.industry && <span> · {item.industry}</span>}</div>
                     </td>
                     <td className="px-3 py-3 border-b border-[var(--border-primary)] font-mono text-[12px] text-[var(--accent-green)]">{progressPercent}%</td>
-                    <td className="px-3 py-3 border-b border-[var(--border-primary)] text-[11px] text-[var(--text-secondary)]">{isReady ? '信号就绪' : '部分满足'}</td>
+                    <td className="px-3 py-3 border-b border-[var(--border-primary)] text-[11px]" style={{ color: signalStateColor(state) }}>{signalStateLabel(state)}</td>
                   </tr>
                 )
               })}
@@ -248,7 +300,7 @@ export function ScreenerWorkspace({ selectedSymbol, selectedName, chart, onSelec
           </table>
           {!scanning && results.length === 0 && (
             <div className="h-full min-h-56 flex items-center justify-center text-[12px] text-[var(--text-muted)]">
-              {activeTemplate ? '点击“开始选股”扫描当前股票池' : '请先创建或选择一个策略'}
+              {!activeTemplate ? '请先创建或选择一个策略' : !market ? '请选择市场' : '点击“开始选股”扫描当前股票池'}
             </div>
           )}
         </div>

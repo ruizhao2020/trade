@@ -5,7 +5,6 @@ import logging
 import math
 import time
 from collections import OrderedDict
-from datetime import datetime, time as datetime_time, timedelta, timezone
 from typing import Callable, Protocol
 
 from app.adapters.base import DataAdapter
@@ -16,16 +15,7 @@ logger = logging.getLogger(__name__)
 
 _LATEST_CACHE_TTL = {"5m": 15.0, "15m": 30.0, "30m": 60.0, "60m": 90.0, "1d": 300.0}
 _LATEST_CACHE_MAX_ENTRIES = 128
-_CN_TZ = timezone(timedelta(hours=8))
-
-
-def expected_latest_daily_open_time(now_ms: int | None = None) -> int:
-    """最近应当已经完成的交易日（日线按前一工作日保守判断）。"""
-    now = datetime.fromtimestamp((now_ms or int(time.time() * 1000)) / 1000, tz=_CN_TZ)
-    candidate = now.date() - timedelta(days=1)
-    while candidate.weekday() >= 5:
-        candidate -= timedelta(days=1)
-    return int(datetime.combine(candidate, datetime_time.min, tzinfo=_CN_TZ).timestamp() * 1000)
+_LATEST_PROBE_LIMIT = 20
 
 
 class MarketDataStore(Protocol):
@@ -44,12 +34,12 @@ class MarketDataManager:
         store: MarketDataStore,
         stock_source: DataAdapter,
         futures_source: DataAdapter,
-        now_ms: Callable[[], int] | None = None,
+        monotonic_clock: Callable[[], float] | None = None,
     ):
         self._store = store
         self._stock_source = stock_source
         self._futures_source = futures_source
-        self._now_ms = now_ms or (lambda: int(time.time() * 1000))
+        self._monotonic_clock = monotonic_clock or time.monotonic
         self._locks: dict[tuple[str, str], asyncio.Lock] = {}
         self._enrichment_tasks: dict[tuple[str, str], asyncio.Task] = {}
         self._latest_cache: OrderedDict[
@@ -57,24 +47,26 @@ class MarketDataManager:
         ] = OrderedDict()
         self._latest_status: dict[tuple[str, str], dict] = {}
 
-    def _is_latest_fresh(self, timeframe: str, bars: list[dict]) -> bool:
-        if not bars:
-            return False
-        if timeframe != "1d":
-            return True
-        return int(bars[-1]["open_time"]) >= expected_latest_daily_open_time(self._now_ms())
-
     def latest_status(self, symbol: str, timeframe: str) -> dict:
         return dict(self._latest_status.get((symbol, timeframe), {}))
 
-    def _set_latest_status(self, symbol: str, timeframe: str, bars: list[dict], *, refresh_failed: bool = False, message: str | None = None) -> None:
+    def _set_latest_status(
+        self,
+        symbol: str,
+        timeframe: str,
+        bars: list[dict],
+        *,
+        stale: bool,
+        refresh_failed: bool = False,
+        message: str | None = None,
+    ) -> None:
         latest_time = int(bars[-1]["open_time"]) if bars else None
-        expected_time = expected_latest_daily_open_time(self._now_ms()) if timeframe == "1d" else None
         self._latest_status[(symbol, timeframe)] = {
-            "stale": not self._is_latest_fresh(timeframe, bars),
+            "stale": stale,
             "refresh_failed": refresh_failed,
             "latest_time": latest_time,
-            "expected_time": expected_time,
+            # 没有可靠交易日历时不能根据自然日期猜测“应有”的最新时间。
+            "expected_time": None,
             "message": message,
         }
 
@@ -84,7 +76,7 @@ class MarketDataManager:
         if cached is None:
             return None
         cached_at, requested_limit, bars = cached
-        if time.monotonic() - cached_at > _LATEST_CACHE_TTL.get(timeframe, 30.0) or requested_limit < limit:
+        if self._monotonic_clock() - cached_at > _LATEST_CACHE_TTL.get(timeframe, 30.0) or requested_limit < limit:
             self._latest_cache.pop(key, None)
             return None
         self._latest_cache.move_to_end(key)
@@ -92,7 +84,7 @@ class MarketDataManager:
 
     def _set_latest_cache(self, symbol: str, timeframe: str, requested_limit: int, bars: list[dict]) -> None:
         key = (symbol, timeframe)
-        self._latest_cache[key] = (time.monotonic(), requested_limit, list(bars))
+        self._latest_cache[key] = (self._monotonic_clock(), requested_limit, list(bars))
         self._latest_cache.move_to_end(key)
         while len(self._latest_cache) > _LATEST_CACHE_MAX_ENTRIES:
             self._latest_cache.popitem(last=False)
@@ -189,30 +181,12 @@ class MarketDataManager:
                 return cached, True
 
         stored = await self._store_call("fetch_latest", symbol, timeframe, limit)
-        stored_fresh = self._is_latest_fresh(timeframe, stored)
-        if len(stored) >= limit and stored_fresh and not force_refresh:
-            if self._needs_chip_enrichment(symbol, timeframe, stored):
-                self._schedule_chip_enrichment(symbol, timeframe, limit)
-            result = stored[-limit:]
-            self._set_latest_cache(symbol, timeframe, limit, result)
-            self._set_latest_status(symbol, timeframe, result)
-            return result, True
-
         source = self._source(symbol)
         try:
-            if stored and timeframe == "1d" and not stored_fresh:
-                gap_start = int(stored[-1]["open_time"]) + 1
-                gap_end = expected_latest_daily_open_time(self._now_ms())
-                logger.info(
-                    "latest market data stale %s %s [%s -> %s], filling tail from %s",
-                    symbol, timeframe, stored[-1]["open_time"], gap_end, source.name,
-                )
-                fetched = await source.fetch_klines(
-                    symbol, timeframe, start_time=gap_start, end_time=gap_end,
-                    limit=self._range_limit(timeframe, TimeRange(gap_start, gap_end)),
-                ) if gap_start <= gap_end else []
-            else:
-                fetched = await source.fetch_klines(symbol, timeframe, limit=limit)
+            # 不按自然日推算最新交易日。缓存确认 TTL 到期后直接向数据源请求
+            # 最新少量 K 线；长假、停牌期间源返回同一根，也代表 DB 已确认最新。
+            probe_limit = limit if len(stored) < limit else min(limit, _LATEST_PROBE_LIMIT)
+            fetched = await source.fetch_klines(symbol, timeframe, limit=probe_limit)
         except Exception as error:
             if stored:
                 logger.warning(
@@ -222,7 +196,7 @@ class MarketDataManager:
                 result = stored[-limit:]
                 self._set_latest_cache(symbol, timeframe, limit, result)
                 self._set_latest_status(
-                    symbol, timeframe, result, refresh_failed=True,
+                    symbol, timeframe, result, stale=True, refresh_failed=True,
                     message=f"{source.name} 更新失败：{error}",
                 )
                 return result, True
@@ -238,9 +212,11 @@ class MarketDataManager:
         result = complete[-limit:]
         self._set_latest_cache(symbol, timeframe, limit, result)
         self._set_latest_status(
-            symbol, timeframe, result,
-            message=None if self._is_latest_fresh(timeframe, result) else f"{source.name} 暂无更新数据",
+            symbol, timeframe, result, stale=False,
+            message=None if fetched else f"{source.name} 已确认暂无更新数据",
         )
+        if self._needs_chip_enrichment(symbol, timeframe, result):
+            self._schedule_chip_enrichment(symbol, timeframe, limit)
         return result, False
 
     async def _fetch_range(

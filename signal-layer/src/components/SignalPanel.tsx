@@ -75,7 +75,7 @@ function ChevronIcon({ open }: { open: boolean }) {
   return <svg viewBox="0 0 12 12" fill="none" className={`w-3 h-3 text-[var(--text-muted)] transition-transform ${open ? 'rotate-180' : ''}`} aria-hidden="true"><path d="m3 5 3 3 3-3" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round" /></svg>
 }
 
-export function SignalPanel({ symbol = '300843_sz', embedded = false, showLayers = true, onEvaluated, onBacktestResult }: Props) {
+export function SignalPanel({ symbol = '', embedded = false, showLayers = true, onEvaluated, onBacktestResult }: Props) {
   const [showEditor, setShowEditor] = useState(false)
   const [editTemplateId, setEditTemplateId] = useState<string | null>(null)
   const [layersExpanded, setLayersExpanded] = useState(true)
@@ -126,7 +126,7 @@ export function SignalPanel({ symbol = '300843_sz', embedded = false, showLayers
   const displayedStateColor = displayedState === 'disabled' ? 'var(--text-muted)' : STATE_COLOR[displayedState]
 
   async function handleEvaluate() {
-    if (!activeTemplate) return
+    if (!activeTemplate || !symbol) return
     setPanelView('live')
     setEvaluating(true)
     try {
@@ -141,7 +141,7 @@ export function SignalPanel({ symbol = '300843_sz', embedded = false, showLayers
   }
 
   async function handleBacktest() {
-    if (!activeTemplate) return
+    if (!activeTemplate || !symbol) return
     setPanelView('backtest')
     setBacktesting(true)
     setBacktestResult(null)
@@ -263,7 +263,7 @@ export function SignalPanel({ symbol = '300843_sz', embedded = false, showLayers
             <span className="ml-auto text-[11px] font-mono text-[var(--text-muted)]">{activeSignal ? `${activeSignal.progressPercent}%` : '—'}</span>
           </div>
           {activeSignal?.state === SignalState.Partial && <div className="h-1 mt-2 rounded-full bg-[var(--bg-tertiary)] overflow-hidden"><div className="h-full bg-[var(--accent-orange)]" style={{ width: `${activeSignal.progressPercent}%` }} /></div>}
-          <div className="mt-1.5 text-[10px] text-[var(--text-muted)]">{!activeTemplate.enabled ? '启用后才能运行实时评估和参与选股' : activeSignal ? '条件结果已同步到右侧图表' : '运行评估后显示当前标的的策略状态'}</div>
+          <div className="mt-1.5 text-[10px] text-[var(--text-muted)]">{!symbol ? '选择市场和标的后可运行策略评估' : !activeTemplate.enabled ? '启用后才能运行实时评估和参与选股' : activeSignal ? '条件结果已同步到右侧图表' : '运行评估后显示当前标的的策略状态'}</div>
         </div>
       </div>
 
@@ -296,8 +296,8 @@ export function SignalPanel({ symbol = '300843_sz', embedded = false, showLayers
       </div>
 
       <div className="sticky bottom-0 p-3 mt-auto border-t border-[var(--border-primary)] bg-[var(--bg-secondary)] flex gap-2">
-        <button type="button" onClick={handleBacktest} disabled={backtesting} className="h-9 px-3 rounded-md border border-[var(--border-primary)] text-[11px] text-[var(--text-secondary)] hover:text-[var(--text-primary)] hover:bg-[var(--bg-tertiary)] disabled:opacity-40">{backtesting ? '回测中...' : '运行回测'}</button>
-        <button type="button" onClick={handleEvaluate} disabled={evaluating || !activeTemplate.enabled} className="h-9 flex-1 rounded-md bg-[var(--accent)] text-white text-[11px] font-medium hover:bg-[var(--accent-hover)] disabled:opacity-40">{evaluating ? '评估中...' : '重新评估'}</button>
+        <button type="button" onClick={handleBacktest} disabled={backtesting || !symbol} className="h-9 px-3 rounded-md border border-[var(--border-primary)] text-[11px] text-[var(--text-secondary)] hover:text-[var(--text-primary)] hover:bg-[var(--bg-tertiary)] disabled:opacity-40">{backtesting ? '回测中...' : '运行回测'}</button>
+        <button type="button" onClick={handleEvaluate} disabled={evaluating || !symbol || !activeTemplate.enabled} className="h-9 flex-1 rounded-md bg-[var(--accent)] text-white text-[11px] font-medium hover:bg-[var(--accent-hover)] disabled:opacity-40">{evaluating ? '评估中...' : '重新评估'}</button>
       </div>
     </div>
   )
@@ -305,7 +305,7 @@ export function SignalPanel({ symbol = '300843_sz', embedded = false, showLayers
   const backtestView = activeTemplate && (
     <div className="flex-1 min-h-0 overflow-y-auto px-3 py-3">
       {backtesting && <div className="h-40 flex items-center justify-center text-[11px] text-[var(--text-muted)]">正在运行回测...</div>}
-      {!backtesting && !backtestResult && <div className="h-40 flex flex-col items-center justify-center gap-3 text-[11px] text-[var(--text-muted)]"><span>尚未生成回测结果</span><button type="button" onClick={handleBacktest} className="h-8 px-3 rounded-md bg-[var(--accent)] text-white">运行回测</button></div>}
+      {!backtesting && !backtestResult && <div className="h-40 flex flex-col items-center justify-center gap-3 text-[11px] text-[var(--text-muted)]"><span>{symbol ? '尚未生成回测结果' : '请先选择市场和标的'}</span><button type="button" onClick={handleBacktest} disabled={!symbol} className="h-8 px-3 rounded-md bg-[var(--accent)] text-white disabled:opacity-40">运行回测</button></div>}
       {backtestResult && (
         <>
           <div className="flex items-center justify-between mb-3"><span className="text-[11px] font-semibold">最近 300 根 K 线</span><span className="text-[10px] text-[var(--text-muted)]">{backtestResult.totalTrades} 笔交易</span></div>
@@ -316,7 +316,7 @@ export function SignalPanel({ symbol = '300843_sz', embedded = false, showLayers
             <div className="rounded-md bg-[var(--bg-tertiary)] p-2.5"><span className="block text-[10px] text-[var(--text-muted)]">盈亏因子</span><span className="block mt-1 text-[15px] font-mono">{backtestResult.profitFactor}</span></div>
           </div>
           {backtestResult.trades.length > 0 && <div className="mt-4"><div className="text-[11px] font-semibold mb-2">交易明细</div>{backtestResult.trades.map((trade, index) => <div key={`${trade.entryTime}-${index}`} className="grid grid-cols-[24px_1fr_auto] gap-2 py-2 border-b border-[var(--border-primary)] text-[10px]"><span className="text-[var(--text-muted)]">#{index + 1}</span><span className="font-mono text-[var(--text-secondary)]">{trade.entryPrice} → {trade.exitPrice}</span><span className={`font-mono ${financialValueColorClass(trade.pnlPct)}`}>{trade.pnlPct >= 0 ? '+' : ''}{trade.pnlPct}%</span></div>)}</div>}
-          <button type="button" onClick={handleBacktest} className="w-full h-9 mt-4 rounded-md bg-[var(--accent)] text-white text-[11px] font-medium">重新回测</button>
+          <button type="button" onClick={handleBacktest} disabled={!symbol} className="w-full h-9 mt-4 rounded-md bg-[var(--accent)] text-white text-[11px] font-medium disabled:opacity-40">重新回测</button>
         </>
       )}
     </div>

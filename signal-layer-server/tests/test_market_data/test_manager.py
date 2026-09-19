@@ -1,6 +1,6 @@
 import asyncio
 
-from app.market_data.manager import MarketDataManager, expected_latest_daily_open_time
+from app.market_data.manager import MarketDataManager
 from app.market_data.ranges import TimeRange, merge_ranges
 
 
@@ -12,6 +12,9 @@ def bar(open_time: int) -> dict:
         "high": 10.2,
         "low": 9.9,
         "volume": 100.0,
+        "turnover_rate": 1.0,
+        "circulating_shares": 10_000.0,
+        "adjustment_factor": 1.0,
         "is_closed": True,
     }
 
@@ -71,6 +74,12 @@ class FailingSource(RangeSource):
         raise RuntimeError("行情源暂时不可用")
 
 
+class EmptySource(RangeSource):
+    async def fetch_klines(self, symbol, timeframe, start_time=None, end_time=None, limit=500):
+        self.calls.append((start_time, end_time))
+        return []
+
+
 class TailSource(RangeSource):
     def __init__(self, latest_time):
         super().__init__()
@@ -79,6 +88,12 @@ class TailSource(RangeSource):
     async def fetch_klines(self, symbol, timeframe, start_time=None, end_time=None, limit=500):
         self.calls.append((start_time, end_time))
         return [bar(self.latest_time)]
+
+
+class SlowSource(RangeSource):
+    async def fetch_klines(self, symbol, timeframe, start_time=None, end_time=None, limit=500):
+        await asyncio.sleep(0.01)
+        return await super().fetch_klines(symbol, timeframe, start_time, end_time, limit)
 
 
 def test_manager_fetches_only_the_missing_range_and_then_uses_db():
@@ -104,17 +119,53 @@ def test_manager_fetches_only_the_missing_range_and_then_uses_db():
     assert repeated_cached is True
 
 
-def test_latest_request_does_not_call_api_when_db_has_enough_rows():
+def test_latest_request_checks_source_even_when_db_has_enough_rows():
     store = MemoryStore()
+    store.upsert("000001_sz", "5m", [bar(index) for index in range(5)])
     source = RangeSource()
-    store.upsert("000001_sz", "5m", [bar(index) for index in range(10)])
     manager = MarketDataManager(store, source, source)
 
     values, cached = asyncio.run(manager.fetch("000001_sz", "5m", limit=5))
 
-    assert [item["open_time"] for item in values] == [5, 6, 7, 8, 9]
-    assert source.calls == []
-    assert cached is True
+    assert [item["open_time"] for item in values] == [0, 1, 2, 3, 4]
+    assert source.calls == [(None, None)]
+    assert cached is False
+    assert manager.latest_status("000001_sz", "5m")["stale"] is False
+
+
+def test_latest_request_upserts_new_bar_returned_by_source():
+    store = MemoryStore()
+    store.upsert("000001_sz", "5m", [bar(index) for index in range(1, 6)])
+    source = TailSource(6)
+    manager = MarketDataManager(store, source, source)
+
+    values, cached = asyncio.run(manager.fetch("000001_sz", "5m", limit=5))
+
+    assert [item["open_time"] for item in values] == [2, 3, 4, 5, 6]
+    assert source.calls == [(None, None)]
+    assert cached is False
+
+
+def test_long_holiday_is_confirmed_by_source_instead_of_calendar_guess():
+    store = MemoryStore()
+    last_trading_day = 1_800_000_000_000
+    day = 86_400_000
+    store.upsert("000001_sz", "1d", [bar(last_trading_day - day * index) for index in range(4, -1, -1)])
+    source = TailSource(last_trading_day)
+    manager = MarketDataManager(store, source, source)
+
+    values, cached = asyncio.run(manager.fetch("000001_sz", "1d", limit=5))
+
+    assert values[-1]["open_time"] == last_trading_day
+    assert source.calls == [(None, None)]
+    assert cached is False
+    assert manager.latest_status("000001_sz", "1d") == {
+        "stale": False,
+        "refresh_failed": False,
+        "latest_time": last_trading_day,
+        "expected_time": None,
+        "message": None,
+    }
 
 
 def test_latest_memory_cache_reuses_data_across_kline_and_analysis_requests():
@@ -142,39 +193,94 @@ def test_latest_request_returns_stored_rows_when_api_is_unavailable():
 
     assert [item["open_time"] for item in values] == [0, 1, 2]
     assert cached is True
+    status = manager.latest_status("000001_sz", "1d")
+    assert status["stale"] is True
+    assert status["refresh_failed"] is True
+    assert status["expected_time"] is None
 
 
-def test_latest_daily_refreshes_stale_tail_even_when_db_has_enough_rows():
-    now_ms = 1_789_632_000_000  # 2026-09-17 00:00:00 UTC
-    expected = expected_latest_daily_open_time(now_ms)
-    day = 86_400_000
+def test_latest_daily_refreshes_tail_even_when_db_has_enough_rows():
     store = MemoryStore()
-    store.upsert("RB0", "1d", [bar(expected - day * index) for index in range(9, 4, -1)])
-    source = TailSource(expected)
-    manager = MarketDataManager(store, source, source, now_ms=lambda: now_ms)
+    store.upsert("RB0", "1d", [bar(index) for index in range(5)])
+    source = TailSource(5)
+    manager = MarketDataManager(store, source, source)
 
     values, cached = asyncio.run(manager.fetch("RB0", "1d", limit=5))
 
-    assert values[-1]["open_time"] == expected
-    assert source.calls == [(expected - day * 5 + 1, expected)]
+    assert values[-1]["open_time"] == 5
+    assert source.calls == [(None, None)]
     assert cached is False
     assert manager.latest_status("RB0", "1d")["stale"] is False
 
 
-def test_latest_daily_uses_db_when_last_bar_is_fresh():
-    now_ms = 1_789_632_000_000
-    expected = expected_latest_daily_open_time(now_ms)
-    day = 86_400_000
+def test_successful_empty_response_confirms_no_update():
     store = MemoryStore()
-    store.upsert("RB0", "1d", [bar(expected - day * index) for index in range(4, -1, -1)])
-    source = RangeSource()
-    manager = MarketDataManager(store, source, source, now_ms=lambda: now_ms)
+    store.upsert("RB0", "1d", [bar(index) for index in range(5)])
+    source = EmptySource()
+    manager = MarketDataManager(store, source, source)
 
     values, cached = asyncio.run(manager.fetch("RB0", "1d", limit=5))
 
-    assert values[-1]["open_time"] == expected
-    assert source.calls == []
-    assert cached is True
+    assert values[-1]["open_time"] == 4
+    assert cached is False
+    status = manager.latest_status("RB0", "1d")
+    assert status["stale"] is False
+    assert status["message"] == "test-api 已确认暂无更新数据"
+
+
+def test_latest_confirmation_ttl_avoids_repeated_api_calls_and_expires():
+    clock = [100.0]
+    store = MemoryStore()
+    store.upsert("RB0", "1d", [bar(index) for index in range(5)])
+    source = RangeSource()
+    manager = MarketDataManager(store, source, source, monotonic_clock=lambda: clock[0])
+
+    async def scenario():
+        first = await manager.fetch("RB0", "1d", limit=5)
+        clock[0] += 299
+        second = await manager.fetch("RB0", "1d", limit=5)
+        clock[0] += 2
+        third = await manager.fetch("RB0", "1d", limit=5)
+        return first, second, third
+
+    first, second, third = asyncio.run(scenario())
+
+    assert source.calls == [(None, None), (None, None)]
+    assert first[1] is False
+    assert second[1] is True
+    assert third[1] is False
+
+
+def test_force_refresh_bypasses_confirmation_ttl():
+    store = MemoryStore()
+    source = RangeSource()
+    manager = MarketDataManager(store, source, source)
+
+    async def scenario():
+        await manager.fetch("RB0", "1d", limit=5)
+        await manager.fetch("RB0", "1d", limit=5, force_refresh=True)
+
+    asyncio.run(scenario())
+
+    assert source.calls == [(None, None), (None, None)]
+
+
+def test_concurrent_latest_requests_share_one_source_confirmation():
+    store = MemoryStore()
+    source = SlowSource()
+    manager = MarketDataManager(store, source, source)
+
+    async def scenario():
+        return await asyncio.gather(
+            manager.fetch("RB0", "1d", limit=5),
+            manager.fetch("RB0", "1d", limit=5),
+        )
+
+    first, second = asyncio.run(scenario())
+
+    assert source.calls == [(None, None)]
+    assert first[1] is False
+    assert second[1] is True
 
 
 def test_concurrent_requests_for_same_symbol_share_one_gap_fill():

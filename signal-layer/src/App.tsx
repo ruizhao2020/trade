@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useMemo, useState } from 'react'
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { Chart } from './chart/Chart.tsx'
 import { IndicatorInfoPanel } from './components/IndicatorInfoPanel.tsx'
 import { IndicatorWorkbenchToolbar } from './components/IndicatorWorkbenchToolbar.tsx'
@@ -40,12 +40,12 @@ import { ContentWorkspace } from './components/ContentWorkspace.tsx'
 
 const DEFAULT_CHAN_OPTIONS: ChanRenderOptions = {
   showFenxing: false,
-  showBi: true,
-  showDuan: true,
-  showZhongshu: true,
+  showBi: false,
+  showDuan: false,
+  showZhongshu: false,
   showZhongshuAxis: true,
-  showBuySellPoints: true,
-  showDivergences: true,
+  showBuySellPoints: false,
+  showDivergences: false,
   biColor: '#e7c66b',
   duanColor: '#6c8cff',
   zhongshuColor: '#9b8cf2',
@@ -60,6 +60,7 @@ function ChartStage({
   chanOptions,
   indicatorResults,
   onCursorTimeChange,
+  emptyMessage = '无数据',
 }: {
   loading: boolean
   error: string | null
@@ -68,6 +69,7 @@ function ChartStage({
   chanOptions: ChanRenderOptions
   indicatorResults: IndicatorResult[]
   onCursorTimeChange?: (time: number | null) => void
+  emptyMessage?: string
 }) {
   return (
     <div className="flex-1 relative min-w-0 min-h-0 bg-[var(--chart-background)]">
@@ -80,7 +82,7 @@ function ChartStage({
           <div className="text-xs mt-2">请确保后端已启动：<span className="font-mono">uvicorn app.main:app --port 8000</span></div>
         </div>
       ) : klineData.length === 0 ? (
-        <div className="absolute inset-0 flex items-center justify-center text-[var(--text-muted)] text-sm">无数据</div>
+        <div className="absolute inset-0 flex items-center justify-center text-[var(--text-muted)] text-sm">{emptyMessage}</div>
       ) : (
         <Chart klineData={klineData} chanAnalysis={chanAnalysis ?? undefined} chanOptions={chanOptions} indicatorResults={indicatorResults} onCursorTimeChange={onCursorTimeChange} />
       )}
@@ -100,12 +102,12 @@ function WorkbenchApp({ user, onLogout, onUserChange, onLogin }: { user: AuthUse
   const initialModule = user.modules[0]?.component_key || user.modules[0]?.code || ''
   const [activeModule, setActiveModule] = useState<WorkspaceModule>(initialModule)
   const [timeframe, setTimeframe] = useState<SupportedTimeframeId>('1d')
-  const [market, setMarket] = useState('futures')
-  const [symbol, setSymbol] = useState('RB0')
-  const [symbolName, setSymbolName] = useState('螺纹钢连续')
+  const [market, setMarket] = useState('')
+  const [symbol, setSymbol] = useState('')
+  const [symbolName, setSymbolName] = useState('')
   const [klineData, setKlineData] = useState<RawKline[]>([])
   const [chanOptions, setChanOptions] = useState<ChanRenderOptions>(DEFAULT_CHAN_OPTIONS)
-  const [loading, setLoading] = useState(true)
+  const [loading, setLoading] = useState(false)
   const [error, setError] = useState<string | null>(null)
   const [chanAnalysis, setChanAnalysis] = useState<ChanAnalysis | null>(null)
   const [selectedIndicators, setSelectedIndicators] = useState<IndicatorDisplay[]>([])
@@ -118,6 +120,8 @@ function WorkbenchApp({ user, onLogout, onUserChange, onLogin }: { user: AuthUse
   const [passwordDialogOpen, setPasswordDialogOpen] = useState(false)
   const [indicatorCursorTime, setIndicatorCursorTime] = useState<number | null>(null)
   const [marketDataStatus, setMarketDataStatus] = useState<Pick<FrontendKlineResponse, 'toTime' | 'stale' | 'refreshFailed' | 'statusMessage'> | null>(null)
+  const [refreshNonce, setRefreshNonce] = useState(0)
+  const forceRefreshRef = useRef(false)
 
   const templates = useAppStore((state) => state.templates)
   const activeTemplateId = useAppStore((state) => state.activeTemplateId)
@@ -132,7 +136,7 @@ function WorkbenchApp({ user, onLogout, onUserChange, onLogin }: { user: AuthUse
     () => `${symbol}:${timeframe}:${activeTemplateId ?? ''}:${JSON.stringify(strategyRequests)}`,
     [activeTemplateId, strategyRequests, symbol, timeframe],
   )
-  const strategyTradeKey = activeTemplate ? `${symbol}:${activeTemplate.id}:${activeTemplate.updatedAt}` : ''
+  const strategyTradeKey = symbol && activeTemplate ? `${symbol}:${activeTemplate.id}:${activeTemplate.updatedAt}` : ''
   const strategyUsesChan = useMemo(
     () => templateUsesChanIndicator(activeTemplate, timeframe),
     [activeTemplate, timeframe],
@@ -143,7 +147,10 @@ function WorkbenchApp({ user, onLogout, onUserChange, onLogin }: { user: AuthUse
   )
 
   useEffect(() => {
+    if (!market || !symbol) return
     let cancelled = false
+    const forceRefresh = forceRefreshRef.current
+    forceRefreshRef.current = false
     Promise.resolve().then(() => {
       if (!cancelled) {
         setLoading(true)
@@ -152,7 +159,16 @@ function WorkbenchApp({ user, onLogout, onUserChange, onLogin }: { user: AuthUse
       }
     })
     const requestSymbol = symbol
-    Promise.all([fetchKlines(requestSymbol, timeframe, 500), fetchChanAnalysis(requestSymbol, timeframe, 500)])
+    const request = forceRefresh
+      ? fetchKlines(requestSymbol, timeframe, 500, true).then(async (klineResponse) => [
+          klineResponse,
+          await fetchChanAnalysis(requestSymbol, timeframe, 500, true),
+        ] as const)
+      : Promise.all([
+          fetchKlines(requestSymbol, timeframe, 500),
+          fetchChanAnalysis(requestSymbol, timeframe, 500),
+        ])
+    request
       .then(([klineResponse, chanResponse]) => {
         if (cancelled) return
         setKlineData(klineResponse.data as RawKline[])
@@ -166,10 +182,10 @@ function WorkbenchApp({ user, onLogout, onUserChange, onLogin }: { user: AuthUse
         if (!cancelled) setLoading(false)
       })
     return () => { cancelled = true }
-  }, [market, symbol, timeframe])
+  }, [market, symbol, timeframe, refreshNonce])
 
   useEffect(() => {
-    if (selectedIndicators.length === 0 || klineData.length === 0) return
+    if (!symbol || selectedIndicators.length === 0 || klineData.length === 0) return
     let cancelled = false
     calculateIndicators(
       symbol,
@@ -192,7 +208,7 @@ function WorkbenchApp({ user, onLogout, onUserChange, onLogin }: { user: AuthUse
   }, [selectedIndicators, klineData, timeframe, market, symbol])
 
   useEffect(() => {
-    if (strategyRequests.length === 0 || klineData.length === 0) return
+    if (!symbol || strategyRequests.length === 0 || klineData.length === 0) return
     let cancelled = false
     calculateIndicators(symbol, timeframe, strategyRequests, 500)
       .then((results) => {
@@ -205,7 +221,7 @@ function WorkbenchApp({ user, onLogout, onUserChange, onLogin }: { user: AuthUse
   }, [strategyRequestKey, strategyRequests, klineData, symbol, timeframe])
 
   useEffect(() => {
-    if (!['strategy', 'screener'].includes(effectiveActiveModule) || !activeTemplate?.enabled || !strategyTradeKey) return
+    if (!symbol || !['strategy', 'screener'].includes(effectiveActiveModule) || !activeTemplate?.enabled || !strategyTradeKey) return
     let cancelled = false
     runBacktest(symbol, activeTemplate, 300)
       .then((result) => {
@@ -238,6 +254,14 @@ function WorkbenchApp({ user, onLogout, onUserChange, onLogin }: { user: AuthUse
   const handleMarketChange = useCallback((nextMarket: string) => {
     setIndicatorCursorTime(null)
     setMarket(nextMarket)
+    setSymbol('')
+    setSymbolName('')
+    setKlineData([])
+    setChanAnalysis(null)
+    setIndicatorResults([])
+    setMarketDataStatus(null)
+    setError(null)
+    setLoading(false)
   }, [])
   const handleSymbolChange = useCallback((nextSymbol: string, nextName: string) => {
     setIndicatorCursorTime(null)
@@ -255,6 +279,10 @@ function WorkbenchApp({ user, onLogout, onUserChange, onLogin }: { user: AuthUse
     setIndicatorCursorTime(null)
     setTimeframe(nextTimeframe)
   }, [])
+  const handleRefresh = useCallback(() => {
+    forceRefreshRef.current = true
+    setRefreshNonce((value) => value + 1)
+  }, [])
 
   const headerProps = {
     market,
@@ -271,18 +299,35 @@ function WorkbenchApp({ user, onLogout, onUserChange, onLogin }: { user: AuthUse
     </span>
   ) : null
 
+  const refreshButton = (
+    <button
+      type="button"
+      onClick={handleRefresh}
+      disabled={loading || !symbol}
+      aria-label="刷新行情"
+      title="强制刷新行情(绕过缓存)"
+      className="h-7 px-2.5 rounded-md border border-[var(--border-primary)] bg-[var(--bg-primary)] text-[var(--text-muted)] hover:text-[var(--text-primary)] hover:border-[var(--border-accent)] hover:bg-[var(--bg-tertiary)] transition-colors duration-150 flex items-center gap-1.5 shrink-0 disabled:opacity-60"
+    >
+      <svg viewBox="0 0 16 16" fill="none" aria-hidden="true" className={`w-3 h-3 ${loading ? 'animate-spin' : ''}`}>
+        <path d="M14 8a6 6 0 1 1-1.76-4.24" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round" />
+        <path d="M14 2v4h-4" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round" />
+      </svg>
+      <span className="text-[10px] font-mono">刷新</span>
+    </button>
+  )
+
   return (
     <div className="flex h-full w-full overflow-hidden bg-[var(--bg-primary)]">
       <WorkspaceNav active={effectiveActiveModule} onChange={setActiveModule} modules={user.modules} user={user} onLogout={onLogout} onChangePassword={() => setPasswordDialogOpen(true)} onLogin={onLogin} />
       <main className="flex-1 min-w-0 flex flex-col overflow-hidden">
         {effectiveActiveModule === 'indicators' && (
           <>
-            <WorkbenchHeader title="指标分析" {...headerProps} trailing={<div className="hidden xl:flex items-center gap-3">{dataStatusBadge}{chanAnalysis && <div className="flex items-center gap-3 text-[10px] text-[var(--text-muted)] font-mono whitespace-nowrap">
+            <WorkbenchHeader title="指标分析" {...headerProps} trailing={<div className="flex items-center gap-3">{refreshButton}<div className="hidden xl:flex items-center gap-2">{dataStatusBadge}</div>{chanAnalysis && <div className="hidden xl:flex items-center gap-3 text-[10px] text-[var(--text-muted)] font-mono whitespace-nowrap">
                 <span>笔 {chanAnalysis.bis.length}</span><span>段 {chanAnalysis.duans.length}</span><span>中枢 {chanOptions.zsLevel === 'duan' ? chanAnalysis.duanZhongshus.length : chanAnalysis.zhongshus.length}</span><span>背驰 {chanAnalysis.divergences.length}</span><span>买卖点 {chanAnalysis.buySellPoints.length}</span>
               </div>}</div>} />
             <IndicatorWorkbenchToolbar selectedIndicators={selectedIndicators} onIndicatorChange={setSelectedIndicators} chanOptions={chanOptions} onChanChange={setChanOptions} analysis={chanAnalysis ?? undefined} />
             <div className="flex flex-1 min-h-0 overflow-hidden">
-              <ChartStage loading={loading} error={error} klineData={klineData} chanAnalysis={chanAnalysis} chanOptions={chanOptions} indicatorResults={selectedIndicators.length > 0 ? indicatorResults : []} onCursorTimeChange={setIndicatorCursorTime} />
+              <ChartStage loading={loading} error={error} klineData={klineData} chanAnalysis={chanAnalysis} chanOptions={chanOptions} indicatorResults={selectedIndicators.length > 0 ? indicatorResults : []} onCursorTimeChange={setIndicatorCursorTime} emptyMessage={!market ? '请选择市场' : !symbol ? '请选择标的' : '暂无行情数据'} />
               <IndicatorInfoPanel collapsed={indicatorInfoCollapsed} onToggle={() => setIndicatorInfoCollapsed((value) => !value)} klineData={klineData} analysis={chanAnalysis ?? undefined} chanOptions={chanOptions} indicators={selectedIndicators} results={selectedIndicators.length > 0 ? indicatorResults : []} cursorTime={indicatorCursorTime} />
             </div>
           </>
@@ -290,7 +335,7 @@ function WorkbenchApp({ user, onLogout, onUserChange, onLogin }: { user: AuthUse
 
         {effectiveActiveModule === 'strategy' && (
           <>
-            <WorkbenchHeader title="策略执行" {...headerProps} trailing={dataStatusBadge} />
+            <WorkbenchHeader title="策略执行" {...headerProps} trailing={<div className="flex items-center gap-2">{dataStatusBadge}{refreshButton}</div>} />
             <div className="h-11 px-4 flex items-center gap-2 border-b border-[var(--border-primary)] bg-[var(--bg-secondary)] shrink-0 overflow-x-auto">
               <span className="text-[10px] font-semibold uppercase tracking-[0.12em] text-[var(--text-muted)] shrink-0">策略指标</span>
               {strategyUsesChan && <span className="h-7 px-2.5 rounded-md bg-[var(--bg-tertiary)] flex items-center text-[11px] text-[var(--text-secondary)] whitespace-nowrap">{timeframeLabel(timeframe)} · 缠论</span>}
@@ -306,7 +351,7 @@ function WorkbenchApp({ user, onLogout, onUserChange, onLogin }: { user: AuthUse
                 </div>
                 {!strategyInfoCollapsed && <div className="flex-1 min-h-0"><SignalPanel embedded showLayers={false} symbol={symbol} onBacktestResult={(result) => setBacktestResult({ key: strategyTradeKey, result })} /></div>}
               </aside>
-              <ChartStage loading={loading} error={error} klineData={klineData} chanAnalysis={chanAnalysis} chanOptions={strategyChanOptions} indicatorResults={strategyResults} />
+              <ChartStage loading={loading} error={error} klineData={klineData} chanAnalysis={chanAnalysis} chanOptions={strategyChanOptions} indicatorResults={strategyResults} emptyMessage={!market ? '请选择市场' : !symbol ? '请选择标的' : !activeTemplate ? '请选择策略' : '暂无行情数据'} />
             </div>
           </>
         )}
@@ -314,7 +359,7 @@ function WorkbenchApp({ user, onLogout, onUserChange, onLogin }: { user: AuthUse
         {effectiveActiveModule === 'screener' && (
           <>
             <div className="h-14 px-4 flex items-center gap-3 border-b border-[var(--border-primary)] bg-[var(--bg-secondary)] shrink-0"><h1 className="text-[15px] font-semibold tracking-tight">策略选股</h1><span className="text-[11px] text-[var(--text-muted)]">使用已有策略批量评估候选标的</span></div>
-            <ScreenerWorkspace selectedSymbol={symbol} selectedName={symbolName} onSelectSymbol={handleScreenSymbol} chart={<ChartStage loading={loading} error={error} klineData={klineData} chanAnalysis={chanAnalysis} chanOptions={strategyChanOptions} indicatorResults={strategyResults} />} />
+            <ScreenerWorkspace selectedSymbol={symbol} selectedName={symbolName} onSelectSymbol={handleScreenSymbol} chart={<ChartStage loading={loading} error={error} klineData={klineData} chanAnalysis={chanAnalysis} chanOptions={strategyChanOptions} indicatorResults={strategyResults} emptyMessage="开始选股后，点击结果查看策略指标" />} />
           </>
         )}
 

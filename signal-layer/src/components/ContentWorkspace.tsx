@@ -136,9 +136,9 @@ export function ContentWorkspace() {
   const [drafts, setDrafts] = useState<ArticleDraft[]>([])
   const [selected, setSelected] = useState<ArticleDraft | null>(null)
   const [templateId, setTemplateId] = useState('stock_technical_overview')
-  const [market, setMarket] = useState('stock')
-  const [symbol, setSymbol] = useState('000001_sz')
-  const [symbolName, setSymbolName] = useState('平安银行')
+  const [market, setMarket] = useState('')
+  const [symbol, setSymbol] = useState('')
+  const [symbolName, setSymbolName] = useState('')
   const [timeframes, setTimeframes] = useState<string[]>(['1d'])
   const [platform, setPlatform] = useState<PreviewPlatform>('standard')
   const [standardText, setStandardText] = useState('')
@@ -252,7 +252,7 @@ export function ContentWorkspace() {
               <div className="content-symbol-selector"><SymbolSelector market={market} symbol={symbol} symbolName={symbolName} onMarketChange={handleMarketChange} onSymbolChange={handleSymbolChange} /></div>
             </div>
             <div><div className="text-[10px] text-[var(--text-muted)] mb-2">分析周期</div><div className="flex gap-3">{['1d', '30m', '5m'].map((item) => <label key={item} className="inline-flex items-center gap-1 text-[10px] text-[var(--text-secondary)]"><input type="checkbox" checked={timeframes.includes(item)} onChange={() => toggleTimeframe(item)} className="accent-[var(--accent)]" />{item}</label>)}</div></div>
-            <button type="button" disabled={generating || !timeframes.length} onClick={() => void generate()} className="action-primary w-full">{generating ? '分析并生成中…' : '生成文章草稿'}</button>
+            <button type="button" disabled={generating || !templateId || !market || !symbol || !timeframes.length} onClick={() => void generate()} className="action-primary w-full">{generating ? '分析并生成中…' : '生成文章草稿'}</button>
           </div>
           <div className="p-3"><div className="px-1 mb-2 text-[10px] font-semibold text-[var(--text-muted)]">历史草稿</div>{drafts.map((draft) => <button type="button" key={draft.id} onClick={() => chooseDraft(draft)} className={`w-full p-2.5 rounded-md text-left ${selected?.id === draft.id ? 'bg-[rgba(108,140,255,.12)]' : 'hover:bg-[var(--bg-tertiary)]'}`}><div className="text-[11px] truncate">{draft.title}</div><div className="mt-1 text-[9px] text-[var(--text-muted)]">{new Date(draft.created_at).toLocaleString('zh-CN')} · {draft.status === 'reviewed' ? '已审核' : '草稿'}</div></button>)}</div>
         </aside>

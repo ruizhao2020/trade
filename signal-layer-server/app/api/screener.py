@@ -54,7 +54,7 @@ async def run_screener(request: ScreenerRequest):
             failed_count += 1
             logger.warning("Screener evaluation failed for %s: %s", item.get("symbol"), error)
             return None
-        if signal.progress_percent < request.min_progress:
+        if signal.state not in request.states or signal.progress_percent < request.min_progress:
             return None
         return ScreenerMatch(
             symbol=item["symbol"], name=item.get("name", item["symbol"]),

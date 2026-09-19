@@ -160,10 +160,10 @@ function toZhongshu(z: ApiZhongshu): Zhongshu {
   }
 }
 
-export async function fetchChanAnalysis(symbol: string, timeframe: string, limit = 200): Promise<ChanAnalysis> {
+export async function fetchChanAnalysis(symbol: string, timeframe: string, limit = 200, forceRefresh = false): Promise<ChanAnalysis> {
   const key = `chan:${symbol}:${timeframe}:${limit}`
-  return recentMarketRequests.run(key, marketRequestTtl(timeframe), async () => {
-    console.log(`[SL:API] GET /chan/${symbol}/${timeframe}`, { limit })
+  const request = async () => {
+    console.log(`[SL:API] GET /chan/${symbol}/${timeframe}`, { limit, forceRefresh })
     const raw = await api.get<ApiChanResponse>(`/chan/${symbol}/${timeframe}`, { limit: String(limit) })
     console.log(`[SL:API] GET /chan/${symbol}/${timeframe} -> OK`, {
       bis: raw.bis.length, duans: raw.duans.length,
@@ -173,5 +173,7 @@ export async function fetchChanAnalysis(symbol: string, timeframe: string, limit
       divergences: raw.divergences?.length ?? 0,
     })
     return toChanAnalysis(raw)
-  })
+  }
+  if (forceRefresh) return request()
+  return recentMarketRequests.run(key, marketRequestTtl(timeframe), request)
 }

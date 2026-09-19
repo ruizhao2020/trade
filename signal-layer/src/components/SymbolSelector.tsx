@@ -42,6 +42,10 @@ export function SymbolSelector({ market, symbol, symbolName, onMarketChange, onS
 
   /** 加载标的列表。keyword 作为参数传入，避免闭包捕获旧值 */
   const loadSymbols = useCallback(async (kw?: string) => {
+    if (!market) {
+      setOptions([])
+      return
+    }
     setLoading(true)
     try {
       const resp = await fetchSymbols(market, kw || undefined, 50)
@@ -59,8 +63,7 @@ export function SymbolSelector({ market, symbol, symbolName, onMarketChange, onS
     setOptions([])
     setOpen(false)
     onMarketChange(nextMarket)
-    const definition = markets.find((item) => item.id === nextMarket)
-    if (definition) onSymbolChange(definition.default_symbol, definition.default_symbol_name)
+    onSymbolChange('', '')
   }
 
   // keyword 变化时，防抖 300ms 后搜索（用最新 keyword）
@@ -102,6 +105,7 @@ export function SymbolSelector({ market, symbol, symbolName, onMarketChange, onS
         aria-label="选择市场"
         className="w-28 h-9 px-3 rounded-md bg-[var(--bg-primary)] border border-[var(--border-primary)] text-[12px] text-[var(--text-primary)] outline-none focus:border-[var(--accent)] shrink-0"
       >
+        <option value="">请选择市场</option>
         {markets.map((item) => <option key={item.id} value={item.id}>{item.name}</option>)}
       </select>
 
@@ -110,10 +114,11 @@ export function SymbolSelector({ market, symbol, symbolName, onMarketChange, onS
         <input
           value={keyword}
           onChange={handleInput}
-          onFocus={() => setOpen(true)}
-          placeholder={symbolName ? `${symbolName}  ${symbol}` : '搜索代码或名称...'}
+          onFocus={() => { if (market) setOpen(true) }}
+          disabled={!market}
+          placeholder={!market ? '请先选择市场' : symbolName ? `${symbolName}  ${symbol}` : '请选择标的'}
           aria-label="搜索并选择标的"
-          className="w-64 h-9 text-[12px] px-3 rounded-md bg-[var(--bg-tertiary)] text-[var(--text-primary)] border border-[var(--border-primary)] outline-none focus:border-[var(--accent)] placeholder:text-[var(--text-secondary)]"
+          className="w-64 h-9 text-[12px] px-3 rounded-md bg-[var(--bg-tertiary)] text-[var(--text-primary)] border border-[var(--border-primary)] outline-none focus:border-[var(--accent)] placeholder:text-[var(--text-secondary)] disabled:opacity-55 disabled:cursor-not-allowed"
         />
         {open && (
           <div

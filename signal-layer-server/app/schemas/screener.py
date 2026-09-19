@@ -1,4 +1,4 @@
-from typing import Optional
+from typing import Literal, Optional
 
 from pydantic import BaseModel, Field
 
@@ -12,6 +12,12 @@ class ScreenerRequest(BaseModel):
     limit: int = Field(default=500, ge=1, le=2000, description="最多扫描的候选标的数量")
     offset: int = Field(default=0, ge=0, description="候选池起始偏移，用于前端分批扫描")
     target_count: int = Field(default=10, ge=1, le=100, description="选够该数量后停止")
+    states: list[Literal["ready", "partial", "evaluating"]] = Field(
+        default_factory=lambda: ["ready", "partial"],
+        min_length=1,
+        max_length=3,
+        description="允许返回的策略状态，可多选",
+    )
     min_progress: int = Field(default=1, ge=0, le=100)
     concurrency: int = Field(default=4, ge=1, le=8)
     kline_limit: int = Field(default=200, ge=50, le=500)

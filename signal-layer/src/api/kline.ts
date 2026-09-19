@@ -77,19 +77,25 @@ function toFrontend(item: ApiKlineItem): FrontendKline {
 }
 
 export async function fetchKlines(
-  symbol: string, timeframe: string, limit = 200,
+  symbol: string, timeframe: string, limit = 200, forceRefresh = false,
 ): Promise<FrontendKlineResponse> {
   const key = `kline:${symbol}:${timeframe}:${limit}`
-  return recentMarketRequests.run(key, marketRequestTtl(timeframe), async () => {
-    console.log(`[SL:API] GET /klines/${symbol}`, { timeframe, limit })
-    const raw = await api.get<ApiKlineResponse>(`/klines/${symbol}`, { timeframe, limit: String(limit) })
+  const request = async () => {
+    console.log(`[SL:API] GET /klines/${symbol}`, { timeframe, limit, forceRefresh })
+    const raw = await api.get<ApiKlineResponse>(`/klines/${symbol}`, {
+      timeframe,
+      limit: String(limit),
+      ...(forceRefresh ? { force_refresh: 'true' } : {}),
+    })
     console.log(`[SL:API] GET /klines/${symbol} -> OK ${raw.count} candles`)
     return {
       symbol: raw.symbol, timeframe: raw.timeframe, data: raw.data.map(toFrontend), count: raw.count,
       toTime: raw.to_time, stale: Boolean(raw.stale), refreshFailed: Boolean(raw.refresh_failed),
       expectedTime: raw.expected_time, statusMessage: raw.status_message,
     }
-  })
+  }
+  if (forceRefresh) return request()
+  return recentMarketRequests.run(key, marketRequestTtl(timeframe), request)
 }
 
 /** 按时间范围读取 K 线。服务端会先查 DB，只从外部行情源补齐缺失区间。 */
