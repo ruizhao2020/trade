@@ -78,20 +78,24 @@ def _atr(klines: list[dict], index: int, period: int = 14) -> float:
     return sum(values) / len(values) if values else 0.0
 
 
-def _risk_prices(template: ConditionTemplateSchema, klines: list[dict]) -> tuple[float, float, float]:
+def _risk_prices(template: ConditionTemplateSchema, klines: list[dict]) -> tuple[float, float | None, float | None]:
     latest = klines[-1]
     entry = float(latest["close"])
     params = template.trade_params or TradeParams()
-    if params.stop_loss_type == "fixed_pct":
+    if params.stop_loss_type == "none":
+        stop = None
+    elif params.stop_loss_type == "fixed_pct":
         stop = entry * (1 - params.stop_loss_value / 100)
     elif params.stop_loss_type == "swing_low":
         stop = min(float(item["low"]) for item in klines[-20:])
     else:
         stop = entry - _atr(klines, len(klines) - 1) * params.stop_loss_value
-    if params.take_profit_type == "fixed_pct":
+    if params.take_profit_type == "none":
+        take = None
+    elif params.take_profit_type == "fixed_pct":
         take = entry * (1 + params.take_profit_value / 100)
     elif params.take_profit_type == "rr_ratio":
-        take = entry + (entry - stop) * params.take_profit_value
+        take = entry + (entry - stop) * params.take_profit_value if stop is not None else None
     else:
         take = entry + _atr(klines, len(klines) - 1) * params.take_profit_value
     return entry, stop, take
@@ -294,8 +298,9 @@ class NotificationService:
         title, content = await self._message(session, event_type, {
             "strategy_name": template.name, "symbol_name": monitor.symbol_name or monitor.symbol,
             "symbol": monitor.symbol, "price": f"{event_price:.4f}",
-            "position_size": f"{(strategy.trade_params.position_value if strategy.trade_params else 0):.2f}%",
-            "stop_loss": f"{stop:.4f}", "take_profit": f"{take:.4f}",
+            "position_size": "请参考回测建议仓位",
+            "stop_loss": f"{stop:.4f}" if stop is not None else "关闭",
+            "take_profit": f"{take:.4f}" if take is not None else "关闭",
             "trigger_time": datetime.fromtimestamp(bar_time / 1000, BEIJING_TZ).strftime("%Y-%m-%d %H:%M"),
         })
         event = NotificationEvent(

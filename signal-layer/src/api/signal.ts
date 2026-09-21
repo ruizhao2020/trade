@@ -37,6 +37,7 @@ interface ApiCondition {
 interface ApiConditionGroup {
   id: string
   name?: string
+  logic?: 'AND' | 'OR'
   conditions: ApiCondition[]
 }
 
@@ -55,8 +56,6 @@ export interface ApiTemplate {
     stop_loss_value: number
     take_profit_type: string
     take_profit_value: number
-    position_type: string
-    position_value: number
     exit_conditions: ApiConditionGroup[]
     exit_logic: string
   }
@@ -96,6 +95,8 @@ interface ApiBacktestResponse {
   avg_return: number
   max_drawdown: number
   profit_factor: number
+  payoff_ratio: number
+  suggested_position: number
   trades: ApiTradeRecord[]
 }
 
@@ -119,6 +120,8 @@ export interface BacktestResult {
   avgReturn: number
   maxDrawdown: number
   profitFactor: number
+  payoffRatio: number
+  suggestedPosition: number
   trades: TradeRecord[]
 }
 
@@ -181,6 +184,7 @@ export function templateToSnake(t: ConditionTemplate): ApiTemplate {
     condition_groups: t.conditionGroups.map((g) => ({
       id: g.id,
       name: g.name,
+      logic: g.logic ?? 'AND',
       conditions: g.conditions.map(conditionToSnake),
     })),
     primary_tf: t.primaryTimeframeId,
@@ -195,11 +199,10 @@ export function templateToSnake(t: ConditionTemplate): ApiTemplate {
       stop_loss_value: t.tradeParams.stopLossValue,
       take_profit_type: t.tradeParams.takeProfitType,
       take_profit_value: t.tradeParams.takeProfitValue,
-      position_type: t.tradeParams.positionType,
-      position_value: t.tradeParams.positionValue,
       exit_conditions: t.tradeParams.exitConditions.map((g) => ({
         id: g.id,
         name: g.name,
+        logic: g.logic ?? 'AND',
         conditions: g.conditions.map(conditionToSnake),
       })),
       exit_logic: t.tradeParams.exitLogic,
@@ -276,6 +279,8 @@ export async function runBacktest(
     avgReturn: raw.avg_return,
     maxDrawdown: raw.max_drawdown,
     profitFactor: raw.profit_factor,
+    payoffRatio: raw.payoff_ratio,
+    suggestedPosition: raw.suggested_position,
     trades: raw.trades.map(t => ({
       entryTime: t.entry_time,
       exitTime: t.exit_time,

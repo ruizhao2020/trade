@@ -2,7 +2,7 @@ import { useEffect, useMemo, useRef, useState } from 'react'
 import { fetchIndicatorList } from '../api/indicator.ts'
 import type { ChanAnalysis, ChanRenderOptions, IndicatorDisplay, IndicatorInfo } from '../core/types.ts'
 import { getMaPeriodColor, MA_PERIODS } from '../core/indicatorColors.ts'
-import { VOLUME_LEGEND } from '../core/volumeIndicator.ts'
+import { VOLUME_DOWN_COLOR, VOLUME_UP_COLOR } from '../core/volumeIndicator.ts'
 
 interface Props {
   selectedIndicators: IndicatorDisplay[]
@@ -26,11 +26,34 @@ const CHAN_ITEMS: { key: ChanToggleKey; label: string; color: string; count: (an
 ]
 
 const PARAM_LABELS: Record<string, string> = {
+  touch_tolerance_pct: '触碰容差',
   shrink_max: '缩量上限',
   increase_min: '增量起点',
   double_min: '倍量起点',
   triple_min: '三倍量起点',
   multiple_min: '多倍量起点',
+  flat_tolerance: '平量容差',
+  sequence_length: '连续根数',
+  relative_period: '相对量周期',
+  key_ratio_min: '关键柱倍率',
+  confirm_bars: '确认根数',
+  break_tolerance: '破位容差',
+  near_range_pct: '现价附近范围',
+  support_range_pct: '支撑压力范围',
+  peak_prominence: '峰值显著度',
+  min_peak_distance: '最小峰间距',
+  trend_period: '迁移周期',
+  migration_threshold_pct: '迁移阈值',
+  concentration_change_threshold: '集中变化阈值',
+  pressure_release_threshold: '压力释放阈值',
+  retest_tolerance_pct: '回踩容差',
+  departure_confirm_bars: '脱离确认根数',
+  true_departure_bars: '真脱离根数',
+  false_departure_max_bars: '假脱离窗口',
+  retest_window: '回归失败窗口',
+  maturity_bars: '态势成熟根数',
+  maturity_folds: '态势成熟折叠',
+  breakout_buffer_pct: '突破缓冲',
   bins: '价格档位',
   lookback: '回看天数',
   min_turnover_days: '最少有效天数',
@@ -297,19 +320,12 @@ export function IndicatorWorkbenchToolbar({
             <span className="text-[10px] text-[var(--text-muted)] mr-1">{activeInfo.name} 参数</span>
             {activeType === 'volume' && (
               <div className="flex items-center gap-1.5 mr-2 pr-2 border-r border-[var(--border-primary)]">
-                {VOLUME_LEGEND.map(item => (
-                  <span key={item.code} className="h-6 px-1.5 rounded border border-[var(--border-primary)] flex items-center gap-1 text-[10px] text-[var(--text-muted)] whitespace-nowrap">
-                    {item.followsPrice ? (
-                      <span className="w-2 h-2 border border-[var(--border-accent)] grid grid-cols-2 overflow-hidden">
-                        <span className="bg-[#ff5b62]" />
-                        <span className="bg-[#2fc58d]" />
-                      </span>
-                    ) : (
-                      <span className="w-2 h-2 border" style={{ borderColor: item.color }} />
-                    )}
-                    {item.label}
-                  </span>
-                ))}
+                <span className="h-6 px-1.5 rounded border border-[var(--border-primary)] flex items-center gap-1 text-[10px] text-[var(--text-muted)] whitespace-nowrap">
+                  <span className="w-2 h-2" style={{ backgroundColor: VOLUME_UP_COLOR }} />阳量
+                </span>
+                <span className="h-6 px-1.5 rounded border border-[var(--border-primary)] flex items-center gap-1 text-[10px] text-[var(--text-muted)] whitespace-nowrap">
+                  <span className="w-2 h-2" style={{ backgroundColor: VOLUME_DOWN_COLOR }} />阴量
+                </span>
               </div>
             )}
             {Object.entries(activeIndicator?.params ?? activeInfo.default_params).map(([key, value]) => (

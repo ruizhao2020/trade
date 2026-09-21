@@ -33,10 +33,17 @@ class IndicatorResultItem(BaseModel):
     cached: bool = False
 
 
+class IndicatorErrorItem(BaseModel):
+    type: str
+    code: str
+    message: str
+
+
 class IndicatorCalculateResponse(BaseModel):
     symbol: str
     timeframe: str
     results: list[IndicatorResultItem]
+    errors: list[IndicatorErrorItem] = Field(default_factory=list)
 
 
 class IndicatorInfo(BaseModel):
@@ -46,6 +53,7 @@ class IndicatorInfo(BaseModel):
     description: str
     default_params: dict[str, float]
     render: RenderSpec
+    outputs: list[dict[str, str]] = Field(default_factory=list)
 
 
 class IndicatorListResponse(BaseModel):

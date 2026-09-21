@@ -101,6 +101,8 @@ VALUES
     ('ma', '移动平均线', 1, 1, 1, 0, 10), ('macd', 'MACD', 1, 1, 1, 0, 20),
     ('kdj', 'KDJ', 1, 1, 1, 0, 30), ('rsi', 'RSI', 1, 1, 1, 0, 40),
     ('bollinger', '布林带', 1, 1, 1, 0, 50), ('volume', '成交量', 1, 1, 1, 0, 60),
+    ('volume_structure', '量柱结构', 0, 1, 0, 0, 65),
+    ('dilun_structure', '帝论·合理价格', 0, 1, 0, 0, 67),
     ('chip_distribution', '筹码分布', 1, 0, 1, 0, 70),
     ('liquidity_sweep', '流动性结构', 0, 0, 0, 0, 80)
 ON DUPLICATE KEY UPDATE indicator_type=VALUES(indicator_type);

@@ -58,7 +58,9 @@ def test_sqlite_seed_creates_default_admin_roles_and_modules():
         assert connection.execute("SELECT COUNT(*) FROM users WHERE username='admin'").fetchone()[0] == 1
         assert connection.execute("SELECT public_access FROM modules WHERE code='indicators'").fetchone()[0] == 1
         assert connection.execute("SELECT registration_default FROM roles WHERE code='member'").fetchone()[0] == 1
-        assert connection.execute("SELECT COUNT(*) FROM public_indicator_policies").fetchone()[0] == 9
+        assert connection.execute("SELECT COUNT(*) FROM public_indicator_policies").fetchone()[0] == 11
+        assert connection.execute("SELECT public_visible FROM public_indicator_policies WHERE indicator_type='volume_structure'").fetchone()[0] == 0
+        assert connection.execute("SELECT public_visible FROM public_indicator_policies WHERE indicator_type='dilun_structure'").fetchone()[0] == 0
         assert connection.execute("SELECT public_visible FROM public_indicator_feature_policies WHERE indicator_type='chan' AND feature_code='buy_sell_points'").fetchone()[0] == 0
         admin_permissions = connection.execute(
             "SELECT COUNT(*) FROM role_permissions rp JOIN roles r ON r.id=rp.role_id WHERE r.code='admin'"

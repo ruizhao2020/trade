@@ -15,6 +15,22 @@ const maInfo: IndicatorInfo = {
   },
 }
 
+const volumeStructureInfo: IndicatorInfo = {
+  type: 'volume_structure',
+  name: '量柱结构',
+  description: '关键量柱与黄金柱',
+  default_params: { lookback: 20, key_ratio_min: 1.8, confirm_bars: 3, break_tolerance: 0 },
+  outputs: [
+    { field: 'key_pillar', label: '关键量柱出现' },
+    { field: 'general_confirmed', label: '将军柱确认' },
+    { field: 'golden_confirmed', label: '黄金柱确认' },
+  ],
+  render: {
+    window: 'main',
+    plots: [{ field: 'key_line', type: 'line', color: '#56c7e8', label: '关键量柱线' }],
+  },
+}
+
 function maGroup(name: string, period: number): ConditionGroup {
   return {
     // 故意使用重复 ID，覆盖历史数据曾出现的情况。
@@ -52,6 +68,9 @@ describe('ConditionGroupEditor condition isolation', () => {
     expect(screen.getByRole('option', { name: '向下' })).toBeInTheDocument()
     expect(screen.getByRole('option', { name: '上转下' })).toBeInTheDocument()
     expect(screen.getByRole('option', { name: '下转上' })).toBeInTheDocument()
+    expect(screen.getByRole('option', { name: '支撑' })).toBeInTheDocument()
+    expect(screen.getByRole('option', { name: '压制' })).toBeInTheDocument()
+    expect(screen.queryByRole('option', { name: '介于' })).not.toBeInTheDocument()
     expect(screen.queryByRole('spinbutton')).not.toBeInTheDocument()
   })
 
@@ -104,5 +123,48 @@ describe('ConditionGroupEditor condition isolation', () => {
     fireEvent.change(screen.getByLabelText('条件组 2 名称'), { target: { value: '趋势确认' } })
     const updated = onChange.mock.lastCall?.[0] as ConditionGroup[]
     expect(updated.map((group) => group.name)).toEqual(['第一组', '趋势确认'])
+  })
+
+  it('supports OR logic inside an individual condition group', () => {
+    const onChange = vi.fn()
+    render(<ConditionGroupEditor groups={[maGroup('均线支撑', 5)]} indicators={[maInfo]} onChange={onChange} />)
+
+    fireEvent.click(screen.getByRole('button', { name: '或 · 任一' }))
+    const updated = onChange.mock.lastCall?.[0] as ConditionGroup[]
+    expect(updated[0]?.logic).toBe('OR')
+  })
+
+  it.each([
+    [ConditionOperator.Support, '支撑'],
+    [ConditionOperator.Resistance, '压制'],
+  ])('renders MA %s as a unary condition', (operator, label) => {
+    const group = maGroup('均线作用', 5)
+    group.conditions[0] = { ...group.conditions[0]!, operator }
+    render(<ConditionGroupEditor groups={[group]} indicators={[maInfo]} onChange={vi.fn()} />)
+
+    expect(screen.getByLabelText('条件 1 运算符')).toHaveValue(operator)
+    expect(screen.getByRole('option', { name: label })).toBeInTheDocument()
+    expect(screen.queryByRole('spinbutton')).not.toBeInTheDocument()
+  })
+
+  it('allows strategy conditions to select non-plot indicator outputs', () => {
+    const onChange = vi.fn()
+    const group = maGroup('量柱确认', 5)
+    group.conditions[0] = {
+      ...group.conditions[0]!,
+      left: {
+        source: 'indicator', indicatorType: 'volume_structure',
+        params: { ...volumeStructureInfo.default_params }, field: 'key_pillar',
+      },
+    }
+
+    render(<ConditionGroupEditor groups={[group]} indicators={[maInfo, volumeStructureInfo]} onChange={onChange} />)
+    const output = screen.getByLabelText('量柱结构 输出线')
+    expect(output).toHaveValue('key_pillar')
+    expect(screen.getByRole('option', { name: '黄金柱确认' })).toBeInTheDocument()
+
+    fireEvent.change(output, { target: { value: 'golden_confirmed' } })
+    const updated = onChange.mock.lastCall?.[0] as ConditionGroup[]
+    expect(updated[0]!.conditions[0]!.left).toMatchObject({ field: 'golden_confirmed' })
   })
 })

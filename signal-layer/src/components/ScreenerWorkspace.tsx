@@ -4,12 +4,17 @@ import { runScreener, type ScreenerMatch, type ScreenerSignalState } from '../ap
 import { fetchTemplates } from '../api/template.ts'
 import { useAppStore } from '../store/useAppStore.ts'
 import { fetchMarkets, type MarketItem } from '../api/symbol.ts'
+import { collectStrategyIndicatorsForTimeframe, templateUsesChanIndicator } from '../core/strategyIndicators.ts'
+import { timeframeLabel, type SupportedTimeframeId } from '../core/constants.ts'
 
 interface Props {
   selectedSymbol: string
   selectedName: string
   chart: ReactNode
   onSelectSymbol: (symbol: string, name: string, market: string) => void
+  strategyTimeframes: SupportedTimeframeId[]
+  activeTimeframe: SupportedTimeframeId
+  onTimeframeChange: (timeframe: SupportedTimeframeId) => void
 }
 
 const SIGNAL_STATES: { value: ScreenerSignalState; label: string; color: string }[] = [
@@ -34,7 +39,10 @@ function CollapseIcon({ collapsed }: { collapsed: boolean }) {
   )
 }
 
-export function ScreenerWorkspace({ selectedSymbol, selectedName, chart, onSelectSymbol }: Props) {
+export function ScreenerWorkspace({
+  selectedSymbol, selectedName, chart, onSelectSymbol,
+  strategyTimeframes, activeTimeframe, onTimeframeChange,
+}: Props) {
   const templates = useAppStore((state) => state.templates)
   const activeTemplateId = useAppStore((state) => state.activeTemplateId)
   const addTemplate = useAppStore((state) => state.addTemplate)
@@ -45,6 +53,8 @@ export function ScreenerWorkspace({ selectedSymbol, selectedName, chart, onSelec
   const [targetCount, setTargetCount] = useState(10)
   const [selectedStates, setSelectedStates] = useState<ScreenerSignalState[]>(['ready', 'partial'])
   const [scanning, setScanning] = useState(false)
+  const [stopRequested, setStopRequested] = useState(false)
+  const [wasStopped, setWasStopped] = useState(false)
   const [progress, setProgress] = useState({ done: 0, total: 0 })
   const [results, setResults] = useState<ScreenerMatch[]>([])
   const [error, setError] = useState<string | null>(null)
@@ -54,6 +64,8 @@ export function ScreenerWorkspace({ selectedSymbol, selectedName, chart, onSelec
   })
   const [resizing, setResizing] = useState(false)
   const splitAreaRef = useRef<HTMLDivElement>(null)
+  const stopRequestedRef = useRef(false)
+  const scanControllerRef = useRef<AbortController | null>(null)
 
   useEffect(() => {
     if (templates.length > 0) return
@@ -68,6 +80,8 @@ export function ScreenerWorkspace({ selectedSymbol, selectedName, chart, onSelec
     fetchMarkets().then((response) => setMarkets(response.markets)).catch(() => {})
   }, [])
 
+  useEffect(() => () => scanControllerRef.current?.abort(), [])
+
   const activeTemplate = templates.find((template) => template.id === activeTemplateId)
   const conditionCount = useMemo(
     () => activeTemplate?.conditionGroups.reduce((total, group) => total + group.conditions.filter((condition) => condition.enabled).length, 0) ?? 0,
@@ -76,19 +90,25 @@ export function ScreenerWorkspace({ selectedSymbol, selectedName, chart, onSelec
 
   async function runScreen() {
     if (!activeTemplate || !market) return
+    scanControllerRef.current?.abort()
+    const controller = new AbortController()
+    scanControllerRef.current = controller
+    stopRequestedRef.current = false
+    setStopRequested(false)
+    setWasStopped(false)
     setScanning(true)
     setError(null)
     setResults([])
+    const maxCandidates = Math.min(2000, Math.max(100, targetCount * 50))
+    const batchSize = 4
+    let offset = 0
+    let universeTotal = maxCandidates
     try {
-      const maxCandidates = Math.min(2000, Math.max(100, targetCount * 50))
-      const batchSize = 4
-      let offset = 0
-      let universeTotal = maxCandidates
       let matches: ScreenerMatch[] = []
       let firstSelected = false
       setProgress({ done: 0, total: maxCandidates })
 
-      while (offset < Math.min(maxCandidates, universeTotal) && matches.length < targetCount) {
+      while (!stopRequestedRef.current && offset < Math.min(maxCandidates, universeTotal) && matches.length < targetCount) {
         const remaining = targetCount - matches.length
         const response = await runScreener(activeTemplate, {
           market,
@@ -98,7 +118,9 @@ export function ScreenerWorkspace({ selectedSymbol, selectedName, chart, onSelec
           states: selectedStates,
           minProgress: selectedStates.includes('evaluating') ? 0 : 1,
           concurrency: batchSize,
+          signal: controller.signal,
         })
+        if (stopRequestedRef.current) break
         universeTotal = response.universeTotal
         offset += response.scannedCount
         const unique = new Map(matches.map((item) => [item.item.symbol, item]))
@@ -115,12 +137,29 @@ export function ScreenerWorkspace({ selectedSymbol, selectedName, chart, onSelec
         }
         if (response.scannedCount === 0) break
       }
-      setProgress({ done: offset, total: offset })
+      if (!stopRequestedRef.current) setProgress({ done: offset, total: offset })
     } catch (scanError) {
-      setError(scanError instanceof Error ? scanError.message : '选股失败')
+      const stopped = stopRequestedRef.current || (scanError instanceof Error && scanError.name === 'AbortError')
+      if (stopped) {
+        setWasStopped(true)
+        setProgress({ done: offset, total: Math.min(maxCandidates, universeTotal) })
+      } else {
+        setError(scanError instanceof Error ? scanError.message : '选股失败')
+      }
     } finally {
+      if (scanControllerRef.current === controller) scanControllerRef.current = null
       setScanning(false)
+      setStopRequested(false)
+      stopRequestedRef.current = false
     }
+  }
+
+  function stopScreen() {
+    if (!scanning || stopRequestedRef.current) return
+    stopRequestedRef.current = true
+    setStopRequested(true)
+    setWasStopped(true)
+    scanControllerRef.current?.abort()
   }
 
   function startResize(event: React.PointerEvent<HTMLDivElement>) {
@@ -170,6 +209,7 @@ export function ScreenerWorkspace({ selectedSymbol, selectedName, chart, onSelec
           <select
             value={activeTemplate?.id ?? ''}
             onChange={(event) => setActiveTemplateId(event.target.value || null)}
+            disabled={scanning}
             className="w-full h-9 px-3 rounded-md border border-[var(--border-primary)] bg-[var(--bg-tertiary)] text-[12px] text-[var(--text-primary)] outline-none focus:border-[var(--accent)]"
           >
             <option value="">请选择策略</option>
@@ -179,13 +219,13 @@ export function ScreenerWorkspace({ selectedSymbol, selectedName, chart, onSelec
         </div>
         <div className="grid grid-cols-[1fr_88px] gap-2">
           <label className="block text-[10px] font-semibold uppercase tracking-[0.12em] text-[var(--text-muted)]">市场
-            <select value={market} onChange={(event) => setMarket(event.target.value)} className="mt-1.5 w-full h-9 px-3 rounded-md border border-[var(--border-primary)] bg-[var(--bg-tertiary)] text-[12px] text-[var(--text-primary)] outline-none focus:border-[var(--accent)]">
+            <select value={market} onChange={(event) => setMarket(event.target.value)} disabled={scanning} className="mt-1.5 w-full h-9 px-3 rounded-md border border-[var(--border-primary)] bg-[var(--bg-tertiary)] text-[12px] text-[var(--text-primary)] outline-none focus:border-[var(--accent)] disabled:opacity-60">
               <option value="">请选择市场</option>
               {markets.map((item) => <option key={item.id} value={item.id}>{item.name}</option>)}
             </select>
           </label>
           <label className="block text-[10px] font-semibold uppercase tracking-[0.12em] text-[var(--text-muted)]">选出数量
-            <input type="number" min="1" max="100" value={targetCount} onChange={(event) => setTargetCount(Math.min(100, Math.max(1, Number(event.target.value) || 1)))} className="mt-1.5 w-full h-9 px-2 rounded-md border border-[var(--border-primary)] bg-[var(--bg-tertiary)] text-[12px] font-mono text-[var(--text-primary)] outline-none focus:border-[var(--accent)]" />
+            <input type="number" min="1" max="100" value={targetCount} disabled={scanning} onChange={(event) => setTargetCount(Math.min(100, Math.max(1, Number(event.target.value) || 1)))} className="mt-1.5 w-full h-9 px-2 rounded-md border border-[var(--border-primary)] bg-[var(--bg-tertiary)] text-[12px] font-mono text-[var(--text-primary)] outline-none focus:border-[var(--accent)] disabled:opacity-60" />
           </label>
         </div>
         <div>
@@ -240,11 +280,11 @@ export function ScreenerWorkspace({ selectedSymbol, selectedName, chart, onSelec
       <div className="mt-auto p-4 border-t border-[var(--border-primary)]">
         <button
           type="button"
-          onClick={runScreen}
-          disabled={!activeTemplate || !activeTemplate.enabled || !market || scanning}
-          className="w-full h-9 rounded-md bg-[var(--accent)] text-white text-[12px] font-medium hover:bg-[var(--accent-hover)] disabled:opacity-40 disabled:cursor-not-allowed transition-colors"
+          onClick={scanning ? stopScreen : runScreen}
+          disabled={scanning ? stopRequested : !activeTemplate || !activeTemplate.enabled || !market}
+          className={`w-full h-9 rounded-md text-white text-[12px] font-medium disabled:opacity-40 disabled:cursor-not-allowed transition-colors ${scanning ? 'bg-[var(--accent-red)] hover:brightness-110' : 'bg-[var(--accent)] hover:bg-[var(--accent-hover)]'}`}
         >
-          {scanning ? `扫描中 ${progress.done}/${progress.total}` : activeTemplate && !activeTemplate.enabled ? '策略已停用' : !activeTemplate ? '请选择策略' : !market ? '请选择市场' : '开始选股'}
+          {scanning ? stopRequested ? '正在停止…' : `停止选股 · ${progress.done}/${progress.total}` : activeTemplate && !activeTemplate.enabled ? '策略已停用' : !activeTemplate ? '请选择策略' : !market ? '请选择市场' : '开始选股'}
         </button>
         {error && <div className="mt-2 text-[10px] text-[var(--accent-red)] break-all">{error}</div>}
       </div>
@@ -267,7 +307,7 @@ export function ScreenerWorkspace({ selectedSymbol, selectedName, chart, onSelec
       <section className="shrink-0 min-w-0 flex flex-col bg-[var(--bg-primary)]" style={{ width: resultWidth }}>
         <div className="h-12 px-4 flex items-center gap-3 border-b border-[var(--border-primary)] shrink-0">
           <span className="text-[12px] font-semibold">{results.length} 个标的匹配</span>
-          {progress.total > 0 && <span className="text-[10px] text-[var(--text-muted)]">{scanning ? `扫描中 ${progress.done}/${progress.total}，结果逐批返回` : `已扫描 ${progress.done} 个标的`}</span>}
+          {progress.total > 0 && <span className="text-[10px] text-[var(--text-muted)]">{scanning ? `扫描中 ${progress.done}/${progress.total}，结果逐批返回` : wasStopped ? `已停止，已扫描 ${progress.done}/${progress.total}` : `已扫描 ${progress.done} 个标的`}</span>}
         </div>
         <div className="flex-1 overflow-auto">
           <table className="w-full min-w-[260px] border-collapse">
@@ -318,12 +358,32 @@ export function ScreenerWorkspace({ selectedSymbol, selectedName, chart, onSelec
       </div>
 
       <aside className="flex-1 min-w-[440px] bg-[var(--bg-primary)] flex flex-col">
-        <div className="h-12 px-4 flex items-center justify-between border-b border-[var(--border-primary)] shrink-0">
-          <div>
-            <div className="text-[12px] font-semibold">{selectedName}</div>
-            <div className="text-[10px] font-mono text-[var(--text-muted)]">{selectedSymbol}</div>
+        <div className="min-h-[72px] px-4 py-2 flex flex-col gap-2 border-b border-[var(--border-primary)] shrink-0">
+          <div className="flex items-center justify-between gap-3">
+            <div>
+              <div className="text-[12px] font-semibold">{selectedName || '尚未选择标的'}</div>
+              <div className="text-[10px] font-mono text-[var(--text-muted)]">{selectedSymbol || '—'}</div>
+            </div>
+            <span className="text-[10px] text-[var(--text-muted)]">{activeTemplate?.name ?? '未选策略'}</span>
           </div>
-          <span className="text-[10px] text-[var(--text-muted)]">{activeTemplate?.name ?? '未选策略'}</span>
+          <div className="flex items-center gap-1.5 overflow-x-auto">
+            {strategyTimeframes.map((item) => {
+              const requests = collectStrategyIndicatorsForTimeframe(activeTemplate, item)
+              const usesChan = templateUsesChanIndicator(activeTemplate, item)
+              const detail = [usesChan ? '缠论' : '', ...requests.map((request) => request.type === 'ma' ? `MA${request.params.period ?? ''}` : request.type.toUpperCase())].filter(Boolean).join(' · ')
+              return (
+                <button
+                  type="button"
+                  key={item}
+                  onClick={() => onTimeframeChange(item)}
+                  title={detail || `${timeframeLabel(item)}无引用指标`}
+                  className={`h-7 px-2.5 rounded-md border text-[10px] whitespace-nowrap transition-colors ${activeTimeframe === item ? 'border-[var(--accent)] bg-[rgba(108,140,255,.12)] text-[var(--text-primary)]' : 'border-[var(--border-primary)] text-[var(--text-muted)] hover:text-[var(--text-secondary)]'}`}
+                >
+                  {timeframeLabel(item)}{detail ? ` · ${detail}` : ''}
+                </button>
+              )
+            })}
+          </div>
         </div>
         <div className="flex-1 relative min-h-0 flex">{chart}</div>
       </aside>

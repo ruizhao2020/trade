@@ -48,7 +48,6 @@ export function buildStrategyTradeMarkerResult(
     const exitTag = riskExitTag(trade.exitReason)
     if (entryTime !== null && !seen.has(`entry:${entryTime}`)) {
       const entryValue: Record<string, number> = { time: entryTime, _trade: 1, _tradeIndex: tradeIndex }
-      if (exitTag !== undefined) entryValue._tradeExitTag = exitTag
       values.push(entryValue)
       seen.add(`entry:${entryTime}`)
     }

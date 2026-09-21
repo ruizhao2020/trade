@@ -1,7 +1,9 @@
 import { describe, expect, it } from 'vitest'
 import {
   buildStrategyChanOptions,
+  collectStrategyTimeframes,
   collectStrategyIndicatorsForTimeframe,
+  filterStrategyChanAnalysis,
   templateUsesChanIndicator,
 } from './strategyIndicators.ts'
 import { ConditionOperator } from './types.ts'
@@ -48,7 +50,6 @@ function template(entry: ConditionGroup[], exit: ConditionGroup[] = []): Conditi
     tradeParams: {
       stopLossType: 'atr', stopLossValue: 1.5,
       takeProfitType: 'rr_ratio', takeProfitValue: 2,
-      positionType: 'fixed_pct', positionValue: 10,
       exitConditions: exit,
       exitLogic: 'OR',
     },
@@ -63,6 +64,7 @@ describe('strategy indicator dependencies by timeframe', () => {
     )])
     expect(collectStrategyIndicatorsForTimeframe(target, '1d')).toEqual([{ type: 'ma', params: { period: 5 } }])
     expect(collectStrategyIndicatorsForTimeframe(target, '30m')).toEqual([{ type: 'macd', params: { fast: 12, slow: 26, signal: 9 } }])
+    expect(collectStrategyTimeframes(target)).toEqual(['1d', '30m'])
   })
 
   it('deduplicates equal parameters and retains different parameters', () => {
@@ -105,6 +107,33 @@ describe('strategy indicator dependencies by timeframe', () => {
     const target = template([group(condition({ source: 'price', field: 'close' }, '1d'))], [exit])
     expect(templateUsesChanIndicator(target, '1d')).toBe(false)
     expect(templateUsesChanIndicator(target, '30m')).toBe(true)
+  })
+
+  it('collects a wrapped timeframe even when secondary metadata is incomplete', () => {
+    const target = template([group({
+      ...condition({ source: 'price', field: 'close' }, '1d'),
+      right: {
+        source: 'timeframe', timeframeId: '5m',
+        inner: { source: 'indicator', indicatorType: 'rsi', params: { period: 14 }, field: 'value' },
+      },
+    })])
+    target.secondaryTimeframeIds = []
+    expect(collectStrategyTimeframes(target)).toEqual(['1d', '5m'])
+  })
+
+  it('keeps only the Chan buy/sell point type referenced by the strategy', () => {
+    const target = template([group(condition({ source: 'chan', element: 'buySellPoint', property: 'buy1' }, '30m'))])
+    const analysis = {
+      timeframeId: '30m', chanKLines: [], fenxings: [], bis: [], duans: [], zhongshus: [], duanZhongshus: [],
+      buySellPoints: [
+        { type: 'buy1', price: 10, time: 1, biIndex: 1, confirmed: true, strength: 1 },
+        { type: 'sell1', price: 11, time: 2, biIndex: 2, confirmed: true, strength: 1 },
+      ],
+      divergences: [], updatedAt: 1, isComplete: true,
+    } as Parameters<typeof filterStrategyChanAnalysis>[0]
+
+    expect(filterStrategyChanAnalysis(analysis, target, '30m')?.buySellPoints.map((item) => item.type)).toEqual(['buy1'])
+    expect(filterStrategyChanAnalysis(analysis, target, '1d')).toBeNull()
   })
 
   it('ignores disabled conditions', () => {

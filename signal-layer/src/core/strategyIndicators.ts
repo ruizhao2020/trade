@@ -1,4 +1,4 @@
-import type { ChanRenderOptions, ConditionTemplate, ConditionValue } from './types.ts'
+import type { ChanAnalysis, ChanRenderOptions, ConditionTemplate, ConditionValue } from './types.ts'
 
 export interface StrategyIndicatorRequest {
   type: string
@@ -47,6 +47,45 @@ export function collectStrategyIndicatorsForTimeframe(
   return [...found.values()]
 }
 
+export function collectStrategyTimeframes(template: ConditionTemplate | undefined): string[] {
+  if (!template) return []
+  const found = new Set<string>([template.primaryTimeframeId, ...template.secondaryTimeframeIds])
+  visitTemplateValues(template, (_value, timeframe) => found.add(timeframe))
+  return [template.primaryTimeframeId, ...[...found].filter((item) => item !== template.primaryTimeframeId)]
+}
+
+interface ChanRequirements {
+  used: boolean
+  allBuySellPoints: boolean
+  buySellPointTypes: Set<string>
+  allDivergences: boolean
+  divergenceTypes: Set<string>
+}
+
+function collectChanRequirements(template: ConditionTemplate | undefined, timeframe: string): ChanRequirements {
+  const requirements: ChanRequirements = {
+    used: false,
+    allBuySellPoints: false,
+    buySellPointTypes: new Set(),
+    allDivergences: false,
+    divergenceTypes: new Set(),
+  }
+  if (!template) return requirements
+  visitTemplateValues(template, (value, valueTimeframe) => {
+    if (valueTimeframe !== timeframe || value.source !== 'chan') return
+    requirements.used = true
+    if (value.element === 'buySellPoint') {
+      if (value.property) requirements.buySellPointTypes.add(value.property)
+      else requirements.allBuySellPoints = true
+    }
+    if (value.element === 'divergence') {
+      if (value.property) requirements.divergenceTypes.add(value.property)
+      else requirements.allDivergences = true
+    }
+  })
+  return requirements
+}
+
 export function templateUsesChanIndicator(
   template: ConditionTemplate | undefined,
   timeframe: string,
@@ -57,6 +96,25 @@ export function templateUsesChanIndicator(
     if (valueTimeframe === timeframe && value.source === 'chan') found = true
   })
   return found
+}
+
+export function filterStrategyChanAnalysis(
+  analysis: ChanAnalysis | null,
+  template: ConditionTemplate | undefined,
+  timeframe: string,
+): ChanAnalysis | null {
+  if (!analysis) return null
+  const requirements = collectChanRequirements(template, timeframe)
+  if (!requirements.used) return null
+  return {
+    ...analysis,
+    buySellPoints: requirements.allBuySellPoints
+      ? analysis.buySellPoints
+      : analysis.buySellPoints.filter((point) => requirements.buySellPointTypes.has(point.type)),
+    divergences: requirements.allDivergences
+      ? analysis.divergences
+      : analysis.divergences.filter((item) => requirements.divergenceTypes.has(item.type)),
+  }
 }
 
 export function buildStrategyChanOptions(

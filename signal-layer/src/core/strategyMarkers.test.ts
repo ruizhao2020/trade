@@ -18,6 +18,8 @@ const result: BacktestResult = {
   avgReturn: 5,
   maxDrawdown: 0,
   profitFactor: 999,
+  payoffRatio: 0,
+  suggestedPosition: 100,
   trades: [{
     entryTime: Date.parse('2026-09-01T00:00:00+08:00'),
     exitTime: Date.parse('2026-09-02T00:00:00+08:00'),
@@ -102,7 +104,7 @@ describe('strategy trade chart markers', () => {
   it.each([
     ['stop_loss', 1, '止损'],
     ['take_profit', 2, '止盈'],
-  ])('tags both sides of a %s trade', (exitReason, exitTag, tagLabel) => {
+  ])('tags only the exit side of a %s trade', (exitReason, exitTag, tagLabel) => {
     const riskResult: BacktestResult = {
       ...result,
       trades: [{ ...result.trades[0]!, exitReason }],
@@ -114,7 +116,7 @@ describe('strategy trade chart markers', () => {
     const markerResult = buildStrategyTradeMarkerResult(riskResult, '1d', klines)[0]!
 
     expect(markerResult.values).toEqual([
-      { time: klines[0]!.openTime, _trade: 1, _tradeIndex: 0, _tradeExitTag: exitTag },
+      { time: klines[0]!.openTime, _trade: 1, _tradeIndex: 0 },
       { time: klines[1]!.openTime, _trade: -1, _tradeIndex: 0, _tradeExitTag: exitTag },
     ])
     expect(markerResult.render.markers![0]).toMatchObject({

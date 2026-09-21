@@ -17,10 +17,15 @@
 import type { IChartApi, ISeriesApi, Time, ISeriesMarkersPluginApi, SeriesMarker } from 'lightweight-charts'
 import { LineSeries, HistogramSeries, createSeriesMarkers } from 'lightweight-charts'
 import type { IndicatorProfileData, IndicatorResult, RenderSpec } from '../core/types.ts'
-import { volumeClassStyle } from '../core/volumeIndicator.ts'
+import {
+  GENERAL_PILLAR_COLOR,
+  GOLDEN_PILLAR_COLOR,
+  volumeBarColor,
+} from '../core/volumeIndicator.ts'
 import { findProfileSnapshot } from '../core/profileData.ts'
 import { VolumeBoxPrimitive, type VolumeBoxPoint } from './VolumeBoxPrimitive.ts'
 import { PriceProfilePrimitive, type PriceProfilePoint } from './PriceProfilePrimitive.ts'
+import { DilunZonePrimitive, type DilunZoneRegion } from './DilunZonePrimitive.ts'
 
 interface AttachedPrimitive {
   detach: () => void
@@ -55,7 +60,10 @@ export class IndicatorRenderer {
     // 简单策略:全量重建。后续可优化为增量对比
     this.clear()
 
+    const hasVolumeStructure = results.some((result) => result.type === 'volume_structure')
     for (const result of results) {
+      // 量柱结构自身包含红绿成交量柱；同时存在普通成交量时避免生成两个重复子图。
+      if (hasVolumeStructure && result.type === 'volume') continue
       if (!result.render || result.values.length === 0) continue
       this._renderOne(result)
     }
@@ -89,17 +97,32 @@ export class IndicatorRenderer {
     const markerPlugins: ISeriesMarkersPluginApi<Time>[] = []
     const primitives: AttachedPrimitive[] = []
 
+    if (result.type === 'dilun_structure') {
+      const zones = new Map<number, DilunZoneRegion>()
+      for (const value of result.values) {
+        if (!Number.isFinite(value.zone_id) || !Number.isFinite(value.zone_low) || !Number.isFinite(value.zone_high)) continue
+        const id = Math.trunc(value.zone_id)
+        const current = zones.get(id)
+        zones.set(id, {
+          id,
+          startTime: current?.startTime ?? value.zone_confirm_time ?? value.time,
+          endTime: value.time,
+          low: value.zone_low,
+          high: value.zone_high,
+          foldCount: Math.trunc(value.fold_count ?? current?.foldCount ?? 3),
+          mature: value.zone_mature > 0 || current?.mature === true,
+        })
+      }
+      const regions = [...zones.values()]
+      if (regions.length > 0) {
+        const primitive = new DilunZonePrimitive(this.chart, this.candleSeries, regions)
+        this.candleSeries.attachPrimitive(primitive)
+        primitives.push({ detach: () => this.candleSeries.detachPrimitive(primitive) })
+      }
+    }
+
     for (const plot of render.plots) {
       if (plot.type === 'marker') continue
-      const data = result.values
-        .map(v => ({
-          time: (v.time / 1000) as Time,
-          value: v[plot.field],
-        }))
-        .filter(d => d.value !== undefined && d.value !== null && !Number.isNaN(d.value))
-
-      if (data.length === 0) continue
-
       if (plot.type === 'profile') {
         const profileData = result.profileData
         const snapshot = findProfileSnapshot(profileData, null)
@@ -115,7 +138,18 @@ export class IndicatorRenderer {
           primitives.push({ detach: () => this.candleSeries.detachPrimitive(primitive) })
           this.priceProfile = { primitive, data: profileData }
         }
-      } else if (plot.type === 'line') {
+        continue
+      }
+      const data = result.values
+        .map(v => ({
+          time: (v.time / 1000) as Time,
+          value: v[plot.field],
+        }))
+        .filter(d => d.value !== undefined && d.value !== null && !Number.isNaN(d.value))
+
+      if (data.length === 0) continue
+
+      if (plot.type === 'line') {
         const s = this.chart.addSeries(LineSeries, {
           color: plot.color,
           lineWidth: 1,
@@ -130,24 +164,31 @@ export class IndicatorRenderer {
           priceLineVisible: false,
           lastValueVisible: false,
         }, paneIndex)
-        if (result.type === 'volume' && plot.field === 'volume') {
+        if ((result.type === 'volume' || result.type === 'volume_structure') && plot.field === 'volume') {
           const volumeData = result.values
             .filter(value => Number.isFinite(value.volume))
             .map(value => ({
               time: (value.time / 1000) as Time,
               value: value.volume,
-              color: volumeClassStyle(value.volume_class, value.is_up > 0).color,
+              color: volumeBarColor(value.is_up > 0),
             }))
           s.setData(volumeData)
-          const boxPoints: VolumeBoxPoint[] = result.values
-            .filter(value => value.volume_class > 0 && Number.isFinite(value.volume))
-            .map(value => ({
-              time: value.time,
-              value: value.volume,
-              color: volumeClassStyle(value.volume_class, value.is_up > 0).color,
-            }))
-          if (boxPoints.length > 0) {
-            const primitive = new VolumeBoxPrimitive(this.chart, s, boxPoints)
+          if (result.type === 'volume_structure') {
+            const boxPoints: VolumeBoxPoint[] = result.values
+              .filter(value => value.pillar_kind >= 2 && Number.isFinite(value.volume))
+              .map(value => {
+                const golden = value.pillar_kind >= 3
+                return {
+                  time: value.time,
+                  value: value.volume,
+                  color: golden ? GOLDEN_PILLAR_COLOR : GENERAL_PILLAR_COLOR,
+                  label: golden ? '黄金柱' : '将军柱',
+                }
+              })
+            const primitive = new VolumeBoxPrimitive(this.chart, s, boxPoints, [
+              { label: '将军柱', color: GENERAL_PILLAR_COLOR },
+              { label: '黄金柱', color: GOLDEN_PILLAR_COLOR },
+            ])
             s.attachPrimitive(primitive)
             primitives.push({ detach: () => s.detachPrimitive(primitive) })
           }

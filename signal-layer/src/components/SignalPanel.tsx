@@ -271,7 +271,7 @@ export function SignalPanel({ symbol = '', embedded = false, showLayers = true, 
         <div className="flex items-center gap-2 mb-2"><span className="text-[11px] font-semibold">入场条件</span><span className="px-1.5 py-0.5 rounded bg-[var(--bg-tertiary)] text-[10px] text-[var(--text-muted)]">{activeTemplate.logic === 'AND' ? '全部满足' : '满足任一组'}</span></div>
         {activeTemplate.conditionGroups.map((group, groupIndex) => (
           <div key={`${activeTemplate.id}:entry:${group.id}:${groupIndex}`} className="mb-3 last:mb-0">
-            <div className="flex items-center gap-2 mb-1.5"><span className="text-[10px] tracking-wider text-[var(--text-muted)]">{group.name?.trim() || `条件组 ${groupIndex + 1}`}</span><span className="h-px flex-1 bg-[var(--border-primary)]" /></div>
+            <div className="flex items-center gap-2 mb-1.5"><span className="text-[10px] tracking-wider text-[var(--text-muted)]">{group.name?.trim() || `条件组 ${groupIndex + 1}`}</span><span className="text-[9px] text-[var(--text-muted)]">组内{(group.logic ?? 'AND') === 'AND' ? '全部满足' : '任一满足'}</span><span className="h-px flex-1 bg-[var(--border-primary)]" /></div>
             {group.conditions.filter((condition) => condition.enabled).map((condition, conditionIndex) => {
               const evaluation = activeSignal?.groups[groupIndex]?.evaluations.find((item) => item.conditionId === condition.id)
               return (
@@ -285,12 +285,11 @@ export function SignalPanel({ symbol = '', embedded = false, showLayers = true, 
           </div>
         ))}
 
-        <div className="flex items-center gap-2 mt-4 mb-2"><span className="text-[11px] font-semibold">出场与仓位</span><span className="ml-auto text-[10px] text-[var(--text-muted)]">{activeTemplate.tradeParams ? (activeTemplate.tradeParams.exitLogic === 'AND' ? '全部满足' : '满足任一组') : '止盈/止损'}</span></div>
+        <div className="flex items-center gap-2 mt-4 mb-2"><span className="text-[11px] font-semibold">退出设置</span><span className="ml-auto text-[10px] text-[var(--text-muted)]">{activeTemplate.tradeParams ? (activeTemplate.tradeParams.exitLogic === 'AND' ? '全部满足' : '满足任一组') : '止盈/止损'}</span></div>
         {activeTemplate.tradeParams ? (
-          <div className="grid grid-cols-3 gap-px overflow-hidden rounded-md bg-[var(--border-primary)]">
-            <div className="bg-[var(--bg-tertiary)] p-2"><span className="block text-[10px] text-[var(--text-muted)]">止损</span><span className="block mt-1 text-[11px] font-mono">{activeTemplate.tradeParams.stopLossValue}{STOP_LOSS_UNIT[activeTemplate.tradeParams.stopLossType] ?? ''}</span></div>
-            <div className="bg-[var(--bg-tertiary)] p-2"><span className="block text-[10px] text-[var(--text-muted)]">止盈</span><span className="block mt-1 text-[11px] font-mono">{activeTemplate.tradeParams.takeProfitValue}{TAKE_PROFIT_UNIT[activeTemplate.tradeParams.takeProfitType] ?? ''}</span></div>
-            <div className="bg-[var(--bg-tertiary)] p-2"><span className="block text-[10px] text-[var(--text-muted)]">仓位</span><span className="block mt-1 text-[11px] font-mono">{activeTemplate.tradeParams.positionValue}%</span></div>
+          <div className="grid grid-cols-2 gap-px overflow-hidden rounded-md bg-[var(--border-primary)]">
+            <div className="bg-[var(--bg-tertiary)] p-2"><span className="block text-[10px] text-[var(--text-muted)]">止损</span><span className="block mt-1 text-[11px] font-mono">{activeTemplate.tradeParams.stopLossType === 'none' ? '关闭' : `${activeTemplate.tradeParams.stopLossValue}${STOP_LOSS_UNIT[activeTemplate.tradeParams.stopLossType] ?? ''}`}</span></div>
+            <div className="bg-[var(--bg-tertiary)] p-2"><span className="block text-[10px] text-[var(--text-muted)]">止盈</span><span className="block mt-1 text-[11px] font-mono">{activeTemplate.tradeParams.takeProfitType === 'none' ? '关闭' : `${activeTemplate.tradeParams.takeProfitValue}${TAKE_PROFIT_UNIT[activeTemplate.tradeParams.takeProfitType] ?? ''}`}</span></div>
           </div>
         ) : <div className="text-[11px] text-[var(--text-muted)]">未配置风控参数</div>}
       </div>
@@ -314,7 +313,10 @@ export function SignalPanel({ symbol = '', embedded = false, showLayers = true, 
             <div className="rounded-md bg-[var(--bg-tertiary)] p-2.5"><span className="block text-[10px] text-[var(--text-muted)]">最大回撤</span><span className={`block mt-1 text-[15px] font-mono ${financialValueColorClass(-backtestResult.maxDrawdown)}`}>-{backtestResult.maxDrawdown}%</span></div>
             <div className="rounded-md bg-[var(--bg-tertiary)] p-2.5"><span className="block text-[10px] text-[var(--text-muted)]">胜率</span><span className="block mt-1 text-[15px] font-mono">{backtestResult.winRate}%</span></div>
             <div className="rounded-md bg-[var(--bg-tertiary)] p-2.5"><span className="block text-[10px] text-[var(--text-muted)]">盈亏因子</span><span className="block mt-1 text-[15px] font-mono">{backtestResult.profitFactor}</span></div>
+            <div className="rounded-md bg-[var(--bg-tertiary)] p-2.5"><span className="block text-[10px] text-[var(--text-muted)]">平均盈亏比</span><span className="block mt-1 text-[15px] font-mono">{backtestResult.payoffRatio > 0 ? `1:${backtestResult.payoffRatio}` : '—'}</span></div>
+            <div className="rounded-md bg-[rgba(108,140,255,.10)] border border-[rgba(108,140,255,.22)] p-2.5"><span className="block text-[10px] text-[var(--text-muted)]">凯利建议仓位</span><span className="block mt-1 text-[15px] font-mono text-[var(--accent)]">{backtestResult.suggestedPosition}%</span></div>
           </div>
+          <div className="mt-2 text-[9px] leading-4 text-[var(--text-muted)]">建议仓位 = 胜率 −（1 − 胜率）÷ 平均盈亏比；仅基于本次历史样本。</div>
           {backtestResult.trades.length > 0 && <div className="mt-4"><div className="text-[11px] font-semibold mb-2">交易明细</div>{backtestResult.trades.map((trade, index) => <div key={`${trade.entryTime}-${index}`} className="grid grid-cols-[24px_1fr_auto] gap-2 py-2 border-b border-[var(--border-primary)] text-[10px]"><span className="text-[var(--text-muted)]">#{index + 1}</span><span className="font-mono text-[var(--text-secondary)]">{trade.entryPrice} → {trade.exitPrice}</span><span className={`font-mono ${financialValueColorClass(trade.pnlPct)}`}>{trade.pnlPct >= 0 ? '+' : ''}{trade.pnlPct}%</span></div>)}</div>}
           <button type="button" onClick={handleBacktest} disabled={!symbol} className="w-full h-9 mt-4 rounded-md bg-[var(--accent)] text-white text-[11px] font-medium disabled:opacity-40">重新回测</button>
         </>

@@ -243,6 +243,7 @@ export interface IndicatorInfo {
   description: string
   default_params: Record<string, number>
   render: RenderSpec
+  outputs?: { field: string; label: string }[]
 }
 
 /* ========== 条件引擎 ========== */
@@ -259,7 +260,8 @@ export const ConditionOperator = {
   Falling: 'falling',
   TurnDown: 'turnDown',
   TurnUp: 'turnUp',
-  Between: 'between',
+  Support: 'support',
+  Resistance: 'resistance',
 } as const
 export type ConditionOperator = (typeof ConditionOperator)[keyof typeof ConditionOperator]
 
@@ -282,12 +284,10 @@ export interface Condition {
 }
 
 export interface TradeParams {
-  stopLossType: 'atr' | 'fixed_pct' | 'swing_low'
+  stopLossType: 'none' | 'atr' | 'fixed_pct' | 'swing_low'
   stopLossValue: number
-  takeProfitType: 'atr' | 'fixed_pct' | 'rr_ratio'
+  takeProfitType: 'none' | 'atr' | 'fixed_pct' | 'rr_ratio'
   takeProfitValue: number
-  positionType: 'fixed_pct' | 'kelly'
-  positionValue: number
   // 条件式出场：复用条件组结构，引用指标/价格/缠论做判断
   exitConditions: ConditionGroup[]
   exitLogic: 'AND' | 'OR'
@@ -309,6 +309,7 @@ export interface ConditionTemplate {
 export interface ConditionGroup {
   id: string
   name?: string
+  logic?: 'AND' | 'OR'
   conditions: Condition[]
 }
 

@@ -1,6 +1,6 @@
 import type { ChanAnalysis, ChanRenderOptions, IndicatorDisplay, IndicatorResult, RawKline } from '../core/types.ts'
 import { financialValueColorClass } from '../core/financialColors.ts'
-import { volumeClassStyle } from '../core/volumeIndicator.ts'
+import { volumeClassStyle, volumeShapeStyle } from '../core/volumeIndicator.ts'
 import { findProfileSnapshot } from '../core/profileData.ts'
 
 interface Props {
@@ -47,7 +47,7 @@ export function IndicatorInfoPanel({
   const detailResults = visibleIndicatorDetails ? results.filter((result) => visibleIndicatorDetails.includes(result.type)) : results
   const chipResult = detailResults.find(result => result.type === 'chip_distribution')
   const chipSnapshot = findProfileSnapshot(chipResult?.profileData, cursorTime)
-  const chipMetrics = chipSnapshot?.metrics ?? chipResult?.values[0]
+  const chipMetrics = chipSnapshot?.metrics ?? chipResult?.values.at(-1)
   const chipTimeLabel = chipSnapshot
     ? new Date(chipSnapshot.time).toLocaleString('zh-CN', {
         month: '2-digit', day: '2-digit', hour: '2-digit', minute: '2-digit', hour12: false,
@@ -57,6 +57,14 @@ export function IndicatorInfoPanel({
     const last = result.values.at(-1)
     if (!last) return []
     if (result.type === 'chip_distribution') return []
+    if (result.type === 'dilun_structure') return [
+      { key: 'dilun-zone', label: '合理价格', text: Number.isFinite(last.zone_low) && Number.isFinite(last.zone_high) ? `${formatNumber(last.zone_low)}–${formatNumber(last.zone_high)}` : '尚未形成' },
+      { key: 'dilun-position', label: '当前位置', text: last.zone_position > 0 ? '区间上方' : last.zone_position < 0 ? '区间下方' : '区间内' },
+      { key: 'dilun-folds', label: '折叠次数', value: last.fold_count },
+      { key: 'dilun-age', label: '态势持续', value: last.zone_age },
+      { key: 'dilun-trend', label: '趋势方向', text: last.trend_direction > 0 ? '上涨' : last.trend_direction < 0 ? '下跌' : '未确认' },
+      { key: 'dilun-distance', label: '距合理区间', value: last.distance_to_zone_pct },
+    ]
     const plotValues = result.render.plots.slice(0, 2).map((plot) => ({
       key: `${result.type}-${plot.field}`,
       label: plot.label || `${result.type.toUpperCase()} ${plot.field}`,
@@ -66,7 +74,11 @@ export function IndicatorInfoPanel({
     return [
       ...plotValues,
       { key: 'volume-ratio', label: '相邻量比', value: last.ratio },
+      { key: 'volume-relative', label: '相对量能', value: last.relative_volume },
       { key: 'volume-class', label: '量能分类', text: volumeClassStyle(last.volume_class).label },
+      { key: 'volume-shape', label: '量柱形态', text: volumeShapeStyle(last.volume_shape).label },
+      { key: 'volume-increase-streak', label: '连续放量', value: last.increase_streak },
+      { key: 'volume-shrink-streak', label: '连续缩量', value: last.shrink_streak },
     ]
   }).slice(0, 6)
 
@@ -115,8 +127,14 @@ export function IndicatorInfoPanel({
             </div>
             <div className="space-y-2 text-[11px]">
               <div className="flex justify-between"><span className="text-[var(--text-muted)]">主筹码峰</span><span className="font-mono text-[#e7c66b]">{formatNumber(chipMetrics.peak_price)}</span></div>
+              <div className="flex justify-between"><span className="text-[var(--text-muted)]">主峰占比</span><span className="font-mono">{formatNumber(chipMetrics.dominant_peak_ratio)}%</span></div>
               <div className="flex justify-between"><span className="text-[var(--text-muted)]">平均成本</span><span className="font-mono">{formatNumber(chipMetrics.average_cost)}</span></div>
               <div className="flex justify-between"><span className="text-[var(--text-muted)]">获利盘</span><span className="font-mono text-[var(--accent-red)]">{formatNumber(chipMetrics.profit_ratio)}%</span></div>
+              <div className="flex justify-between"><span className="text-[var(--text-muted)]">峰结构</span><span className="font-mono">{chipMetrics.single_peak > 0 ? '单峰' : chipMetrics.double_peak > 0 ? '双峰' : `${formatNumber(chipMetrics.peak_count, 0)} 峰`}</span></div>
+              <div className="flex justify-between"><span className="text-[var(--text-muted)]">下方支撑筹码</span><span className="font-mono">{formatNumber(chipMetrics.support_chip_ratio)}%</span></div>
+              <div className="flex justify-between"><span className="text-[var(--text-muted)]">上方压力筹码</span><span className="font-mono">{formatNumber(chipMetrics.pressure_chip_ratio)}%</span></div>
+              <div className="flex justify-between"><span className="text-[var(--text-muted)]">主峰迁移</span><span className="font-mono">{chipMetrics.peak_direction > 0 ? '上移' : chipMetrics.peak_direction < 0 ? '下移' : '横向'}</span></div>
+              <div className="flex justify-between"><span className="text-[var(--text-muted)]">筹码状态</span><span className="font-mono">{chipMetrics.chip_converging > 0 ? '集中' : chipMetrics.chip_spreading > 0 ? '发散' : '稳定'}</span></div>
               <div className="flex justify-between"><span className="text-[var(--text-muted)]">70%成本区间</span><span className="font-mono">{formatNumber(chipMetrics.range70_low)}–{formatNumber(chipMetrics.range70_high)}</span></div>
               <div className="flex justify-between"><span className="text-[var(--text-muted)]">70%集中度</span><span className="font-mono">{formatNumber(chipMetrics.concentration70)}%</span></div>
               <div className="flex justify-between"><span className="text-[var(--text-muted)]">90%成本区间</span><span className="font-mono">{formatNumber(chipMetrics.range90_low)}–{formatNumber(chipMetrics.range90_high)}</span></div>

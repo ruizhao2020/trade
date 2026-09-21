@@ -47,7 +47,7 @@ export interface ScreenerResponse {
 
 export async function runScreener(
   template: ConditionTemplate,
-  options: { market?: string; limit?: number; offset?: number; targetCount?: number; states?: ScreenerSignalState[]; minProgress?: number; concurrency?: number } = {},
+  options: { market?: string; limit?: number; offset?: number; targetCount?: number; states?: ScreenerSignalState[]; minProgress?: number; concurrency?: number; signal?: AbortSignal } = {},
 ): Promise<ScreenerResponse> {
   const raw = await api.post<ApiScreenerResponse>('/screener/run', {
     template: templateToSnake(template),
@@ -59,7 +59,7 @@ export async function runScreener(
     min_progress: options.minProgress ?? 1,
     concurrency: options.concurrency ?? 4,
     kline_limit: 200,
-  })
+  }, { signal: options.signal })
   return {
     market: raw.market,
     universeTotal: raw.universe_total,

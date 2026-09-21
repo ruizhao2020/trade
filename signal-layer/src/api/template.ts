@@ -30,6 +30,7 @@ interface ApiCondition {
 interface ApiConditionGroup {
   id: string
   name?: string
+  logic?: 'AND' | 'OR'
   conditions: ApiCondition[]
 }
 
@@ -44,12 +45,10 @@ interface ApiTemplate {
   updated_at?: number | string
   enabled: boolean
   trade_params?: {
-    stop_loss_type: 'atr' | 'fixed_pct' | 'swing_low'
+    stop_loss_type: 'none' | 'atr' | 'fixed_pct' | 'swing_low'
     stop_loss_value: number
-    take_profit_type: 'atr' | 'fixed_pct' | 'rr_ratio'
+    take_profit_type: 'none' | 'atr' | 'fixed_pct' | 'rr_ratio'
     take_profit_value: number
-    position_type: 'fixed_pct' | 'kelly'
-    position_value: number
     exit_conditions: ApiConditionGroup[]
     exit_logic: 'AND' | 'OR'
   }
@@ -124,16 +123,17 @@ function conditionToSnake(c: Condition): ApiCondition {
 }
 
 function conditionFromSnake(c: ApiCondition): Condition {
+  const legacyBetween = c.operator === 'between'
   const result: Condition = {
     id: c.id,
     name: c.name,
     left: conditionValueFromSnake(c.left),
-    operator: c.operator as Condition['operator'],
+    operator: (legacyBetween ? 'gte' : c.operator) as Condition['operator'],
     right: conditionValueFromSnake(c.right),
     enabled: c.enabled,
   }
   const right2 = c.right2 ?? c.right_2
-  if (right2) result.right2 = conditionValueFromSnake(right2)
+  if (right2 && !legacyBetween) result.right2 = conditionValueFromSnake(right2)
   if (c.timeframe_id) result.timeframeId = c.timeframe_id
   return result
 }
@@ -146,6 +146,7 @@ export function templateToSnake(t: ConditionTemplate): ApiTemplate {
     condition_groups: t.conditionGroups.map((g) => ({
       id: g.id,
       name: g.name,
+      logic: g.logic ?? 'AND',
       conditions: g.conditions.map(conditionToSnake),
     })),
     primary_tf: t.primaryTimeframeId,
@@ -160,11 +161,10 @@ export function templateToSnake(t: ConditionTemplate): ApiTemplate {
       stop_loss_value: t.tradeParams.stopLossValue,
       take_profit_type: t.tradeParams.takeProfitType,
       take_profit_value: t.tradeParams.takeProfitValue,
-      position_type: t.tradeParams.positionType,
-      position_value: t.tradeParams.positionValue,
       exit_conditions: t.tradeParams.exitConditions.map((group) => ({
         id: group.id,
         name: group.name,
+        logic: group.logic ?? 'AND',
         conditions: group.conditions.map(conditionToSnake),
       })),
       exit_logic: t.tradeParams.exitLogic,
@@ -190,6 +190,7 @@ function templateFromSnake(t: ApiTemplate): ConditionTemplate {
     conditionGroups: t.condition_groups.map((g) => ({
       id: g.id,
       name: g.name,
+      logic: g.logic ?? 'AND',
       conditions: g.conditions.map(conditionFromSnake),
     })),
     primaryTimeframeId: t.primary_tf,
@@ -204,11 +205,10 @@ function templateFromSnake(t: ApiTemplate): ConditionTemplate {
       stopLossValue: t.trade_params.stop_loss_value,
       takeProfitType: t.trade_params.take_profit_type,
       takeProfitValue: t.trade_params.take_profit_value,
-      positionType: t.trade_params.position_type,
-      positionValue: t.trade_params.position_value,
       exitConditions: (t.trade_params.exit_conditions ?? []).map((group) => ({
         id: group.id,
         name: group.name,
+        logic: group.logic ?? 'AND',
         conditions: group.conditions.map(conditionFromSnake),
       })),
       exitLogic: t.trade_params.exit_logic,

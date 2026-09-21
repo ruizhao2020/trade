@@ -7,6 +7,7 @@ function group(id: string, name: string): ConditionGroup {
   return {
     id,
     name,
+    logic: 'OR',
     conditions: [{
       id: `${id}-condition`,
       name: '',
@@ -33,13 +34,14 @@ describe('strategy persistence serialization', () => {
       tradeParams: {
         stopLossType: 'atr', stopLossValue: 1.5,
         takeProfitType: 'rr_ratio', takeProfitValue: 2,
-        positionType: 'fixed_pct', positionValue: 10,
         exitConditions: [group('exit', '动能衰减离场')],
         exitLogic: 'OR',
       },
     }
     const serialized = templateToSnake(strategy)
     expect(serialized.condition_groups[0]?.name).toBe('趋势确认')
+    expect(serialized.condition_groups[0]?.logic).toBe('OR')
     expect(serialized.trade_params?.exit_conditions[0]?.name).toBe('动能衰减离场')
+    expect(serialized.trade_params?.exit_conditions[0]?.logic).toBe('OR')
   })
 })

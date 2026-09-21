@@ -9,8 +9,6 @@ def test_template_trade_params_round_trip_shape():
         "stop_loss_value": 1.5,
         "take_profit_type": "rr_ratio",
         "take_profit_value": 2.0,
-        "position_type": "fixed_pct",
-        "position_value": 10,
         "exit_conditions": [],
         "exit_logic": "AND",
     }
@@ -35,7 +33,7 @@ def test_template_trade_params_round_trip_shape():
     response = _to_response(model)
     assert response.trade_params is not None
     assert response.trade_params.stop_loss_value == 1.5
-    assert response.trade_params.position_value == 10
+    assert not hasattr(response.trade_params, "position_value")
 
 
 def test_condition_group_name_is_preserved_in_template_json():

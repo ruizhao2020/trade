@@ -3,6 +3,20 @@ import type { IndicatorResult, IndicatorInfo } from '../core/types.ts'
 import { applyIndicatorPeriodColor } from '../core/indicatorColors.ts'
 
 /** 后端返回的原始结构(snake_case) */
+interface ApiMarkerSpec {
+  field: string
+  price_field?: string | null
+  label_index_field?: string | null
+  label_tag_field?: string | null
+  label_tags?: Record<number, string>
+  size?: number
+  spacing?: number
+  buy_color: string
+  sell_color: string
+  buy_label: string
+  sell_label: string
+}
+
 interface ApiIndicatorResult {
   type: string
   params: Record<string, number>
@@ -10,6 +24,7 @@ interface ApiIndicatorResult {
   render: {
     window: string
     plots: { field: string; type: string; color: string; label: string }[]
+    markers?: ApiMarkerSpec[]
   }
   profile_data?: {
     prices: number[]
@@ -22,6 +37,7 @@ interface ApiCalculateResponse {
   symbol: string
   timeframe: string
   results: ApiIndicatorResult[]
+  errors?: IndicatorCalculationError[]
 }
 
 interface ApiInfo {
@@ -29,9 +45,11 @@ interface ApiInfo {
   name: string
   description: string
   default_params: Record<string, number>
+  outputs?: { field: string; label: string }[]
   render: {
     window: string
     plots: { field: string; type: string; color: string; label: string }[]
+    markers?: ApiMarkerSpec[]
   }
 }
 
@@ -53,6 +71,19 @@ function toFrontend(r: ApiIndicatorResult): IndicatorResult {
         color: p.color,
         label: p.label,
       })),
+      markers: (r.render.markers ?? []).map(marker => ({
+        field: marker.field,
+        priceField: marker.price_field ?? undefined,
+        labelIndexField: marker.label_index_field ?? undefined,
+        labelTagField: marker.label_tag_field ?? undefined,
+        labelTags: marker.label_tags,
+        size: marker.size,
+        spacing: marker.spacing,
+        buyColor: marker.buy_color,
+        sellColor: marker.sell_color,
+        buyLabel: marker.buy_label,
+        sellLabel: marker.sell_label,
+      })),
     },
     profileData: r.profile_data ? {
       prices: r.profile_data.prices,
@@ -66,13 +97,23 @@ export interface IndicatorRequest {
   params: Record<string, number>
 }
 
-/** 计算指标 */
-export async function calculateIndicators(
+export interface IndicatorCalculationError {
+  type: string
+  code: string
+  message: string
+}
+
+export interface IndicatorCalculationResponse {
+  results: IndicatorResult[]
+  errors: IndicatorCalculationError[]
+}
+
+export async function calculateIndicatorsDetailed(
   symbol: string,
   timeframe: string,
   indicators: IndicatorRequest[],
   klineLimit = 200,
-): Promise<IndicatorResult[]> {
+): Promise<IndicatorCalculationResponse> {
   console.log(`[SL:API] POST /indicator/calculate`, { symbol, timeframe, indicators })
   const raw = await api.post<ApiCalculateResponse>('/indicator/calculate', {
     symbol,
@@ -80,8 +121,20 @@ export async function calculateIndicators(
     kline_limit: klineLimit,
     indicators,
   })
-  console.log(`[SL:API] POST /indicator/calculate -> ${raw.results.length} results`)
-  return raw.results.map(toFrontend)
+  const errors = raw.errors ?? []
+  if (errors.length > 0) console.warn('[SL:API] isolated indicator failures', errors)
+  console.log(`[SL:API] POST /indicator/calculate -> ${raw.results.length} results, ${errors.length} errors`)
+  return { results: raw.results.map(toFrontend), errors }
+}
+
+/** 计算指标 */
+export async function calculateIndicators(
+  symbol: string,
+  timeframe: string,
+  indicators: IndicatorRequest[],
+  klineLimit = 200,
+): Promise<IndicatorResult[]> {
+  return (await calculateIndicatorsDetailed(symbol, timeframe, indicators, klineLimit)).results
 }
 
 /** 获取指标列表(指标库) */
@@ -92,6 +145,7 @@ export async function fetchIndicatorList(): Promise<IndicatorInfo[]> {
     name: i.name,
     description: i.description,
     default_params: i.default_params,
+    outputs: i.outputs,
     render: {
       window: i.render.window as 'main' | 'sub',
       plots: i.render.plots.map(p => ({
@@ -99,6 +153,19 @@ export async function fetchIndicatorList(): Promise<IndicatorInfo[]> {
         type: p.type as 'line' | 'histogram' | 'marker' | 'profile',
         color: p.color,
         label: p.label,
+      })),
+      markers: (i.render.markers ?? []).map(marker => ({
+        field: marker.field,
+        priceField: marker.price_field ?? undefined,
+        labelIndexField: marker.label_index_field ?? undefined,
+        labelTagField: marker.label_tag_field ?? undefined,
+        labelTags: marker.label_tags,
+        size: marker.size,
+        spacing: marker.spacing,
+        buyColor: marker.buy_color,
+        sellColor: marker.sell_color,
+        buyLabel: marker.buy_label,
+        sellLabel: marker.sell_label,
       })),
     },
   }))

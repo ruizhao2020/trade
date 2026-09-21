@@ -140,6 +140,8 @@ PUBLIC_INDICATOR_DEFAULTS = [
     ("rsi", "RSI", True, True, True, False, 40),
     ("bollinger", "布林带", True, True, True, False, 50),
     ("volume", "成交量", True, True, True, False, 60),
+    ("volume_structure", "量柱结构", False, True, False, False, 65),
+    ("dilun_structure", "帝论·合理价格", False, True, False, False, 67),
     ("chip_distribution", "筹码分布", True, False, True, False, 70),
     ("liquidity_sweep", "流动性结构", False, False, False, False, 80),
 ]

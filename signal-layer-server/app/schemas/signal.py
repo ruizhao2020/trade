@@ -1,5 +1,5 @@
 from typing import Literal, Optional, Union, Annotated
-from pydantic import AliasChoices, BaseModel, Field, Discriminator
+from pydantic import AliasChoices, BaseModel, Field, Discriminator, field_validator
 
 
 # ============================================================
@@ -8,14 +8,11 @@ from pydantic import AliasChoices, BaseModel, Field, Discriminator
 
 class TradeParams(BaseModel):
     # 止损
-    stop_loss_type: Literal["atr", "fixed_pct", "swing_low"] = "atr"
+    stop_loss_type: Literal["none", "atr", "fixed_pct", "swing_low"] = "atr"
     stop_loss_value: float = 2.0
     # 止盈
-    take_profit_type: Literal["atr", "fixed_pct", "rr_ratio"] = "rr_ratio"
+    take_profit_type: Literal["none", "atr", "fixed_pct", "rr_ratio"] = "rr_ratio"
     take_profit_value: float = 2.0
-    # 仓位
-    position_type: Literal["fixed_pct", "kelly"] = "fixed_pct"
-    position_value: float = 20.0
     # 条件式出场（复用条件组结构，引用指标/价格/缠论做判断）
     exit_conditions: list["ConditionGroupSchema"] = Field(default_factory=list)
     exit_logic: Literal["AND", "OR"] = "AND"
@@ -65,7 +62,7 @@ class ConditionSchema(BaseModel):
     left: ConditionValueUnion = Field(discriminator="source")
     operator: Literal[
         "gt", "gte", "lt", "lte", "eq", "crossAbove", "crossBelow",
-        "rising", "falling", "turnDown", "turnUp", "between"
+        "rising", "falling", "turnDown", "turnUp", "support", "resistance"
     ]
     right: ConditionValueUnion = Field(discriminator="source")
     right2: Optional[ConditionValueUnion] = Field(
@@ -75,10 +72,17 @@ class ConditionSchema(BaseModel):
     timeframe_id: Optional[str] = None
     enabled: bool = True
 
+    @field_validator("operator", mode="before")
+    @classmethod
+    def migrate_removed_between_operator(cls, value: str) -> str:
+        # 旧模板的“介于”已从产品移除；读取时保守迁移为“不小于下沿”。
+        return "gte" if value == "between" else value
+
 
 class ConditionGroupSchema(BaseModel):
     id: str
     name: str = ""
+    logic: Literal["AND", "OR"] = "AND"
     conditions: list[ConditionSchema]
 
 
@@ -147,4 +151,6 @@ class BacktestResult(BaseModel):
     avg_return: float
     max_drawdown: float
     profit_factor: float
+    payoff_ratio: float
+    suggested_position: float
     trades: list[TradeRecord]

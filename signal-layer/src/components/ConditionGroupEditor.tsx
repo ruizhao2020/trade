@@ -33,7 +33,7 @@ const nextCondId = () => nextId('c')
 const OPERATOR_LABELS: Record<string, string> = {
   gt: '>', gte: '>=', lt: '<', lte: '<=', eq: '=',
   crossAbove: '上穿', crossBelow: '下穿', rising: '向上', falling: '向下',
-  turnDown: '上转下', turnUp: '下转上', between: '介于',
+  turnDown: '上转下', turnUp: '下转上', support: '支撑', resistance: '压制',
 }
 
 const PRICE_OPTIONS = [
@@ -70,6 +70,45 @@ const CHIP_FIELD_OPTIONS = [
   { field: 'range90_low', label: '90%成本下沿' },
   { field: 'range90_high', label: '90%成本上沿' },
   { field: 'concentration90', label: '90%集中度' },
+  { field: 'price_vs_peak_pct', label: '距主峰百分比' },
+  { field: 'price_vs_average_pct', label: '距平均成本百分比' },
+  { field: 'above_peak', label: '站上主筹码峰' },
+  { field: 'above_average_cost', label: '站上平均成本' },
+  { field: 'inside_range70', label: '位于70%成本区间' },
+  { field: 'inside_range90', label: '位于90%成本区间' },
+  { field: 'support_chip_ratio', label: '下方支撑筹码' },
+  { field: 'pressure_chip_ratio', label: '上方压力筹码' },
+  { field: 'upper_chip_ratio', label: '套牢筹码比例' },
+  { field: 'near_price_chip_ratio', label: '现价附近筹码' },
+  { field: 'dominant_peak_ratio', label: '主峰筹码占比' },
+  { field: 'peak_count', label: '有效筹码峰数量' },
+  { field: 'single_peak', label: '单峰密集' },
+  { field: 'double_peak', label: '双峰结构' },
+  { field: 'secondary_peak_price', label: '次筹码峰' },
+  { field: 'peak_separation_pct', label: '主次峰间距' },
+  { field: 'peak_change_pct', label: '主峰迁移幅度' },
+  { field: 'average_cost_change_pct', label: '平均成本变化' },
+  { field: 'profit_ratio_change', label: '获利盘变化' },
+  { field: 'concentration70_change', label: '集中度变化' },
+  { field: 'peak_direction', label: '主峰迁移方向' },
+  { field: 'average_cost_direction', label: '平均成本方向' },
+  { field: 'chip_converging', label: '筹码正在集中' },
+  { field: 'chip_spreading', label: '筹码正在发散' },
+  { field: 'cross_peak_up', label: '上穿主筹码峰' },
+  { field: 'cross_peak_down', label: '下穿主筹码峰' },
+  { field: 'cross_average_cost_up', label: '上穿平均成本' },
+  { field: 'cross_average_cost_down', label: '下穿平均成本' },
+  { field: 'break_range70_high', label: '突破70%成本上沿' },
+  { field: 'break_range70_low', label: '跌破70%成本下沿' },
+  { field: 'retest_peak', label: '回踩主峰' },
+  { field: 'single_peak_formed', label: '单峰密集形成' },
+  { field: 'double_peak_formed', label: '双峰结构形成' },
+  { field: 'peak_shifted_up', label: '主峰确认上移' },
+  { field: 'peak_shifted_down', label: '主峰确认下移' },
+  { field: 'concentration_started', label: '开始集中' },
+  { field: 'pressure_released', label: '上方压力释放' },
+  { field: 'support_strengthened', label: '下方支撑增强' },
+  { field: 'coverage_ratio', label: '数据覆盖率' },
 ]
 
 const selectArrow = `url("data:image/svg+xml,%3csvg xmlns='http://www.w3.org/2000/svg' fill='none' viewBox='0 0 8 5'%3e%3cpath stroke='%238B8B9E' stroke-linecap='round' stroke-linejoin='round' stroke-width='1.5' d='M1 1l3 3 3-3'/%3e%3c/svg%3e")`
@@ -77,10 +116,23 @@ const selectArrow = `url("data:image/svg+xml,%3csvg xmlns='http://www.w3.org/200
 type IndicatorValue = Extract<ConditionValue, { source: 'indicator' }>
 
 const PARAM_LABELS: Record<string, string> = {
-  period: '周期', fast: '快线', slow: '慢线', signal: '信号线',
+  period: '周期', touch_tolerance_pct: '触碰容差', fast: '快线', slow: '慢线', signal: '信号线',
   n: '计算周期', m1: 'K值平滑', m2: 'D值平滑', std: '标准差倍数',
   bins: '价格档位', lookback: '回看天数', min_turnover_days: '最少有效天数',
   piv_len: '枢轴长度', atr_len: '波幅周期',
+  shrink_max: '缩量上限', increase_min: '增量起点', double_min: '倍量起点',
+  triple_min: '三倍量起点', multiple_min: '多倍量起点', flat_tolerance: '平量容差',
+  sequence_length: '连续根数', relative_period: '相对量周期', key_ratio_min: '关键柱倍率',
+  confirm_bars: '确认根数', break_tolerance: '破位容差',
+  near_range_pct: '现价附近范围', support_range_pct: '支撑压力范围',
+  peak_prominence: '峰值显著度', min_peak_distance: '最小峰间距',
+  trend_period: '迁移周期', migration_threshold_pct: '迁移阈值',
+  concentration_change_threshold: '集中变化阈值', pressure_release_threshold: '压力释放阈值',
+  retest_tolerance_pct: '回踩容差',
+  departure_confirm_bars: '脱离确认根数', true_departure_bars: '真脱离根数',
+  false_departure_max_bars: '假脱离窗口', retest_window: '回归失败窗口',
+  maturity_bars: '态势成熟根数', maturity_folds: '态势成熟折叠',
+  breakout_buffer_pct: '突破缓冲',
 }
 
 function IndicatorParamsEditor({
@@ -93,7 +145,7 @@ function IndicatorParamsEditor({
   onChange: (params: Record<string, number>) => void
 }) {
   return (
-    <div className="flex items-center gap-2 flex-wrap">
+    <div className="flex items-center gap-3 flex-wrap">
       {Object.entries(value.params).map(([key, paramValue]) => {
         const label = PARAM_LABELS[key] ?? key
         if (value.indicatorType === 'ma' && key === 'period') {
@@ -103,7 +155,7 @@ function IndicatorParamsEditor({
                 aria-label={`${info.name} ${label}`}
                 value={paramValue}
                 onChange={(event) => onChange({ ...value.params, [key]: Number(event.target.value) })}
-                className="h-9 w-[96px] px-2 rounded-lg border border-[var(--border-primary)] bg-[var(--bg-tertiary)] text-[12px] font-mono text-[var(--text-primary)] outline-none focus:border-[var(--accent)]"
+                className="h-10 w-[104px] px-2.5 rounded-lg border border-[var(--border-primary)] bg-[var(--bg-tertiary)] text-[12px] font-mono text-[var(--text-primary)] outline-none focus:border-[var(--accent)]"
               >
                 {MA_PERIODS.map((period) => <option key={period} value={period}>周期 {period}</option>)}
               </select>
@@ -118,13 +170,20 @@ function IndicatorParamsEditor({
               aria-label={`${info.name} ${label}`}
               value={paramValue}
               onChange={(event) => onChange({ ...value.params, [key]: Number(event.target.value) })}
-              className="h-9 w-[68px] px-2 rounded-lg border border-[var(--border-primary)] bg-[var(--bg-tertiary)] text-[12px] font-mono text-[var(--text-primary)] outline-none focus:border-[var(--accent)]"
+              className="h-10 w-[76px] px-2.5 rounded-lg border border-[var(--border-primary)] bg-[var(--bg-tertiary)] text-[12px] font-mono text-[var(--text-primary)] outline-none focus:border-[var(--accent)]"
             />
           </label>
         )
       })}
     </div>
   )
+}
+
+function indicatorOutputs(info: IndicatorInfo | null | undefined) {
+  if (!info) return []
+  return info.outputs?.length
+    ? info.outputs
+    : info.render.plots.map((plot) => ({ field: plot.field, label: plot.label || plot.field }))
 }
 
 /** 创建一个默认的空条件 */
@@ -143,12 +202,17 @@ export function ConditionGroupEditor({ groups, indicators, onChange, allowEmpty 
     onChange([...groups, {
       id: nextGroupId(),
       name: `条件组 ${groups.length + 1}`,
+      logic: 'AND',
       conditions: [defaultCondition()],
     }])
   }
 
   function updateGroupName(groupIndex: number, name: string) {
     onChange(groups.map((group, index) => index === groupIndex ? { ...group, name } : group))
+  }
+
+  function updateGroupLogic(groupIndex: number, logic: 'AND' | 'OR') {
+    onChange(groups.map((group, index) => index === groupIndex ? { ...group, logic } : group))
   }
 
   function removeGroup(groupIndex: number) {
@@ -176,49 +240,60 @@ export function ConditionGroupEditor({ groups, indicators, onChange, allowEmpty 
     ))
   }
 
-  const selClass = "h-9 bg-[var(--bg-tertiary)] text-[12px] text-[var(--text-primary)] px-3 rounded-lg border border-[var(--border-primary)] outline-none focus:border-[var(--accent)] transition-colors duration-150 appearance-none"
+  const selClass = "h-10 bg-[var(--bg-tertiary)] text-[12px] text-[var(--text-primary)] px-3 rounded-lg border border-[var(--border-primary)] outline-none focus:border-[var(--accent)] transition-colors duration-150 appearance-none"
   const selStyle = { backgroundImage: selectArrow, backgroundRepeat: 'no-repeat', backgroundPosition: 'right 10px center', backgroundSize: '8px 5px', paddingRight: '28px' }
 
   return (
-    <div className="space-y-3">
+    <div className="space-y-5">
       {groups.map((group, gi) => (
-        <div key={`${group.id}:${gi}`} className="border border-[var(--border-primary)] rounded-lg overflow-hidden bg-[var(--bg-secondary)]/50">
-          <div className="flex items-center justify-between px-4 py-2.5 bg-[var(--bg-tertiary)]/45 border-b border-[var(--border-primary)]">
-            <div className="flex items-center gap-3 min-w-0 flex-1 mr-3">
-              <span className="w-1.5 h-1.5 rounded-full bg-[var(--accent)]" />
+        <div key={`${group.id}:${gi}`} className="border border-[var(--border-primary)] rounded-xl overflow-hidden bg-[var(--bg-secondary)]/55 shadow-[0_1px_0_rgba(255,255,255,.02)]">
+          <div className="flex flex-wrap items-center justify-between gap-4 px-5 py-4 bg-[var(--bg-tertiary)]/45 border-b border-[var(--border-primary)]">
+            <div className="flex items-center gap-3 min-w-[240px] flex-1">
+              <span className="w-2 h-2 rounded-full bg-[var(--accent)] shrink-0" />
               <input
                 value={group.name ?? ''}
                 onChange={(event) => updateGroupName(gi, event.target.value)}
                 aria-label={`条件组 ${gi + 1} 名称`}
                 placeholder={`条件组 ${gi + 1}`}
-                className="w-full max-w-[260px] h-8 px-2.5 rounded-md border border-transparent bg-[var(--bg-primary)]/70 text-[12px] font-medium text-[var(--text-primary)] placeholder:text-[var(--text-secondary)] outline-none hover:border-[var(--border-primary)] focus:border-[var(--accent)]"
+                className="w-full max-w-[340px] h-10 px-3 rounded-lg border border-[var(--border-primary)] bg-[var(--bg-primary)]/70 text-[12px] font-medium text-[var(--text-primary)] placeholder:text-[var(--text-secondary)] outline-none focus:border-[var(--accent)]"
               />
             </div>
-            <div className="flex items-center gap-3">
+            <div className="flex flex-wrap items-center justify-end gap-3">
+              <div className="flex items-center gap-2">
+                <span className="text-[10px] text-[var(--text-muted)] whitespace-nowrap">组内关系</span>
+                <div className="flex h-10 p-1 rounded-lg bg-[var(--bg-primary)] border border-[var(--border-primary)]" aria-label={`条件组 ${gi + 1} 组内关系`}>
+                  <button type="button" onClick={() => updateGroupLogic(gi, 'AND')} className={`min-w-[64px] px-3 rounded-md text-[11px] font-medium transition-colors ${(group.logic ?? 'AND') === 'AND' ? 'bg-[var(--accent)] text-white shadow-sm' : 'text-[var(--text-muted)] hover:text-[var(--text-secondary)] hover:bg-[var(--bg-tertiary)]'}`}>与 · 全部</button>
+                  <button type="button" onClick={() => updateGroupLogic(gi, 'OR')} className={`min-w-[64px] px-3 rounded-md text-[11px] font-medium transition-colors ${(group.logic ?? 'AND') === 'OR' ? 'bg-[var(--accent)] text-white shadow-sm' : 'text-[var(--text-muted)] hover:text-[var(--text-secondary)] hover:bg-[var(--bg-tertiary)]'}`}>或 · 任一</button>
+                </div>
+              </div>
               {(allowEmpty || groups.length > 1) && (
-                <button onClick={() => removeGroup(gi)} className="text-[11px] text-[var(--accent-red)] hover:underline">删除</button>
+                <button type="button" onClick={() => removeGroup(gi)} className="h-9 px-3 rounded-lg border border-[rgba(255,107,114,.25)] text-[11px] text-[var(--accent-red)] hover:bg-[rgba(255,107,114,.08)] transition-colors">删除组</button>
               )}
-              <button onClick={() => addCondition(gi)} className="text-[11px] text-[var(--accent)] hover:underline">+ 条件</button>
+              <button type="button" onClick={() => addCondition(gi)} className="h-9 px-3.5 rounded-lg border border-[var(--border-accent)] text-[11px] text-[var(--accent)] hover:bg-[rgba(108,140,255,.10)] transition-colors">+ 添加条件</button>
             </div>
           </div>
 
-          <div className="px-4 py-3 space-y-2">
+          <div className="px-5 py-5 space-y-3">
             {group.conditions.map((cond, conditionIndex) => {
               const leftSrc = cond.left.source
               const rightSrc = cond.right.source
               const leftInfo = leftSrc === 'indicator' ? indicators.find(i => i.type === (cond.left as {indicatorType?: string}).indicatorType) : null
               const rightInfo = rightSrc === 'indicator' ? indicators.find(i => i.type === (cond.right as {indicatorType?: string}).indicatorType) : null
+              const leftOutputs = indicatorOutputs(leftInfo)
+              const rightOutputs = indicatorOutputs(rightInfo)
               // 缠论背驰和买卖点是独立事件条件，不需要操作符和右值
               const isChanSignal = leftSrc === 'chan' && ['divergence', 'buySellPoint'].includes((cond.left as {element?: string}).element ?? '')
               const isMaLeft = leftSrc === 'indicator' && (cond.left as IndicatorValue).indicatorType === 'ma'
               const isChipLeft = leftSrc === 'indicator' && (cond.left as IndicatorValue).indicatorType === 'chip_distribution'
-              const directionOperators: ConditionOperator[] = [
+              const unaryOperators: ConditionOperator[] = [
                 ConditionOperator.Rising,
                 ConditionOperator.Falling,
                 ConditionOperator.TurnDown,
                 ConditionOperator.TurnUp,
+                ConditionOperator.Support,
+                ConditionOperator.Resistance,
               ]
-              const isDirectionOperator = directionOperators.includes(cond.operator)
+              const isUnaryOperator = unaryOperators.includes(cond.operator)
 
               const srcValue = (c: ConditionValue) =>
                 c.source === 'price' ? `price:${(c as {field: string}).field}`
@@ -228,13 +303,13 @@ export function ConditionGroupEditor({ groups, indicators, onChange, allowEmpty 
 
               const onSrcChange = (side: 'left' | 'right') => (e: React.ChangeEvent<HTMLSelectElement>) => {
                 const [src, val] = e.target.value.split(':')
-                const resetDirection = side === 'left' && isDirectionOperator && !(src === 'indicator' && val === 'ma')
+                const resetDirection = side === 'left' && isUnaryOperator && !(src === 'indicator' && val === 'ma')
                 const operatorUpdate = resetDirection ? { operator: ConditionOperator.GreaterThan } : {}
                 if (src === 'price') {
                   updateCondition(gi, conditionIndex, { [side]: { source: 'price', field: val as 'open'|'high'|'low'|'close'|'volume' }, ...operatorUpdate })
                 } else if (src === 'indicator') {
                   const ind = indicators.find(i => i.type === val)
-                  const field = val === 'chip_distribution' ? CHIP_FIELD_OPTIONS[0]!.field : ind?.render.plots[0]?.field ?? 'value'
+                  const field = val === 'chip_distribution' ? CHIP_FIELD_OPTIONS[0]!.field : indicatorOutputs(ind)[0]?.field ?? 'value'
                   updateCondition(gi, conditionIndex, { [side]: { source: 'indicator', indicatorType: val, params: { ...(ind?.default_params ?? {}) }, field }, ...operatorUpdate })
                 } else if (src === 'chan') {
                   const opt = [...CHAN_OPTIONS, ...CHAN_SHAPE_OPTIONS].find(o => o.value === e.target.value)
@@ -256,17 +331,18 @@ export function ConditionGroupEditor({ groups, indicators, onChange, allowEmpty 
               }
 
               return (
-                <div key={`${cond.id}:${conditionIndex}`} className="flex flex-wrap items-center gap-2.5 py-1.5 rounded-lg transition-colors duration-150 group">
+                <div key={`${cond.id}:${conditionIndex}`} className="flex flex-wrap items-center gap-3 p-3 rounded-xl border border-[var(--border-primary)] bg-[var(--bg-primary)]/45 transition-colors duration-150 hover:border-[var(--border-accent)] group">
+                  <span className="min-w-6 h-6 px-1.5 rounded-md bg-[var(--bg-tertiary)] flex items-center justify-center text-[10px] font-mono text-[var(--text-muted)] shrink-0">{conditionIndex + 1}</span>
                   {/* 级别选择（周期） */}
                   <select value={cond.timeframeId ?? ''}
                     onChange={e => updateCondition(gi, conditionIndex, { timeframeId: e.target.value || undefined })}
-                    className={`${selClass} w-[88px] font-mono`} style={selStyle}>
+                    className={`${selClass} w-[96px] font-mono`} style={selStyle}>
                     <option value="" className="bg-[var(--bg-secondary)] text-[var(--text-muted)]">主周期</option>
                     {DEFAULT_TIMEFRAMES.map(tf => <option key={tf.id} value={tf.id} className="bg-[var(--bg-secondary)] text-[var(--text-primary)]">{tf.label}</option>)}
                   </select>
 
                   <select value={srcValue(cond.left)} onChange={onSrcChange('left')}
-                    className={`${selClass} flex-1 min-w-[150px]`} style={selStyle}>
+                    className={`${selClass} flex-1 min-w-[168px]`} style={selStyle}>
                     <optgroup label="价格">{PRICE_OPTIONS.map(o => <option key={o.value} value={o.value} className="bg-[var(--bg-secondary)] text-[var(--text-primary)]">{o.label}</option>)}</optgroup>
                     <optgroup label="指标">{indicators.map(i => <option key={`indicator:${i.type}`} value={`indicator:${i.type}`} className="bg-[var(--bg-secondary)] text-[var(--text-primary)]">{i.name}</option>)}</optgroup>
                     <optgroup label="缠论·信号">{CHAN_OPTIONS.map(o => <option key={o.value} value={o.value} className="bg-[var(--bg-secondary)] text-[var(--text-primary)]">{o.label}</option>)}</optgroup>
@@ -274,12 +350,12 @@ export function ConditionGroupEditor({ groups, indicators, onChange, allowEmpty 
                     <optgroup label="其他"><option value="constant" className="bg-[var(--bg-secondary)] text-[var(--text-primary)]">固定值</option></optgroup>
                   </select>
 
-                  {leftSrc === 'indicator' && leftInfo && leftInfo.render.plots.length > 1 && (
+                  {leftSrc === 'indicator' && leftInfo && !isChipLeft && leftOutputs.length > 1 && (
                     <select value={(cond.left as {field?: string}).field ?? 'value'}
                       aria-label={`${leftInfo.name} 输出线`}
                       onChange={e => updateCondition(gi, conditionIndex, { left: { ...cond.left, field: e.target.value } as ConditionValue })}
                       className={`${selClass} w-[90px] font-mono text-[12px]`} style={{ ...selStyle, paddingRight: '24px' }}>
-                      {leftInfo.render.plots.map(p => <option key={p.field} value={p.field} className="bg-[var(--bg-secondary)] text-[var(--text-primary)]">{p.label || p.field}</option>)}
+                      {leftOutputs.map(output => <option key={output.field} value={output.field} className="bg-[var(--bg-secondary)] text-[var(--text-primary)]">{output.label}</option>)}
                     </select>
                   )}
 
@@ -307,24 +383,18 @@ export function ConditionGroupEditor({ groups, indicators, onChange, allowEmpty 
                   {!isChanSignal && (
                     <>
                       <select value={cond.operator} aria-label={`条件 ${conditionIndex + 1} 运算符`} onChange={(e) => {
-                        const operator = e.target.value as ConditionOperator
-                        updateCondition(gi, conditionIndex, {
-                          operator,
-                          ...(operator === ConditionOperator.Between && !cond.right2
-                            ? { right2: { source: 'constant', value: 0 } as ConditionValue }
-                            : {}),
-                        })
+                        updateCondition(gi, conditionIndex, { operator: e.target.value as ConditionOperator })
                       }}
-                        className={`${selClass} w-[92px] font-mono`} style={selStyle}>
-                        {Object.entries(OPERATOR_LABELS).filter(([key]) => isMaLeft || !directionOperators.includes(key as ConditionOperator)).map(([key, label]) => (
+                        className={`${selClass} w-[104px] font-mono`} style={selStyle}>
+                        {Object.entries(OPERATOR_LABELS).filter(([key]) => isMaLeft || !unaryOperators.includes(key as ConditionOperator)).map(([key, label]) => (
                           <option key={key} value={key} className="bg-[var(--bg-secondary)] text-[var(--text-primary)]">{label}</option>
                         ))}
                       </select>
 
-                      {!isDirectionOperator && (
+                      {!isUnaryOperator && (
                         <>
                           <select value={srcValue(cond.right)} onChange={onSrcChange('right')}
-                            className={`${selClass} flex-1 min-w-[150px]`} style={selStyle}>
+                            className={`${selClass} flex-1 min-w-[168px]`} style={selStyle}>
                             <optgroup label="价格">{PRICE_OPTIONS.map(o => <option key={o.value} value={o.value} className="bg-[var(--bg-secondary)] text-[var(--text-primary)]">{o.label}</option>)}</optgroup>
                             <optgroup label="指标">{indicators.map(i => <option key={`indicator:${i.type}`} value={`indicator:${i.type}`} className="bg-[var(--bg-secondary)] text-[var(--text-primary)]">{i.name}</option>)}</optgroup>
                             <optgroup label="缠论·信号">{CHAN_OPTIONS.map(o => <option key={o.value} value={o.value} className="bg-[var(--bg-secondary)] text-[var(--text-primary)]">{o.label}</option>)}</optgroup>
@@ -332,12 +402,12 @@ export function ConditionGroupEditor({ groups, indicators, onChange, allowEmpty 
                             <optgroup label="其他"><option value="constant" className="bg-[var(--bg-secondary)] text-[var(--text-primary)]">固定值</option></optgroup>
                           </select>
 
-                          {rightSrc === 'indicator' && rightInfo && rightInfo.render.plots.length > 1 && (
+                          {rightSrc === 'indicator' && rightInfo && (cond.right as IndicatorValue).indicatorType !== 'chip_distribution' && rightOutputs.length > 1 && (
                             <select value={(cond.right as {field?: string}).field ?? 'value'}
                               aria-label={`${rightInfo.name} 输出线`}
                               onChange={e => updateCondition(gi, conditionIndex, { right: { ...cond.right, field: e.target.value } as ConditionValue })}
                               className={`${selClass} w-[90px] font-mono text-[12px]`} style={{ ...selStyle, paddingRight: '24px' }}>
-                              {rightInfo.render.plots.map(p => <option key={p.field} value={p.field} className="bg-[var(--bg-secondary)] text-[var(--text-primary)]">{p.label || p.field}</option>)}
+                              {rightOutputs.map(output => <option key={output.field} value={output.field} className="bg-[var(--bg-secondary)] text-[var(--text-primary)]">{output.label}</option>)}
                             </select>
                           )}
 
@@ -361,20 +431,6 @@ export function ConditionGroupEditor({ groups, indicators, onChange, allowEmpty 
                               className="w-[90px] bg-[var(--bg-tertiary)] text-[13px] text-[var(--text-primary)] px-3 py-2 rounded-lg border border-[var(--border-primary)] outline-none focus:border-[var(--accent)] transition-colors duration-150 text-right font-mono" placeholder="数值" />
                           )}
 
-                          {cond.operator === ConditionOperator.Between && (
-                            <label className="flex items-center gap-2 text-[12px] text-[var(--text-muted)] shrink-0">
-                              至
-                              <input
-                                type="number"
-                                value={cond.right2?.source === 'constant' ? cond.right2.value : 0}
-                                onChange={(e) => updateCondition(gi, conditionIndex, {
-                                  right2: { source: 'constant', value: parseFloat(e.target.value) || 0 },
-                                })}
-                                className="w-[90px] bg-[var(--bg-tertiary)] text-[13px] text-[var(--text-primary)] px-3 py-2 rounded-lg border border-[var(--border-primary)] outline-none focus:border-[var(--accent)] transition-colors duration-150 text-right font-mono"
-                                placeholder="上限"
-                              />
-                            </label>
-                          )}
                         </>
                       )}
                     </>
@@ -382,7 +438,8 @@ export function ConditionGroupEditor({ groups, indicators, onChange, allowEmpty 
 
                   <button onClick={() => removeCondition(gi, conditionIndex)}
                     disabled={group.conditions.length <= 1 && groups.length <= 1 && !allowEmpty}
-                    className="w-8 h-8 rounded-lg flex items-center justify-center text-[var(--text-muted)] hover:text-[var(--accent-red)] hover:bg-[var(--bg-tertiary)] transition-colors duration-150 disabled:opacity-20 disabled:cursor-not-allowed shrink-0 opacity-0 group-hover:opacity-100">
+                    aria-label={`删除条件 ${conditionIndex + 1}`}
+                    className="w-10 h-10 rounded-lg border border-transparent flex items-center justify-center text-[var(--text-muted)] hover:text-[var(--accent-red)] hover:border-[rgba(255,107,114,.25)] hover:bg-[rgba(255,107,114,.08)] transition-colors duration-150 disabled:opacity-20 disabled:cursor-not-allowed shrink-0">
                     <svg width="12" height="12" viewBox="0 0 12 12" fill="none"><path d="M3 3l6 6M9 3l-6 6" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round"/></svg>
                   </button>
                 </div>
@@ -392,9 +449,9 @@ export function ConditionGroupEditor({ groups, indicators, onChange, allowEmpty 
         </div>
       ))}
 
-      <button onClick={addGroup}
-        className="w-full h-9 text-[11px] text-[var(--text-muted)] hover:text-[var(--text-secondary)] border border-dashed border-[var(--border-primary)] hover:border-[var(--border-accent)] rounded-lg transition-all duration-150">
-        + 条件组
+      <button type="button" onClick={addGroup}
+        className="w-full h-11 text-[11px] font-medium text-[var(--text-muted)] hover:text-[var(--accent)] border border-dashed border-[var(--border-primary)] hover:border-[var(--accent)] hover:bg-[rgba(108,140,255,.06)] rounded-xl transition-all duration-150">
+        + 添加条件组
       </button>
     </div>
   )

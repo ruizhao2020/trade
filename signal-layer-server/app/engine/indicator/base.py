@@ -112,6 +112,12 @@ class MarkerSpec(BaseModel):
     sell_color: str = "#ef4444"            # 卖出标记颜色
     buy_label: str = "BUY"                 # 买入标签
     sell_label: str = "SELL"               # 卖出标签
+    price_field: Optional[str] = None       # 使用指定字段精确定位
+    label_index_field: Optional[str] = None # 标签编号字段
+    label_tag_field: Optional[str] = None   # 标签附注代码字段
+    label_tags: dict[int, str] = {}         # 附注代码与文字映射
+    size: int = 2                           # 标记大小
+    spacing: int = 0                        # 与 K 线的视觉间距
 
 
 class RenderSpec(BaseModel):

@@ -23,7 +23,9 @@ import type {
 import { useAppStore } from './store/useAppStore.ts'
 import {
   buildStrategyChanOptions,
+  collectStrategyTimeframes,
   collectStrategyIndicatorsForTimeframe,
+  filterStrategyChanAnalysis,
   templateUsesChanIndicator,
 } from './core/strategyIndicators.ts'
 import { buildStrategyTradeMarkerResult } from './core/strategyMarkers.ts'
@@ -132,6 +134,10 @@ function WorkbenchApp({ user, onLogout, onUserChange, onLogin }: { user: AuthUse
     () => collectStrategyIndicatorsForTimeframe(activeTemplate, timeframe),
     [activeTemplate, timeframe],
   )
+  const strategyTimeframes = useMemo(
+    () => collectStrategyTimeframes(activeTemplate).filter(isSupportedTimeframeId),
+    [activeTemplate],
+  )
   const strategyRequestKey = useMemo(
     () => `${symbol}:${timeframe}:${activeTemplateId ?? ''}:${JSON.stringify(strategyRequests)}`,
     [activeTemplateId, strategyRequests, symbol, timeframe],
@@ -145,6 +151,18 @@ function WorkbenchApp({ user, onLogout, onUserChange, onLogin }: { user: AuthUse
     () => buildStrategyChanOptions(chanOptions, activeTemplate, timeframe),
     [activeTemplate, chanOptions, timeframe],
   )
+  const strategyChanAnalysis = useMemo(
+    () => filterStrategyChanAnalysis(chanAnalysis, activeTemplate, timeframe),
+    [activeTemplate, chanAnalysis, timeframe],
+  )
+
+  useEffect(() => {
+    if (effectiveActiveModule !== 'screener' || strategyTimeframes.length === 0) return
+    if (!strategyTimeframes.includes(timeframe)) {
+      const nextTimeframe = strategyTimeframes[0]!
+      Promise.resolve().then(() => setTimeframe(nextTimeframe))
+    }
+  }, [effectiveActiveModule, strategyTimeframes, timeframe])
 
   useEffect(() => {
     if (!market || !symbol) return
@@ -195,8 +213,12 @@ function WorkbenchApp({ user, onLogout, onUserChange, onLogin }: { user: AuthUse
     )
       .then((results) => {
         if (cancelled) return
-        setIndicatorResults(results.map((result, index) => {
-          const color = selectedIndicators[index]?.color
+        setIndicatorResults(results.map((result) => {
+          const display = selectedIndicators.find((item) => (
+            item.type === result.type
+            && Object.entries(item.params).every(([key, value]) => result.params[key] === value)
+          ))
+          const color = display?.color
           if (!color || result.render.plots.length === 0) return result
           return { ...result, render: { ...result.render, plots: result.render.plots.map((plot, plotIndex) => plotIndex === 0 ? { ...plot, color } : plot) } }
         }))
@@ -273,8 +295,10 @@ function WorkbenchApp({ user, onLogout, onUserChange, onLogin }: { user: AuthUse
     setMarket(nextMarket)
     setSymbol(nextSymbol)
     setSymbolName(nextName)
-    if (activeTemplate && isSupportedTimeframeId(activeTemplate.primaryTimeframeId)) setTimeframe(activeTemplate.primaryTimeframeId)
-  }, [activeTemplate])
+    const primary = activeTemplate?.primaryTimeframeId
+    if (primary && isSupportedTimeframeId(primary)) setTimeframe(primary)
+    else if (strategyTimeframes[0]) setTimeframe(strategyTimeframes[0])
+  }, [activeTemplate, strategyTimeframes])
   const handleTimeframeChange = useCallback((nextTimeframe: SupportedTimeframeId) => {
     setIndicatorCursorTime(null)
     setTimeframe(nextTimeframe)
@@ -351,7 +375,7 @@ function WorkbenchApp({ user, onLogout, onUserChange, onLogin }: { user: AuthUse
                 </div>
                 {!strategyInfoCollapsed && <div className="flex-1 min-h-0"><SignalPanel embedded showLayers={false} symbol={symbol} onBacktestResult={(result) => setBacktestResult({ key: strategyTradeKey, result })} /></div>}
               </aside>
-              <ChartStage loading={loading} error={error} klineData={klineData} chanAnalysis={chanAnalysis} chanOptions={strategyChanOptions} indicatorResults={strategyResults} emptyMessage={!market ? '请选择市场' : !symbol ? '请选择标的' : !activeTemplate ? '请选择策略' : '暂无行情数据'} />
+              <ChartStage loading={loading} error={error} klineData={klineData} chanAnalysis={strategyChanAnalysis} chanOptions={strategyChanOptions} indicatorResults={strategyResults} emptyMessage={!market ? '请选择市场' : !symbol ? '请选择标的' : !activeTemplate ? '请选择策略' : '暂无行情数据'} />
             </div>
           </>
         )}
@@ -359,7 +383,15 @@ function WorkbenchApp({ user, onLogout, onUserChange, onLogin }: { user: AuthUse
         {effectiveActiveModule === 'screener' && (
           <>
             <div className="h-14 px-4 flex items-center gap-3 border-b border-[var(--border-primary)] bg-[var(--bg-secondary)] shrink-0"><h1 className="text-[15px] font-semibold tracking-tight">策略选股</h1><span className="text-[11px] text-[var(--text-muted)]">使用已有策略批量评估候选标的</span></div>
-            <ScreenerWorkspace selectedSymbol={symbol} selectedName={symbolName} onSelectSymbol={handleScreenSymbol} chart={<ChartStage loading={loading} error={error} klineData={klineData} chanAnalysis={chanAnalysis} chanOptions={strategyChanOptions} indicatorResults={strategyResults} emptyMessage="开始选股后，点击结果查看策略指标" />} />
+            <ScreenerWorkspace
+              selectedSymbol={symbol}
+              selectedName={symbolName}
+              onSelectSymbol={handleScreenSymbol}
+              strategyTimeframes={strategyTimeframes}
+              activeTimeframe={timeframe}
+              onTimeframeChange={handleTimeframeChange}
+              chart={<ChartStage loading={loading} error={error} klineData={klineData} chanAnalysis={strategyChanAnalysis} chanOptions={strategyChanOptions} indicatorResults={strategyResults} emptyMessage="开始选股后，点击结果查看策略指标" />}
+            />
           </>
         )}
 

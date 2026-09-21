@@ -26,7 +26,8 @@
 - falling: 向下（当前值小于上一根值）
 - turnDown: 上转下（上一段向上，本段向下）
 - turnUp: 下转上（上一段向下，本段向上）
-- between: 区间（左值在右值和 right2 之间）
+- support: 均线支撑（K线触及均线后收在均线上方）
+- resistance: 均线压制（K线触及均线后收在均线下方）
 
 ## 模板逻辑
 - AND: 所有条件组都满足才触发 READY（组内各条件也需全部满足）
@@ -105,8 +106,11 @@ class ConditionService:
                 if satisfied:
                     satisfied_conds += 1
 
-            # 组内 AND 逻辑：所有条件满足才算组满足
-            group_satisfied = all(e.satisfied for e in evaluations) if evaluations else False
+            group_satisfied = (
+                all(e.satisfied for e in evaluations)
+                if group.logic == "AND"
+                else any(e.satisfied for e in evaluations)
+            ) if evaluations else False
             group_results.append(GroupEval(
                 group_id=group.id,
                 evaluations=evaluations,
@@ -181,8 +185,9 @@ class ConditionService:
                     prev_prev_left=prev_prev_left,
                 ))
 
-            # 组内 AND：所有条件满足才算组满足
-            group_results.append(all(evaluations) if evaluations else False)
+            group_results.append((
+                all(evaluations) if group.logic == "AND" else any(evaluations)
+            ) if evaluations else False)
 
         if logic == "AND":
             return all(group_results) if group_results else False
@@ -235,7 +240,12 @@ class ConditionService:
             idx = -1 + offset
             if idx < -len(indicator_vals):
                 return 0.0
-            return float(indicator_vals[idx].get(value.field, 0))
+            field = value.field
+            if value.indicator_type == "ma" and cond.operator == "support":
+                field = "support"
+            elif value.indicator_type == "ma" and cond.operator == "resistance":
+                field = "resistance"
+            return float(indicator_vals[idx].get(field, 0))
 
         if isinstance(value, ChanValue):
             chan = chan_data.get(tf)
@@ -282,11 +292,6 @@ class ConditionService:
             return left <= right
         if operator == "eq":
             return abs(left - right) < 1e-8
-        if operator == "between":
-            if right2 is None:
-                return False
-            lower, upper = sorted((right, right2))
-            return lower <= left <= upper
         if operator == "crossAbove":
             return prev_left <= prev_right and left > right
         if operator == "crossBelow":
@@ -299,4 +304,6 @@ class ConditionService:
             return prev_left > prev_prev_left and left < prev_left
         if operator == "turnUp":
             return prev_left < prev_prev_left and left > prev_left
+        if operator in {"support", "resistance"}:
+            return left > 0
         return False

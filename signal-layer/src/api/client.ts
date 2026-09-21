@@ -41,7 +41,7 @@ class ApiClient {
    * @returns       反序列化后的 JSON 响应
    * @throws        当 HTTP 状态码非 2xx 时抛出 Error
    */
-  private async request<T>(method: string, path: string, body?: unknown): Promise<T> {
+  private async request<T>(method: string, path: string, body?: unknown, signal?: AbortSignal): Promise<T> {
     console.log(`[SL:API] ${method} ${path}`, body ? { body } : undefined)
     const token = getAccessToken()
     const headers: Record<string, string> = {}
@@ -52,6 +52,7 @@ class ApiClient {
       method,
       headers: Object.keys(headers).length > 0 ? headers : undefined,
       body: body ? JSON.stringify(body) : undefined,
+      signal,
     })
     if (!res.ok) {
       const text = await res.text()
@@ -79,8 +80,8 @@ class ApiClient {
   }
 
   /** POST 请求。body 自动 JSON 序列化 */
-  post<T>(path: string, body: unknown) {
-    return this.request<T>('POST', path, body)
+  post<T>(path: string, body: unknown, options?: { signal?: AbortSignal }) {
+    return this.request<T>('POST', path, body, options?.signal)
   }
 
   /** PUT 请求。body 自动 JSON 序列化 */

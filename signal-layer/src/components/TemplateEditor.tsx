@@ -25,11 +25,11 @@ const selectArrow = `url("data:image/svg+xml,%3csvg xmlns='http://www.w3.org/200
 
 function LogicControl({ value, onChange }: { value: 'AND' | 'OR'; onChange: (value: 'AND' | 'OR') => void }) {
   return (
-    <div className="flex items-center gap-2 shrink-0">
+    <div className="flex items-center gap-3 shrink-0">
       <span className="text-[10px] text-[var(--text-muted)]">组间关系</span>
-      <div className="flex h-8 p-0.5 rounded-md bg-[var(--bg-primary)] border border-[var(--border-primary)]">
-        <button type="button" onClick={() => onChange('AND')} className={`px-3 rounded text-[11px] transition-colors ${value === 'AND' ? 'bg-[var(--accent)] text-white' : 'text-[var(--text-muted)] hover:text-[var(--text-secondary)]'}`}>全部满足</button>
-        <button type="button" onClick={() => onChange('OR')} className={`px-3 rounded text-[11px] transition-colors ${value === 'OR' ? 'bg-[var(--accent)] text-white' : 'text-[var(--text-muted)] hover:text-[var(--text-secondary)]'}`}>任一组</button>
+      <div className="flex h-10 p-1 rounded-lg bg-[var(--bg-primary)] border border-[var(--border-primary)]">
+        <button type="button" onClick={() => onChange('AND')} className={`min-w-[82px] px-4 rounded-md text-[11px] font-medium transition-colors ${value === 'AND' ? 'bg-[var(--accent)] text-white shadow-sm' : 'text-[var(--text-muted)] hover:text-[var(--text-secondary)] hover:bg-[var(--bg-tertiary)]'}`}>全部满足</button>
+        <button type="button" onClick={() => onChange('OR')} className={`min-w-[82px] px-4 rounded-md text-[11px] font-medium transition-colors ${value === 'OR' ? 'bg-[var(--accent)] text-white shadow-sm' : 'text-[var(--text-muted)] hover:text-[var(--text-secondary)] hover:bg-[var(--bg-tertiary)]'}`}>任一组</button>
       </div>
     </div>
   )
@@ -52,7 +52,6 @@ export function TemplateEditor({ template, onClose }: Props) {
   const [tradeParams, setTradeParams] = useState<Omit<TradeParams, 'exitConditions' | 'exitLogic'>>(template?.tradeParams ?? {
     stopLossType: 'atr', stopLossValue: 2.0,
     takeProfitType: 'rr_ratio', takeProfitValue: 2.0,
-    positionType: 'fixed_pct', positionValue: 20.0,
   })
   // 入场条件
   const [groups, setGroups] = useState<ConditionGroup[]>(template?.conditionGroups ?? [])
@@ -97,16 +96,16 @@ export function TemplateEditor({ template, onClose }: Props) {
     <div className="fixed inset-0 z-50 flex items-center justify-center" onClick={onClose}>
       <div className="absolute inset-0 bg-black/70 backdrop-blur-sm" />
       <div
-        className="relative bg-[var(--bg-secondary)] rounded-xl border border-[var(--border-primary)] shadow-2xl w-[min(920px,calc(100vw-32px))] max-h-[92vh] flex flex-col overflow-hidden"
+        className="relative bg-[var(--bg-secondary)] rounded-2xl border border-[var(--border-primary)] shadow-2xl w-[min(1120px,calc(100vw-32px))] max-h-[94vh] flex flex-col overflow-hidden"
         onClick={(e) => e.stopPropagation()}
       >
-        <div className="h-14 flex items-center justify-between px-7 border-b border-[var(--border-primary)] shrink-0">
+        <div className="h-16 flex items-center justify-between px-8 border-b border-[var(--border-primary)] shrink-0">
           <h3 className="text-[15px] font-semibold text-[var(--text-primary)]">
             {template ? '编辑策略' : '新建策略'}
           </h3>
           <button
             onClick={onClose}
-            className="w-7 h-7 rounded flex items-center justify-center text-[var(--text-muted)] hover:text-[var(--text-primary)] hover:bg-[var(--bg-tertiary)] transition-colors duration-150"
+            className="w-9 h-9 rounded-lg flex items-center justify-center text-[var(--text-muted)] hover:text-[var(--text-primary)] hover:bg-[var(--bg-tertiary)] transition-colors duration-150"
           >
             <svg width="14" height="14" viewBox="0 0 14 14" fill="none">
               <path d="M3 3l8 8M11 3l-8 8" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round"/>
@@ -114,7 +113,7 @@ export function TemplateEditor({ template, onClose }: Props) {
           </button>
         </div>
 
-        <div className="flex-1 overflow-y-auto px-7 py-6 flex flex-col gap-7">
+        <div className="flex-1 overflow-y-auto px-8 py-7 flex flex-col gap-8">
           <div>
             <label className="text-[11px] font-medium text-[var(--text-muted)] block mb-2">
               策略名称
@@ -127,8 +126,8 @@ export function TemplateEditor({ template, onClose }: Props) {
             />
           </div>
 
-          <section className="rounded-xl border border-[var(--border-primary)] bg-[var(--bg-primary)]/30 p-5">
-            <div className="flex items-center justify-between gap-4 mb-4">
+          <section className="rounded-2xl border border-[var(--border-primary)] bg-[var(--bg-primary)]/30 p-6">
+            <div className="flex flex-wrap items-center justify-between gap-5 mb-5">
               <div className="flex items-center gap-2.5">
                 <span className="w-1 h-4 rounded-full bg-[var(--accent)]" />
                 <h4 className="text-[13px] font-semibold text-[var(--text-primary)]">入场条件</h4>
@@ -139,22 +138,31 @@ export function TemplateEditor({ template, onClose }: Props) {
             <ConditionGroupEditor groups={groups} indicators={indicators} onChange={setGroups} />
           </section>
 
-          <section className="rounded-xl border border-[var(--border-primary)] bg-[var(--bg-primary)]/30 p-5">
-            <div className="flex items-center gap-2.5 mb-4">
+          <section className="rounded-2xl border border-[var(--border-primary)] bg-[var(--bg-primary)]/30 p-6">
+            <div className="flex items-center gap-2.5 mb-5">
               <span className="w-1 h-4 rounded-full bg-[var(--accent-orange)]" />
-              <h4 className="text-[13px] font-semibold text-[var(--text-primary)]">退出与仓位</h4>
+              <h4 className="text-[13px] font-semibold text-[var(--text-primary)]">退出设置</h4>
             </div>
 
-            <div className="grid grid-cols-3 gap-4">
+            <div className="grid grid-cols-1 md:grid-cols-2 gap-5">
               <div>
                 <label className="text-[10px] text-[var(--text-muted)] block mb-1.5">止损</label>
                 <select value={`${tradeParams.stopLossType}:${tradeParams.stopLossValue}`}
                   onChange={e => {
                     const [t, v] = e.target.value.split(':')
-                    setTradeParams({ ...tradeParams, stopLossType: t as TradeParams['stopLossType'], stopLossValue: parseFloat(v) })
+                    const stopLossType = t as TradeParams['stopLossType']
+                    setTradeParams({
+                      ...tradeParams,
+                      stopLossType,
+                      stopLossValue: parseFloat(v),
+                      ...(stopLossType === 'none' && tradeParams.takeProfitType === 'rr_ratio'
+                        ? { takeProfitType: 'none' as const, takeProfitValue: 0 }
+                        : {}),
+                    })
                   }}
                   className="w-full h-10 bg-[var(--bg-tertiary)] text-[12px] text-[var(--text-primary)] px-3 rounded-lg border border-[var(--border-primary)] outline-none focus:border-[var(--accent)] appearance-none"
                   style={{ backgroundImage: selectArrow, backgroundRepeat: 'no-repeat', backgroundPosition: 'right 8px center', backgroundSize: '8px 5px', paddingRight: '26px' }}>
+                  <option value="none:0">关闭</option>
                   <option value="atr:2.0">平均真实波幅 × 2.0</option>
                   <option value="atr:1.5">平均真实波幅 × 1.5</option>
                   <option value="atr:3.0">平均真实波幅 × 3.0</option>
@@ -172,34 +180,19 @@ export function TemplateEditor({ template, onClose }: Props) {
                   }}
                   className="w-full h-10 bg-[var(--bg-tertiary)] text-[12px] text-[var(--text-primary)] px-3 rounded-lg border border-[var(--border-primary)] outline-none focus:border-[var(--accent)] appearance-none"
                   style={{ backgroundImage: selectArrow, backgroundRepeat: 'no-repeat', backgroundPosition: 'right 8px center', backgroundSize: '8px 5px', paddingRight: '26px' }}>
-                  <option value="rr_ratio:2.0">盈亏比 1:2</option>
-                  <option value="rr_ratio:3.0">盈亏比 1:3</option>
-                  <option value="rr_ratio:1.5">盈亏比 1:1.5</option>
+                  <option value="none:0">关闭</option>
+                  <option value="rr_ratio:2.0" disabled={tradeParams.stopLossType === 'none'}>盈亏比 1:2</option>
+                  <option value="rr_ratio:3.0" disabled={tradeParams.stopLossType === 'none'}>盈亏比 1:3</option>
+                  <option value="rr_ratio:1.5" disabled={tradeParams.stopLossType === 'none'}>盈亏比 1:1.5</option>
                   <option value="fixed_pct:10">固定涨幅 10%</option>
                   <option value="fixed_pct:20">固定涨幅 20%</option>
                   <option value="atr:3.0">平均真实波幅 × 3.0</option>
                 </select>
               </div>
-              <div>
-                <label className="text-[10px] text-[var(--text-muted)] block mb-1.5">仓位</label>
-                <select value={`${tradeParams.positionType}:${tradeParams.positionValue}`}
-                  onChange={e => {
-                    const [t, v] = e.target.value.split(':')
-                    setTradeParams({ ...tradeParams, positionType: t as TradeParams['positionType'], positionValue: parseFloat(v) })
-                  }}
-                  className="w-full h-10 bg-[var(--bg-tertiary)] text-[12px] text-[var(--text-primary)] px-3 rounded-lg border border-[var(--border-primary)] outline-none focus:border-[var(--accent)] appearance-none"
-                  style={{ backgroundImage: selectArrow, backgroundRepeat: 'no-repeat', backgroundPosition: 'right 8px center', backgroundSize: '8px 5px', paddingRight: '26px' }}>
-                  <option value="fixed_pct:20">20%</option>
-                  <option value="fixed_pct:10">10%</option>
-                  <option value="fixed_pct:30">30%</option>
-                  <option value="fixed_pct:50">50%</option>
-                  <option value="kelly:1.0">凯利公式</option>
-                </select>
-              </div>
             </div>
 
-            <div className="mt-5 pt-5 border-t border-[var(--border-primary)]">
-              <div className="flex items-center justify-between gap-4 mb-4">
+            <div className="mt-6 pt-6 border-t border-[var(--border-primary)]">
+              <div className="flex flex-wrap items-center justify-between gap-5 mb-5">
                 <div className="flex items-center gap-2">
                   <h5 className="text-[12px] font-medium text-[var(--text-secondary)]">条件出场</h5>
                   <span className="text-[10px] text-[var(--text-muted)]">可选 · 收盘价执行</span>
@@ -212,16 +205,16 @@ export function TemplateEditor({ template, onClose }: Props) {
           </section>
         </div>
 
-        <div className="h-16 flex items-center justify-end gap-3 px-7 border-t border-[var(--border-primary)] shrink-0 bg-[var(--bg-secondary)]">
+        <div className="h-[72px] flex items-center justify-end gap-4 px-8 border-t border-[var(--border-primary)] shrink-0 bg-[var(--bg-secondary)]">
           {saveError && (
             <div className="flex-1 text-[13px] text-[var(--accent-red)] self-center truncate">{saveError}</div>
           )}
           <button onClick={onClose} disabled={saving}
-            className="px-5 py-2.5 text-[13px] rounded-lg text-[var(--text-secondary)] hover:text-[var(--text-primary)] hover:bg-[var(--bg-tertiary)] transition-colors duration-150 disabled:opacity-40">
+            className="min-w-[88px] h-10 px-5 text-[13px] rounded-lg border border-[var(--border-primary)] text-[var(--text-secondary)] hover:text-[var(--text-primary)] hover:bg-[var(--bg-tertiary)] transition-colors duration-150 disabled:opacity-40">
             取消
           </button>
           <button onClick={handleSave} disabled={!name.trim() || saving}
-            className="px-6 py-2.5 text-[13px] font-semibold rounded-lg bg-[var(--accent)] text-white hover:brightness-110 transition-all duration-150 disabled:opacity-30 disabled:cursor-not-allowed">
+            className="min-w-[112px] h-10 px-6 text-[13px] font-semibold rounded-lg bg-[var(--accent)] text-white hover:brightness-110 transition-all duration-150 disabled:opacity-30 disabled:cursor-not-allowed">
             {saving ? '正在保存...' : '保存策略'}
           </button>
         </div>

@@ -1,14 +1,9 @@
+import asyncio
 from types import SimpleNamespace
 
 from app.schemas.signal import ChanValue, ConditionSchema, ConstantValue, IndicatorValue, TimeframeValue
 from app.services.condition_service import ConditionService
 from app.services.signal_evaluation_service import indicator_data_key, required_kline_limit
-
-
-def test_between_operator_accepts_reversed_bounds():
-    service = ConditionService()
-    assert service._compare(5, "between", 10, right2=1)
-    assert not service._compare(11, "between", 10, right2=1)
 
 
 def test_ma_direction_operators_compare_with_previous_value():
@@ -31,7 +26,7 @@ def test_ma_direction_reversal_operators_require_a_slope_change():
 
 
 def test_condition_schema_accepts_direction_operators():
-    for operator in ("rising", "falling", "turnDown", "turnUp"):
+    for operator in ("rising", "falling", "turnDown", "turnUp", "support", "resistance"):
         condition = ConditionSchema.model_validate({
             "id": f"condition-{operator}",
             "name": "均线方向",
@@ -40,6 +35,97 @@ def test_condition_schema_accepts_direction_operators():
             "right": {"source": "constant", "value": 0},
         })
         assert condition.operator == operator
+
+
+def test_ma_support_operator_resolves_the_support_output():
+    service = ConditionService()
+    condition = ConditionSchema.model_validate({
+        "id": "ma-support",
+        "name": "MA5支撑",
+        "left": {"source": "indicator", "indicator_type": "ma", "params": {"period": 5}},
+        "operator": "support",
+        "right": {"source": "constant", "value": 0},
+    })
+    key = indicator_data_key("ma", condition.left.params)
+    value = service._resolve(
+        condition.left, condition,
+        kline_data={}, chan_data={},
+        indicator_data={"1d": {key: [{"value": 10.0, "support": 1.0, "resistance": 0.0}]}},
+        default_tf="1d",
+    )
+    assert value == 1.0
+    assert service._compare(value, "support", 0)
+
+
+def test_group_internal_or_and_template_between_groups_and():
+    service = ConditionService()
+
+    def constant_condition(identifier: str, left: float, right: float):
+        return {
+            "id": identifier, "name": identifier,
+            "left": {"source": "constant", "value": left},
+            "operator": "gt",
+            "right": {"source": "constant", "value": right},
+        }
+
+    from app.schemas.signal import ConditionTemplateSchema
+    template = ConditionTemplateSchema.model_validate({
+        "id": "group-logic", "name": "组内或", "logic": "AND", "primary_tf": "1d",
+        "condition_groups": [
+            {"id": "ma", "logic": "OR", "conditions": [
+                constant_condition("ma5", 0, 1), constant_condition("ma10", 2, 1),
+            ]},
+            {"id": "chan", "logic": "OR", "conditions": [
+                constant_condition("buy1", 0, 1), constant_condition("buy2", 2, 1),
+            ]},
+        ],
+    })
+    result = asyncio.run(service.evaluate(template, {}, {}, {}))
+    assert result.is_ready is True
+    assert [group.satisfied for group in result.groups] == [True, True]
+
+
+def test_ma_support_or_group_and_30m_chan_buy_point_or_group():
+    service = ConditionService()
+    from app.schemas.signal import ConditionTemplateSchema
+
+    ma_conditions = [
+        {
+            "id": f"ma{period}", "name": f"MA{period}支撑",
+            "left": {"source": "indicator", "indicator_type": "ma", "params": {"period": period}},
+            "operator": "support", "right": {"source": "constant", "value": 0},
+            "timeframe_id": "1d",
+        }
+        for period in (5, 10, 20)
+    ]
+    chan_conditions = [
+        {
+            "id": point, "name": point,
+            "left": {"source": "chan", "element": "buySellPoint", "property": point},
+            "operator": "gt", "right": {"source": "constant", "value": 0},
+            "timeframe_id": "30m",
+        }
+        for point in ("buy1", "buy2", "buy3")
+    ]
+    template = ConditionTemplateSchema.model_validate({
+        "id": "requested-strategy", "name": "均线支撑与30分钟买点", "logic": "AND",
+        "primary_tf": "1d", "secondary_tfs": ["30m"],
+        "condition_groups": [
+            {"id": "ma-support", "logic": "OR", "conditions": ma_conditions},
+            {"id": "chan-buy", "logic": "OR", "conditions": chan_conditions},
+        ],
+    })
+    indicator_data = {"1d": {}}
+    for period, support in ((5, 0.0), (10, 1.0), (20, 0.0)):
+        params = template.condition_groups[0].conditions[(5, 10, 20).index(period)].left.params
+        indicator_data["1d"][indicator_data_key("ma", params)] = [{"value": 10.0, "support": support}]
+    chan_data = {"30m": SimpleNamespace(
+        buy_sell_points=[SimpleNamespace(type="buy2")], divergences=[], bis=[], zhongshus=[],
+    )}
+
+    result = asyncio.run(service.evaluate(template, {}, chan_data, indicator_data))
+    assert result.is_ready is True
+    assert [group.satisfied for group in result.groups] == [True, True]
 
 
 def test_chan_divergence_condition_filters_direction_and_confirmation():
@@ -88,6 +174,7 @@ def test_condition_accepts_legacy_right_2_alias():
         "right_2": {"source": "constant", "value": 10},
         "enabled": True,
     })
+    assert condition.operator == "gte"
     assert condition.right2 is not None
     assert condition.right2.value == 10
 
