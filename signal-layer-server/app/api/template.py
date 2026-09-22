@@ -1,6 +1,7 @@
 import logging
 from fastapi import APIRouter, HTTPException, Depends
 from sqlalchemy import select
+from sqlalchemy.orm.attributes import flag_modified
 from sqlalchemy.ext.asyncio import AsyncSession
 from app.db import get_session
 from app.api.security import require_permission
@@ -93,13 +94,24 @@ async def update_template(
     t = await session.get(Template, template_id)
     if not t or t.user_id != user.id:
         raise HTTPException(status_code=404, detail="Template not found")
-    update_data = body.model_dump(exclude_unset=True)
+    # JSON列显式从Pydantic对象序列化并标记为已修改，避免嵌套配置更新
+    # （尤其是止损/止盈改为 none）被ORM当成原JSON值而漏写。
+    update_data = body.model_dump(exclude_unset=True, exclude={"trade_params"})
     for key, value in update_data.items():
-        if key == "trade_params" and value is not None and hasattr(value, "model_dump"):
-            value = value.model_dump()
         setattr(t, key, value)
-    await session.commit()
+    if "trade_params" in body.model_fields_set:
+        t.trade_params = body.trade_params.model_dump(mode="json") if body.trade_params else None
+        flag_modified(t, "trade_params")
+    await session.flush()
     await session.refresh(t)
+    if body.trade_params and (
+        not t.trade_params
+        or t.trade_params.get("stop_loss_type") != body.trade_params.stop_loss_type
+        or t.trade_params.get("take_profit_type") != body.trade_params.take_profit_type
+    ):
+        await session.rollback()
+        raise HTTPException(status_code=500, detail="策略风控配置保存校验失败")
+    await session.commit()
     logger.info(f"PUT /templates/{template_id} updated")
     return _to_response(t)
 

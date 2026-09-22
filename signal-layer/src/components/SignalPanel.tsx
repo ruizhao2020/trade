@@ -13,6 +13,7 @@ import { evaluateSignal, runBacktest } from '../api/signal.ts'
 import type { BacktestResult } from '../api/signal.ts'
 import { LayerControls } from './LayerControls.tsx'
 import { TemplateEditor } from './TemplateEditor.tsx'
+import { timeframeLabel } from '../core/constants.ts'
 
 const STATE_LABEL: Record<string, string> = {
   idle: '尚未评估',
@@ -47,16 +48,37 @@ interface Props {
   onBacktestResult?: (result: BacktestResult) => void
 }
 
-function conditionLabel(condition: Condition) {
-  if (condition.name) return condition.name
-  const left = condition.left
-  if (left.source === 'chan' && left.element === 'buySellPoint') return CHAN_SIGNAL_LABEL[left.property ?? ''] ?? '买卖点'
-  if (left.source === 'chan' && left.element === 'divergence') return left.property === 'top' ? '顶背驰' : left.property === 'bottom' ? '底背驰' : '背驰'
-  if (left.source === 'chan' && left.element === 'bi') return '笔数'
-  if (left.source === 'chan' && left.element === 'zhongshu') return '中枢数'
-  if (left.source === 'price') return PRICE_FIELD_LABEL[left.field] ?? left.field
-  if (left.source === 'indicator') return left.indicatorType.toUpperCase()
+const CONDITION_OPERATOR_LABEL: Record<string, string> = {
+  gt: '大于', gte: '不小于', lt: '小于', lte: '不大于', eq: '等于',
+  crossAbove: '上穿', crossBelow: '下穿', rising: '向上', falling: '向下',
+  turnDown: '上转下', turnUp: '下转上', support: '支撑', resistance: '压制',
+}
+
+function conditionValueLabel(value: Condition['left']) {
+  if (value.source === 'indicator') {
+    const period = value.params.period !== undefined ? ` ${value.params.period}` : ''
+    return `${value.indicatorType.toUpperCase()}${period}`
+  }
+  if (value.source === 'chan' && value.element === 'buySellPoint') return CHAN_SIGNAL_LABEL[value.property ?? ''] ?? '买卖点'
+  if (value.source === 'chan' && value.element === 'divergence') return value.property === 'top' ? '顶背驰' : value.property === 'bottom' ? '底背驰' : '背驰'
+  if (value.source === 'chan' && value.element === 'bi') return '笔数'
+  if (value.source === 'chan' && value.element === 'zhongshu') return '中枢数'
+  if (value.source === 'price') return PRICE_FIELD_LABEL[value.field] ?? value.field
+  if (value.source === 'constant') return String(value.value)
+  if (value.source === 'timeframe') return conditionValueLabel(value.inner)
   return '策略条件'
+}
+
+function conditionLabel(condition: Condition) {
+  const base = condition.name?.trim() || conditionValueLabel(condition.left)
+  const operator = CONDITION_OPERATOR_LABEL[condition.operator]
+  if (condition.left.source === 'chan' && condition.left.element === 'buySellPoint') {
+    return condition.name?.trim() ? `${condition.name.trim()} · ${conditionValueLabel(condition.left)}` : CHAN_SIGNAL_LABEL[condition.left.property ?? ''] || '买卖点'
+  }
+  if (condition.left.source === 'chan' && condition.left.element === 'divergence') {
+    return condition.name?.trim() ? `${condition.name.trim()} · ${conditionValueLabel(condition.left)}` : (condition.left.property === 'top' ? '顶背驰' : condition.left.property === 'bottom' ? '底背驰' : '背驰')
+  }
+  return `${base}${operator ? ` · ${operator}` : ''}`
 }
 
 function PlusIcon() {
@@ -124,6 +146,13 @@ export function SignalPanel({ symbol = '', embedded = false, showLayers = true, 
   const displayedState = activeTemplate && !activeTemplate.enabled ? 'disabled' : activeSignal?.state ?? 'idle'
   const displayedStateLabel = displayedState === 'disabled' ? '策略已停用' : STATE_LABEL[displayedState]
   const displayedStateColor = displayedState === 'disabled' ? 'var(--text-muted)' : STATE_COLOR[displayedState]
+
+  useEffect(() => {
+    Promise.resolve().then(() => {
+      setBacktestResult(null)
+      setPanelView('live')
+    })
+  }, [activeTemplate?.id, activeTemplate?.updatedAt])
 
   async function handleEvaluate() {
     if (!activeTemplate || !symbol) return
@@ -277,7 +306,7 @@ export function SignalPanel({ symbol = '', embedded = false, showLayers = true, 
               return (
                 <div key={`${activeTemplate.id}:entry:${groupIndex}:${condition.id}:${conditionIndex}`} className="min-h-10 px-2 py-1.5 mb-1 rounded-md bg-[var(--bg-tertiary)]/55 flex items-center gap-2">
                   <span className={`w-1.5 h-1.5 rounded-full shrink-0 ${evaluation?.satisfied ? 'bg-[var(--accent-green)]' : 'bg-[var(--text-muted)]'}`} />
-                  <span className="flex-1 min-w-0"><span className="block truncate text-[11px] text-[var(--text-secondary)]">{conditionLabel(condition)}</span><span className="block text-[10px] font-mono text-[var(--text-muted)]">{condition.timeframeId ?? activeTemplate.primaryTimeframeId}</span></span>
+                  <span className="flex-1 min-w-0"><span className="block truncate text-[11px] text-[var(--text-secondary)]">{conditionLabel(condition)}</span><span className="block text-[10px] font-mono text-[var(--text-muted)]">{timeframeLabel(condition.timeframeId ?? activeTemplate.primaryTimeframeId)}</span></span>
                   {evaluation && <span className={`text-[10px] font-mono ${evaluation.satisfied ? 'text-[var(--accent-green)]' : 'text-[var(--text-muted)]'}`}>{evaluation.leftValue.toFixed(2)}</span>}
                 </div>
               )
@@ -285,13 +314,43 @@ export function SignalPanel({ symbol = '', embedded = false, showLayers = true, 
           </div>
         ))}
 
-        <div className="flex items-center gap-2 mt-4 mb-2"><span className="text-[11px] font-semibold">退出设置</span><span className="ml-auto text-[10px] text-[var(--text-muted)]">{activeTemplate.tradeParams ? (activeTemplate.tradeParams.exitLogic === 'AND' ? '全部满足' : '满足任一组') : '止盈/止损'}</span></div>
+        <div className="flex items-center gap-2 mt-4 mb-2"><span className="text-[11px] font-semibold">卖出与风控</span><span className="ml-auto text-[10px] text-[var(--text-muted)]">{activeTemplate.tradeParams ? (activeTemplate.tradeParams.exitLogic === 'AND' ? '全部满足' : '满足任一组') : '止盈/止损'}</span></div>
         {activeTemplate.tradeParams ? (
           <div className="grid grid-cols-2 gap-px overflow-hidden rounded-md bg-[var(--border-primary)]">
             <div className="bg-[var(--bg-tertiary)] p-2"><span className="block text-[10px] text-[var(--text-muted)]">止损</span><span className="block mt-1 text-[11px] font-mono">{activeTemplate.tradeParams.stopLossType === 'none' ? '关闭' : `${activeTemplate.tradeParams.stopLossValue}${STOP_LOSS_UNIT[activeTemplate.tradeParams.stopLossType] ?? ''}`}</span></div>
             <div className="bg-[var(--bg-tertiary)] p-2"><span className="block text-[10px] text-[var(--text-muted)]">止盈</span><span className="block mt-1 text-[11px] font-mono">{activeTemplate.tradeParams.takeProfitType === 'none' ? '关闭' : `${activeTemplate.tradeParams.takeProfitValue}${TAKE_PROFIT_UNIT[activeTemplate.tradeParams.takeProfitType] ?? ''}`}</span></div>
           </div>
         ) : <div className="text-[11px] text-[var(--text-muted)]">未配置风控参数</div>}
+
+        {activeTemplate.tradeParams?.exitConditions && activeTemplate.tradeParams.exitConditions.length > 0 && (
+          <div className="mt-4">
+            <div className="flex items-center gap-2 mb-2">
+              <span className="text-[11px] font-semibold">条件卖出</span>
+              <span className="px-1.5 py-0.5 rounded bg-[var(--bg-tertiary)] text-[10px] text-[var(--text-muted)]">
+                {activeTemplate.tradeParams.exitLogic === 'AND' ? '全部满足' : '任一组'}
+              </span>
+            </div>
+            <div className="space-y-2">
+              {activeTemplate.tradeParams.exitConditions.map((group, groupIndex) => (
+                <div key={`${activeTemplate.id}:exit:${group.id}:${groupIndex}`} className="rounded-md border border-[var(--border-primary)] bg-[var(--bg-tertiary)]/45 p-2.5">
+                  <div className="flex items-center gap-2 mb-1.5">
+                    <span className="text-[10px] text-[var(--text-muted)]">{group.name?.trim() || `条件组 ${groupIndex + 1}`}</span>
+                    <span className="text-[9px] text-[var(--text-muted)]">组内{(group.logic ?? 'AND') === 'AND' ? '全部满足' : '任一满足'}</span>
+                  </div>
+                  <div className="space-y-1">
+                    {group.conditions.filter((condition) => condition.enabled).map((condition, conditionIndex) => (
+                      <div key={`${condition.id}:${conditionIndex}`} className="flex items-center gap-2 text-[10px] text-[var(--text-secondary)]">
+                        <span className="w-1.5 h-1.5 rounded-full bg-[var(--accent-orange)] shrink-0" />
+                        <span className="truncate">{conditionLabel(condition)}</span>
+                        <span className="ml-auto text-[9px] font-mono text-[var(--text-muted)] shrink-0">{timeframeLabel(condition.timeframeId ?? activeTemplate.primaryTimeframeId)}</span>
+                      </div>
+                    ))}
+                  </div>
+                </div>
+              ))}
+            </div>
+          </div>
+        )}
       </div>
 
       <div className="sticky bottom-0 p-3 mt-auto border-t border-[var(--border-primary)] bg-[var(--bg-secondary)] flex gap-2">

@@ -245,6 +245,12 @@ function WorkbenchApp({ user, onLogout, onUserChange, onLogin }: { user: AuthUse
   useEffect(() => {
     if (!symbol || !['strategy', 'screener'].includes(effectiveActiveModule) || !activeTemplate?.enabled || !strategyTradeKey) return
     let cancelled = false
+    Promise.resolve().then(() => {
+      if (!cancelled) {
+        setStrategyTradeScan({ key: '', result: null })
+        setBacktestResult(null)
+      }
+    })
     runBacktest(symbol, activeTemplate, 300)
       .then((result) => {
         if (!cancelled) setStrategyTradeScan({ key: strategyTradeKey, result })

@@ -239,6 +239,12 @@ export async function createTemplate(template: ConditionTemplate): Promise<Condi
 export async function updateTemplate(id: string, template: ConditionTemplate): Promise<ConditionTemplate> {
   console.log('[SL:API] PUT /templates/' + id, { name: template.name })
   const raw = await api.put<ApiTemplate>(`/templates/${id}`, templateToSnake(template))
+  if (template.tradeParams && (
+    raw.trade_params?.stop_loss_type !== template.tradeParams.stopLossType
+    || raw.trade_params?.take_profit_type !== template.tradeParams.takeProfitType
+  )) {
+    throw new Error('策略止损止盈保存校验失败，请重试')
+  }
   console.log('[SL:API] PUT /templates/' + id + ' -> OK')
   return templateFromSnake(raw)
 }
