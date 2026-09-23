@@ -91,3 +91,10 @@ export const updatePublicIndicatorPolicy = (id: number, values: Partial<PublicIn
 export const fetchPublicIndicatorFeaturePolicies = () => api.get<PublicIndicatorFeaturePolicy[]>('/admin/public-indicator-features')
 export const createPublicIndicatorFeaturePolicy = (values: { indicator_type: string; feature_code: string; display_name: string; public_visible?: boolean; show_details?: boolean; sort_order?: number }) => api.post<PublicIndicatorFeaturePolicy>('/admin/public-indicator-features', values)
 export const updatePublicIndicatorFeaturePolicy = (id: number, values: Partial<PublicIndicatorFeaturePolicy>) => api.put<PublicIndicatorFeaturePolicy>(`/admin/public-indicator-features/${id}`, values)
+
+export interface IndicatorRuntimeSettings {
+  divergence_power_ratio: number
+}
+
+export const fetchIndicatorRuntimeSettings = () => api.get<IndicatorRuntimeSettings>('/admin/indicator-settings')
+export const updateIndicatorRuntimeSettings = (values: IndicatorRuntimeSettings) => api.put<IndicatorRuntimeSettings>('/admin/indicator-settings', values)

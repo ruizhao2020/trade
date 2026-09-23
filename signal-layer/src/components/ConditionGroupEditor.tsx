@@ -13,6 +13,7 @@ import type { ConditionGroup, Condition, ConditionValue, IndicatorInfo } from '.
 import { ConditionOperator } from '../core/types.ts'
 import { DEFAULT_TIMEFRAMES } from '../core/constants.ts'
 import { MA_PERIODS } from '../core/indicatorColors.ts'
+import { ParameterHint } from './ParameterHint.tsx'
 
 interface Props {
   /** 条件组列表 */
@@ -135,6 +136,21 @@ const PARAM_LABELS: Record<string, string> = {
   breakout_buffer_pct: '突破缓冲',
 }
 
+const PARAM_HELP: Record<string, string> = {
+  period: '用于计算均线或指标的K线数量。周期越大，结果越平滑，但反应越慢。',
+  touch_tolerance_pct: '判断均线支撑或压制时允许的触碰范围，按均线价格的百分比计算。',
+  fast: 'MACD快线的计算周期。', slow: 'MACD慢线的计算周期。', signal: 'MACD信号线的平滑周期。',
+  n: 'KDJ的基础计算周期。', m1: 'KDJ中K值的平滑周期。', m2: 'KDJ中D值的平滑周期。',
+  std: '布林带标准差倍数，数值越大通道越宽。',
+  lookback: '向前回看的K线数量，用于识别历史区间或结构。',
+  min_turnover_days: '筹码分布至少需要具备有效换手数据的交易日数量。',
+  bins: '筹码价格分布的价格档位数量，越大越细，但计算量也会增加。',
+  departure_confirm_bars: '价格离开合理区间后，连续多少根收盘K线确认脱离。',
+  true_departure_bars: '连续脱离多少根后确认是真脱离。',
+  maturity_bars: '合理价格区间持续多少根K线后视为成熟态势。',
+  maturity_folds: '合理价格区间累计折叠次数达到该值后视为成熟。',
+}
+
 function IndicatorParamsEditor({
   value,
   info,
@@ -150,7 +166,8 @@ function IndicatorParamsEditor({
         const label = PARAM_LABELS[key] ?? key
         if (value.indicatorType === 'ma' && key === 'period') {
           return (
-            <label key={key} className="flex items-center">
+            <label key={key} className="flex items-center gap-1.5">
+              <ParameterHint label={label} text={PARAM_HELP[key] ?? '该参数用于控制指标计算方式。'} />
               <select
                 aria-label={`${info.name} ${label}`}
                 value={paramValue}
@@ -164,7 +181,7 @@ function IndicatorParamsEditor({
         }
         return (
           <label key={key} className="flex items-center gap-1.5 text-[11px] text-[var(--text-muted)]">
-            {label}
+            <ParameterHint label={label} text={PARAM_HELP[key] ?? '该参数用于控制指标计算方式。'} />
             <input
               type="number"
               aria-label={`${info.name} ${label}`}

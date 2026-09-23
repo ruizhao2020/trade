@@ -65,7 +65,10 @@ class ChanEngine:
     使用批量模式处理 K 线(非增量),结果与 czsc 增量模式等价。
     """
 
-    def analyze(self, klines: list[dict], symbol: str = "", timeframe: str = "") -> ChanResult:
+    def analyze(
+        self, klines: list[dict], symbol: str = "", timeframe: str = "",
+        divergence_power_ratio: float = 0.7,
+    ) -> ChanResult:
         logger.info(f"ChanEngine.analyze {symbol} {timeframe} starting with {len(klines)} raw klines")
 
         # 1. 去包含关系(对齐 czsc update_bar 中的去包含逻辑)
@@ -92,7 +95,7 @@ class ChanEngine:
         duan_zhongshus = identify_zhongshus(duans)
 
         # 6. 识别背驰，并以确认背驰作为一类买卖点的必要条件
-        divergences = identify_divergences(bis, zhongshus)
+        divergences = identify_divergences(bis, zhongshus, divergence_power_ratio)
         points = identify_buy_sell_points(bis, zhongshus, divergences)
 
         last_time = klines[-1]["open_time"] if klines else 0

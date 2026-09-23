@@ -13,6 +13,15 @@ CREATE TABLE IF NOT EXISTS templates (
     INDEX idx_user (user_id)
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
 
+CREATE TABLE IF NOT EXISTS system_settings (
+    `key`          VARCHAR(100) NOT NULL PRIMARY KEY,
+    value_number   DOUBLE       NOT NULL,
+    name           VARCHAR(100) NOT NULL,
+    description    VARCHAR(500) NOT NULL DEFAULT '',
+    created_at     DATETIME     NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    updated_at     DATETIME     NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
+
 CREATE TABLE IF NOT EXISTS users (
     id            INT          NOT NULL AUTO_INCREMENT PRIMARY KEY,
     username      VARCHAR(50)  NOT NULL UNIQUE,

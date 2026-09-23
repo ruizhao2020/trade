@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 from fastapi import APIRouter, Depends, HTTPException
+from pydantic import BaseModel, Field
 from sqlalchemy import insert, select, update
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import selectinload
@@ -14,12 +15,36 @@ from app.schemas.auth import (
     RoleCreate, RoleResponse, RoleUpdate, UserResponse, UserRoleUpdate,
 )
 from app.services.module_access_service import invalidate_module_rules
+from app.api.deps import get_chan_service
+from app.services.system_setting_service import get_divergence_power_ratio, set_divergence_power_ratio
 from app.schemas.site import (
     PublicIndicatorFeaturePolicyCreate, PublicIndicatorFeaturePolicyResponse, PublicIndicatorFeaturePolicyUpdate,
     PublicIndicatorPolicyResponse, PublicIndicatorPolicyUpdate,
 )
 
 router = APIRouter(prefix="/api/v1/admin", tags=["admin"])
+
+
+class IndicatorRuntimeSettingsResponse(BaseModel):
+    divergence_power_ratio: float
+
+
+class IndicatorRuntimeSettingsUpdate(BaseModel):
+    divergence_power_ratio: float = Field(gt=0, lt=1)
+
+
+@router.get("/indicator-settings", response_model=IndicatorRuntimeSettingsResponse, dependencies=[Depends(require_permission("admin.modules"))])
+async def get_indicator_settings(session: AsyncSession = Depends(get_session)):
+    return IndicatorRuntimeSettingsResponse(
+        divergence_power_ratio=await get_divergence_power_ratio(session)
+    )
+
+
+@router.put("/indicator-settings", response_model=IndicatorRuntimeSettingsResponse, dependencies=[Depends(require_permission("admin.modules"))])
+async def update_indicator_settings(body: IndicatorRuntimeSettingsUpdate, session: AsyncSession = Depends(get_session)):
+    item = await set_divergence_power_ratio(session, body.divergence_power_ratio)
+    get_chan_service().set_divergence_power_ratio(float(item.value_number))
+    return IndicatorRuntimeSettingsResponse(divergence_power_ratio=float(item.value_number))
 
 
 def role_response(role: Role) -> RoleResponse:

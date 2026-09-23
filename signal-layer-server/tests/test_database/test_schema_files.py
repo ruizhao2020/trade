@@ -31,6 +31,7 @@ def test_sqlite_initialization_script_creates_fixed_tables():
         "templates", "klines", "users", "roles", "modules", "permissions",
         "user_roles", "role_permissions", "public_indicator_policies", "public_indicator_feature_policies",
         "content_templates", "article_drafts",
+        "system_settings",
     }.issubset(tables)
     assert "trade_params" in template_columns
     assert {"amount", "turnover_rate", "circulating_shares", "adjustment_factor", "adjustment_type"}.issubset(kline_columns)
@@ -62,6 +63,7 @@ def test_sqlite_seed_creates_default_admin_roles_and_modules():
         assert connection.execute("SELECT public_visible FROM public_indicator_policies WHERE indicator_type='volume_structure'").fetchone()[0] == 0
         assert connection.execute("SELECT public_visible FROM public_indicator_policies WHERE indicator_type='dilun_structure'").fetchone()[0] == 0
         assert connection.execute("SELECT public_visible FROM public_indicator_feature_policies WHERE indicator_type='chan' AND feature_code='buy_sell_points'").fetchone()[0] == 0
+        assert connection.execute("SELECT value_number FROM system_settings WHERE key='chan.divergence_power_ratio'").fetchone()[0] == 0.7
         admin_permissions = connection.execute(
             "SELECT COUNT(*) FROM role_permissions rp JOIN roles r ON r.id=rp.role_id WHERE r.code='admin'"
         ).fetchone()[0]
@@ -86,6 +88,7 @@ def test_mysql_schemas_contain_only_expected_fixed_tables():
     assert "CREATE TABLE IF NOT EXISTS templates" in app_sql
     assert "CREATE TABLE IF NOT EXISTS klines" in app_sql
     assert "trade_params" in app_sql
+    assert "CREATE TABLE IF NOT EXISTS system_settings" in app_sql
     assert "CREATE TABLE IF NOT EXISTS stock_info" in market_sql
     assert "INSERT INTO users" in seed_sql
     assert "INSERT INTO roles" in seed_sql

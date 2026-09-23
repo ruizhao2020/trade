@@ -16,6 +16,15 @@ CREATE TABLE IF NOT EXISTS templates (
 
 CREATE INDEX IF NOT EXISTS idx_user ON templates (user_id);
 
+CREATE TABLE IF NOT EXISTS system_settings (
+    key            VARCHAR(100) NOT NULL PRIMARY KEY,
+    value_number   REAL         NOT NULL,
+    name           VARCHAR(100) NOT NULL,
+    description    VARCHAR(500) NOT NULL DEFAULT '',
+    created_at     DATETIME     NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    updated_at     DATETIME     NOT NULL DEFAULT CURRENT_TIMESTAMP
+);
+
 CREATE TABLE IF NOT EXISTS klines (
     id          INTEGER       NOT NULL PRIMARY KEY AUTOINCREMENT,
     symbol      VARCHAR(20)   NOT NULL,

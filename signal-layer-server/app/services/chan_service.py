@@ -37,6 +37,14 @@ class ChanService:
     def __init__(self, cache: IndicatorCache):
         self._engine = ChanEngine()
         self._cache = cache
+        self._divergence_power_ratio = 0.7
+
+    @property
+    def divergence_power_ratio(self) -> float:
+        return self._divergence_power_ratio
+
+    def set_divergence_power_ratio(self, value: float) -> None:
+        self._divergence_power_ratio = value
 
     async def analyze(
         self, symbol: str, timeframe: str, klines: list[dict],
@@ -56,7 +64,7 @@ class ChanService:
         Returns:
             ChanResult: 包含 bis/duans/zhongshus/buy_sell_points 的完整结构
         """
-        cache_key = key_chan(symbol, timeframe)
+        cache_key = key_chan(symbol, timeframe, self._divergence_power_ratio)
         cached = await self._cache.get(cache_key)
 
         if cached and klines:
@@ -70,7 +78,10 @@ class ChanService:
                 return self._deserialize(cached)
 
         logger.info(f"Chan cache MISS {symbol} {timeframe} - computing...")
-        result = self._engine.analyze(klines, symbol=symbol, timeframe=timeframe)
+        result = self._engine.analyze(
+            klines, symbol=symbol, timeframe=timeframe,
+            divergence_power_ratio=self._divergence_power_ratio,
+        )
 
         logger.info(f"Chan analysis {symbol} {timeframe} -> {len(result.bis)} bis, "
                     f"{len(result.duans)} duans, {len(result.zhongshus)} zhongshus, "

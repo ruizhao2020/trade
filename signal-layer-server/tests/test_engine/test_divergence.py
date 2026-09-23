@@ -112,3 +112,22 @@ def test_new_extreme_without_power_decay_is_not_divergence_or_first_point() -> N
         point.type != "buy1"
         for point in identify_buy_sell_points(bis, [zhongshu], divergences)
     )
+
+
+def test_divergence_requires_power_strictly_below_configured_ratio() -> None:
+    exact_boundary = [
+        make_bi(0, "up", 90, 110),
+        make_bi(1, "down", 110, 90),       # 参考力度20
+        make_bi(2, "up", 90, 94),
+        make_bi(3, "down", 97, 83),        # 当前力度14，刚好0.7
+        make_bi(4, "up", 83, 89),
+    ]
+    below_boundary = [
+        *exact_boundary[:3],
+        make_bi(3, "down", 96.9, 83),      # 当前力度13.9，低于0.7
+        exact_boundary[4],
+    ]
+
+    assert identify_divergences(exact_boundary, [make_zhongshu("down")], 0.7) == []
+    assert len(identify_divergences(below_boundary, [make_zhongshu("down")], 0.7)) == 1
+    assert identify_divergences(below_boundary, [make_zhongshu("down")], 0.6) == []

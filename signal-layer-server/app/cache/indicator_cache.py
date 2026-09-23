@@ -42,9 +42,9 @@ class IndicatorCache:
             pass
 
 
-def key_chan(symbol: str, timeframe: str) -> str:
-    # v2: 线段边界连续性修正 + 背驰详情原因，避免读取旧算法缓存。
-    return f"chan:v2:{symbol}:{timeframe}"
+def key_chan(symbol: str, timeframe: str, divergence_power_ratio: float = 0.7) -> str:
+    # v3: 缓存包含背驰力度阈值，配置修改后不会复用旧结果。
+    return f"chan:v3:{symbol}:{timeframe}:divergence={divergence_power_ratio:.6f}"
 
 
 def key_indicator(symbol: str, timeframe: str, indicator_type: str, params: dict[str, Any]) -> str:

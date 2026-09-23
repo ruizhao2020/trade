@@ -94,6 +94,10 @@ VALUES
     ('scheduled', '策略定时快照', '【策略定时推送】\\n策略：{{strategy_name}}\\n标的：{{symbol_name}}（{{symbol}}）\\n最新价：{{price}}\\n信号状态：{{signal_status}}\\n时间：{{trigger_time}}', 1)
 ON DUPLICATE KEY UPDATE name=VALUES(name);
 
+INSERT INTO system_settings (`key`, value_number, name, description)
+VALUES ('chan.divergence_power_ratio', 0.7, '缠论背驰力度阈值', '当前笔力度必须小于参考笔力度乘以该阈值，才确认背驰。')
+ON DUPLICATE KEY UPDATE `key`=VALUES(`key`);
+
 INSERT INTO public_indicator_policies
     (indicator_type, display_name, public_visible, show_parameters, show_details, show_markers, sort_order)
 VALUES

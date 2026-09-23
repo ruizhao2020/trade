@@ -9,10 +9,11 @@ import {
   fetchPublicIndicatorPolicies, fetchPublicIndicatorFeaturePolicies,
   updatePublicIndicatorPolicy, updatePublicIndicatorFeaturePolicy,
   createPublicIndicatorFeaturePolicy,
+  fetchIndicatorRuntimeSettings, updateIndicatorRuntimeSettings,
 } from '../api/admin.ts'
-import type { AdminNotificationChannel, AdminNotificationTemplate, PermissionItem, PublicIndicatorFeaturePolicy, PublicIndicatorPolicy, RoleItem } from '../api/admin.ts'
+import type { AdminNotificationChannel, AdminNotificationTemplate, IndicatorRuntimeSettings, PermissionItem, PublicIndicatorFeaturePolicy, PublicIndicatorPolicy, RoleItem } from '../api/admin.ts'
 
-type Tab = 'users' | 'roles' | 'modules' | 'public-display' | 'notifications'
+type Tab = 'users' | 'roles' | 'modules' | 'indicator-settings' | 'public-display' | 'notifications'
 
 function Toggle({ value, onChange, disabled = false }: { value: boolean; onChange: (value: boolean) => void; disabled?: boolean }) {
   return <button type="button" disabled={disabled} aria-pressed={value} onClick={() => onChange(!value)} className={`w-10 h-5 rounded-full p-0.5 transition-colors disabled:opacity-35 disabled:cursor-not-allowed ${value ? 'bg-[var(--accent)]' : 'bg-[var(--border-accent)]'}`}><span className={`block w-4 h-4 rounded-full bg-white transition-transform ${value ? 'translate-x-5' : ''}`} /></button>
@@ -21,6 +22,25 @@ function Toggle({ value, onChange, disabled = false }: { value: boolean; onChang
 const NOTIFICATION_EVENT_LABEL: Record<string, string> = {
   screener_completed: '定时选股完成', screener_failed: '定时选股失败', entry: '策略建仓',
   exit: '策略清仓', stop_loss: '触发止损', take_profit: '触发止盈', scheduled: '策略定时快照',
+}
+
+function IndicatorSettingsPanel({ settings, onChange }: { settings: IndicatorRuntimeSettings; onChange: (value: IndicatorRuntimeSettings) => void }) {
+  const [value, setValue] = useState(settings.divergence_power_ratio)
+  const [message, setMessage] = useState('')
+  const [saving, setSaving] = useState(false)
+
+  async function save() {
+    if (!(value > 0 && value < 1)) { setMessage('阈值必须大于0且小于1'); return }
+    setSaving(true); setMessage('')
+    try {
+      const next = await updateIndicatorRuntimeSettings({ divergence_power_ratio: value })
+      onChange(next); setMessage('已保存并立即生效')
+    } catch (error) {
+      setMessage(error instanceof Error ? error.message.replace(/^Error:\s*/, '') : '保存失败')
+    } finally { setSaving(false) }
+  }
+
+  return <div className="max-w-4xl mx-auto"><section className="p-6 rounded-xl border border-[var(--border-primary)] bg-[var(--bg-secondary)]"><h2 className="text-[13px] font-semibold">缠论参数</h2><p className="mt-1 text-[11px] text-[var(--text-muted)]">修改后立即参与新一次缠论计算，并使用独立缓存。</p><div className="mt-5 max-w-xl p-4 rounded-lg border border-[var(--border-primary)] bg-[var(--bg-tertiary)]"><div className="text-[12px] font-medium">背驰力度阈值</div><div className="mt-1 text-[10px] leading-5 text-[var(--text-muted)]">仅当“当前笔力度 &lt; 参考笔力度 × 阈值”时确认背驰。默认0.7；刚好等于阈值不算背驰。</div><div className="mt-4 flex items-center gap-3"><input aria-label="背驰力度阈值" type="number" min="0.01" max="0.99" step="0.01" value={value} onChange={(event) => setValue(Number(event.target.value))} className="w-28 h-10 px-3 rounded-lg border border-[var(--border-primary)] bg-[var(--bg-primary)] text-[13px] font-mono outline-none focus:border-[var(--accent)]" /><span className="text-[11px] text-[var(--text-muted)]">当前笔 / 参考笔</span><button type="button" disabled={saving} onClick={() => void save()} className="ml-auto h-10 px-4 rounded-lg bg-[var(--accent)] text-white text-[11px] disabled:opacity-50">{saving ? '保存中…' : '保存参数'}</button></div>{message && <div role="status" className={`mt-3 text-[11px] ${message.startsWith('已保存') ? 'text-[var(--accent-green)]' : 'text-[var(--accent-red)]'}`}>{message}</div>}</div></section></div>
 }
 
 function NotificationAdminPanel({
@@ -157,14 +177,15 @@ export function AdminWorkspace({ currentUser, onModulesChanged }: { currentUser:
   const [notificationTemplates, setNotificationTemplates] = useState<AdminNotificationTemplate[]>([])
   const [publicIndicators, setPublicIndicators] = useState<PublicIndicatorPolicy[]>([])
   const [publicIndicatorFeatures, setPublicIndicatorFeatures] = useState<PublicIndicatorFeaturePolicy[]>([])
+  const [indicatorSettings, setIndicatorSettings] = useState<IndicatorRuntimeSettings>({ divergence_power_ratio: 0.7 })
   const [error, setError] = useState('')
 
   const load = useCallback(async () => {
     try {
-      const [nextUsers, nextRoles, nextModules, nextPermissions, nextChannels, nextTemplates, nextPublicIndicators, nextPublicFeatures] = await Promise.all([
-        fetchUsers(), fetchRoles(), fetchModules(), fetchPermissions(), fetchNotificationChannelsForAdmin(), fetchNotificationTemplatesForAdmin(), fetchPublicIndicatorPolicies(), fetchPublicIndicatorFeaturePolicies(),
+      const [nextUsers, nextRoles, nextModules, nextPermissions, nextChannels, nextTemplates, nextPublicIndicators, nextPublicFeatures, nextIndicatorSettings] = await Promise.all([
+        fetchUsers(), fetchRoles(), fetchModules(), fetchPermissions(), fetchNotificationChannelsForAdmin(), fetchNotificationTemplatesForAdmin(), fetchPublicIndicatorPolicies(), fetchPublicIndicatorFeaturePolicies(), fetchIndicatorRuntimeSettings(),
       ])
-      setUsers(nextUsers); setRoles(nextRoles); setModules(nextModules); setPermissions(nextPermissions); setNotificationChannels(nextChannels); setNotificationTemplates(nextTemplates); setPublicIndicators(nextPublicIndicators); setPublicIndicatorFeatures(nextPublicFeatures); setError('')
+      setUsers(nextUsers); setRoles(nextRoles); setModules(nextModules); setPermissions(nextPermissions); setNotificationChannels(nextChannels); setNotificationTemplates(nextTemplates); setPublicIndicators(nextPublicIndicators); setPublicIndicatorFeatures(nextPublicFeatures); setIndicatorSettings(nextIndicatorSettings); setError('')
     } catch (loadError) {
       setError(loadError instanceof Error ? loadError.message : String(loadError))
     }
@@ -198,7 +219,7 @@ export function AdminWorkspace({ currentUser, onModulesChanged }: { currentUser:
       </header>
       <div className="h-14 px-7 flex items-center border-b border-[var(--border-primary)] bg-[var(--bg-secondary)]">
         <div className="inline-flex items-center gap-1.5 p-1 rounded-lg border border-[var(--border-primary)] bg-[var(--bg-primary)] shadow-[0_4px_14px_rgba(0,0,0,.08)]" role="tablist" aria-label="系统管理页签">
-          {([['users', '用户管理'], ['roles', '角色权限'], ['modules', '模块配置'], ['public-display', '公开展示'], ['notifications', '通知配置']] as const).map(([key, label]) => <button key={key} type="button" role="tab" aria-selected={tab === key} onClick={() => setTab(key)} className={`h-9 px-5 rounded-md text-[12px] font-medium transition-all ${tab === key ? 'bg-[var(--bg-surface)] text-[var(--text-primary)] shadow-[0_2px_8px_rgba(0,0,0,.16)] ring-1 ring-[var(--border-accent)]' : 'text-[var(--text-muted)] hover:text-[var(--text-secondary)] hover:bg-[var(--bg-tertiary)]'}`}>{label}</button>)}
+          {([['users', '用户管理'], ['roles', '角色权限'], ['modules', '模块配置'], ['indicator-settings', '指标参数'], ['public-display', '公开展示'], ['notifications', '通知配置']] as const).map(([key, label]) => <button key={key} type="button" role="tab" aria-selected={tab === key} onClick={() => setTab(key)} className={`h-9 px-5 rounded-md text-[12px] font-medium transition-all ${tab === key ? 'bg-[var(--bg-surface)] text-[var(--text-primary)] shadow-[0_2px_8px_rgba(0,0,0,.16)] ring-1 ring-[var(--border-accent)]' : 'text-[var(--text-muted)] hover:text-[var(--text-secondary)] hover:bg-[var(--bg-tertiary)]'}`}>{label}</button>)}
         </div>
       </div>
       <div className="flex-1 overflow-auto p-7">
@@ -228,6 +249,7 @@ export function AdminWorkspace({ currentUser, onModulesChanged }: { currentUser:
             ))}
           </div>
         )}
+        {tab === 'indicator-settings' && <IndicatorSettingsPanel settings={indicatorSettings} onChange={setIndicatorSettings} />}
 
         {tab === 'notifications' && <NotificationAdminPanel channels={notificationChannels} templates={notificationTemplates} onReload={load} onChannelsChange={setNotificationChannels} onTemplatesChange={setNotificationTemplates} />}
         {tab === 'public-display' && <PublicDisplayPanel indicators={publicIndicators} features={publicIndicatorFeatures} onIndicatorsChange={setPublicIndicators} onFeaturesChange={setPublicIndicatorFeatures} />}

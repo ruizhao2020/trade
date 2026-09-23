@@ -15,6 +15,7 @@ import { createTemplate, updateTemplate } from '../api/template.ts'
 import { fetchIndicatorList } from '../api/indicator.ts'
 import type { ConditionTemplate, ConditionGroup, IndicatorInfo, TradeParams } from '../core/types.ts'
 import { ConditionGroupEditor } from './ConditionGroupEditor.tsx'
+import { ParameterHint } from './ParameterHint.tsx'
 
 interface Props {
   template?: ConditionTemplate
@@ -146,7 +147,7 @@ export function TemplateEditor({ template, onClose }: Props) {
 
             <div className="grid grid-cols-1 md:grid-cols-2 gap-5">
               <div>
-                <label className="text-[10px] text-[var(--text-muted)] block mb-1.5">止损</label>
+                <label className="text-[10px] text-[var(--text-muted)] block mb-1.5"><ParameterHint label="止损" text="当持仓价格向不利方向达到设定条件时退出。选择关闭表示回测不触发止损。" /></label>
                 <select value={`${tradeParams.stopLossType}:${tradeParams.stopLossValue}`}
                   onChange={e => {
                     const [t, v] = e.target.value.split(':')
@@ -172,7 +173,7 @@ export function TemplateEditor({ template, onClose }: Props) {
                 </select>
               </div>
               <div>
-                <label className="text-[10px] text-[var(--text-muted)] block mb-1.5">止盈</label>
+                <label className="text-[10px] text-[var(--text-muted)] block mb-1.5"><ParameterHint label="止盈" text="当持仓价格向有利方向达到设定条件时退出。选择关闭表示回测不触发止盈。盈亏比止盈依赖已开启的止损。" /></label>
                 <select value={`${tradeParams.takeProfitType}:${tradeParams.takeProfitValue}`}
                   onChange={e => {
                     const [t, v] = e.target.value.split(':')
@@ -194,7 +195,7 @@ export function TemplateEditor({ template, onClose }: Props) {
             <div className="mt-6 pt-6 border-t border-[var(--border-primary)]">
               <div className="flex flex-wrap items-center justify-between gap-5 mb-5">
                 <div className="flex items-center gap-2">
-                  <h5 className="text-[12px] font-medium text-[var(--text-secondary)]">条件出场</h5>
+                  <h5 className="text-[12px] font-medium text-[var(--text-secondary)]"><ParameterHint label="条件出场" text="使用价格、指标或缠论条件作为卖出依据；满足条件后按当前K线收盘价执行退出。" /></h5>
                   <span className="text-[10px] text-[var(--text-muted)]">可选 · 收盘价执行</span>
                   <span className="text-[10px] font-mono text-[var(--text-muted)]">{exitGroups.length} 组</span>
                 </div>

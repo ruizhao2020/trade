@@ -8,6 +8,7 @@ from app.models.auth import Module, Permission, PublicIndicatorFeaturePolicy, Pu
 from app.models.kline import Kline  # noqa: F401 — 注册固定 K 线模型
 from app.models.notification import NotificationChannel, NotificationEvent, NotificationTemplate, ScreenerSchedule, StrategyMonitor  # noqa: F401
 from app.models.content import ArticleDraft, ContentTemplate  # noqa: F401
+from app.models.system_setting import SystemSetting  # noqa: F401
 from app.config import settings
 
 _engine = None
@@ -132,6 +133,7 @@ def _ensure_mysql_utf8mb4(connection):
         "user_roles", "role_permissions", "klines", "public_indicator_policies", "public_indicator_feature_policies",
         "notification_channels", "notification_templates", "strategy_monitors", "notification_events", "screener_schedules",
         "content_templates", "article_drafts",
+        "system_settings",
     )
     inspector = inspect(connection)
     existing = set(inspector.get_table_names())

@@ -26,7 +26,9 @@ class Divergence:
     reasons: list[str]
 
 
-def identify_divergences(bis: list[Bi], zhongshus: list) -> list[Divergence]:
+def identify_divergences(
+    bis: list[Bi], zhongshus: list, power_ratio_threshold: float = 0.7,
+) -> list[Divergence]:
     """识别中枢离开笔的顶/底背驰。
 
     顶背驰：向上离开笔创新高，同时价差力度小于中枢内最近向上笔。
@@ -68,7 +70,8 @@ def identify_divergences(bis: list[Bi], zhongshus: list) -> list[Divergence]:
         reference = references[-1]
         reference_power = abs(reference.power or (reference.end_price - reference.start_price))
         current_power = abs(current.power or (current.end_price - current.start_price))
-        if reference_power <= 0 or current_power >= reference_power:
+        # 严格小于：刚好等于阈值不算背驰。
+        if reference_power <= 0 or current_power >= reference_power * power_ratio_threshold:
             continue
 
         if expected_direction == "up":
@@ -100,7 +103,7 @@ def identify_divergences(bis: list[Bi], zhongshus: list) -> list[Divergence]:
             confirmed=True,
             reasons=[
                 extreme_reason,
-                "离开笔力度小于中枢内最近同向笔",
+                f"离开笔力度小于参考笔的 {power_ratio_threshold:.2f} 倍",
                 "后一笔位于中枢外，背驰已经确认",
             ],
         ))

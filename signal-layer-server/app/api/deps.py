@@ -6,12 +6,13 @@ from app.config import settings
 
 logger = logging.getLogger(__name__)
 from app.cache.indicator_cache import IndicatorCache
-from app.db import init_db, close_db
+from app.db import init_db, close_db, get_session
 from app.services.data_service import DataService
 from app.services.chan_service import ChanService
 from app.services.indicator_service import IndicatorService
 from app.services.condition_service import ConditionService
 from app.services.notification_service import NotificationService
+from app.services.system_setting_service import get_divergence_power_ratio
 
 
 _redis: Redis | None = None
@@ -81,6 +82,12 @@ async def init_services():
         _cache_instance = IndicatorCache(None)
 
     _chan_service = ChanService(_cache_instance)
+    try:
+        async for session in get_session():
+            _chan_service.set_divergence_power_ratio(await get_divergence_power_ratio(session))
+            break
+    except Exception:
+        logger.warning("System settings unavailable; using default Chan parameters", exc_info=True)
     logger.info("ChanService initialized")
     _indicator_service = IndicatorService(_cache_instance)
     logger.info("IndicatorService initialized")
