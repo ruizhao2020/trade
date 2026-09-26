@@ -79,31 +79,9 @@ class ConditionService:
                     continue
                 total_conds += 1
 
-                # 解析左值和右值（支持跨周期、chan、indicator 等多种来源）
-                left_val = self._resolve(cond.left, cond, kline_data, chan_data, indicator_data, default_tf=primary_tf)
-                right_val = self._resolve(cond.right, cond, kline_data, chan_data, indicator_data, default_tf=primary_tf)
-                right2_val = self._resolve(cond.right2, cond, kline_data, chan_data, indicator_data, default_tf=primary_tf) if cond.right2 else None
-
-                prev_left = self._resolve(cond.left, cond, kline_data, chan_data, indicator_data, offset=-1, default_tf=primary_tf)
-                prev_right = self._resolve(cond.right, cond, kline_data, chan_data, indicator_data, offset=-1, default_tf=primary_tf)
-                prev_prev_left = self._resolve(cond.left, cond, kline_data, chan_data, indicator_data, offset=-2, default_tf=primary_tf)
-
-                satisfied = self._compare(
-                    left_val, cond.operator, right_val, prev_left, prev_right, right2_val,
-                    prev_prev_left=prev_prev_left,
-                )
-                diff = 0.0
-                if right_val != 0 and isinstance(right_val, (int, float)):
-                    diff = abs(left_val - right_val) / abs(right_val) * 100
-
-                evaluations.append(ConditionEval(
-                    condition_id=cond.id,
-                    satisfied=satisfied,
-                    left_value=float(left_val),
-                    right_value=float(right_val),
-                    diff_percent=round(diff, 2),
-                ))
-                if satisfied:
+                evaluation = self._evaluate_one(cond, kline_data, chan_data, indicator_data, primary_tf)
+                evaluations.append(evaluation)
+                if evaluation.satisfied:
                     satisfied_conds += 1
 
             group_satisfied = (
@@ -142,6 +120,46 @@ class ConditionService:
             progress_percent=progress,
         )
 
+    def _evaluate_one(
+        self, cond, kline_data, chan_data, indicator_data, primary_tf,
+    ) -> ConditionEval:
+        """解析并比较单个条件。
+
+        任一侧“暂无值”（指标样本不足等）时判定为不满足，并把 None 原样上报，
+        避免用 0 顶替而产出假信号。
+        """
+        left_val = self._resolve(cond.left, cond, kline_data, chan_data, indicator_data, default_tf=primary_tf)
+        right_val = self._resolve(cond.right, cond, kline_data, chan_data, indicator_data, default_tf=primary_tf)
+        right2_val = self._resolve(cond.right2, cond, kline_data, chan_data, indicator_data, default_tf=primary_tf) if cond.right2 else None
+        prev_left = self._resolve(cond.left, cond, kline_data, chan_data, indicator_data, offset=-1, default_tf=primary_tf)
+        prev_right = self._resolve(cond.right, cond, kline_data, chan_data, indicator_data, offset=-1, default_tf=primary_tf)
+        prev_prev_left = self._resolve(cond.left, cond, kline_data, chan_data, indicator_data, offset=-2, default_tf=primary_tf)
+
+        # right2 本就允许缺省，不参与有值判定
+        if None in (left_val, right_val, prev_left, prev_right, prev_prev_left):
+            return ConditionEval(
+                condition_id=cond.id,
+                satisfied=False,
+                left_value=left_val,
+                right_value=right_val,
+                diff_percent=0.0,
+            )
+
+        satisfied = self._compare(
+            left_val, cond.operator, right_val, prev_left, prev_right, right2_val,
+            prev_prev_left=prev_prev_left,
+        )
+        diff = 0.0
+        if right_val != 0:
+            diff = abs(left_val - right_val) / abs(right_val) * 100
+        return ConditionEval(
+            condition_id=cond.id,
+            satisfied=satisfied,
+            left_value=left_val,
+            right_value=right_val,
+            diff_percent=round(diff, 2),
+        )
+
     async def evaluate_groups(
         self,
         groups: list,
@@ -174,16 +192,9 @@ class ConditionService:
             for cond in group.conditions:
                 if not cond.enabled:
                     continue
-                left_val = self._resolve(cond.left, cond, kline_data, chan_data, indicator_data, default_tf=primary_tf)
-                right_val = self._resolve(cond.right, cond, kline_data, chan_data, indicator_data, default_tf=primary_tf)
-                right2_val = self._resolve(cond.right2, cond, kline_data, chan_data, indicator_data, default_tf=primary_tf) if cond.right2 else None
-                prev_left = self._resolve(cond.left, cond, kline_data, chan_data, indicator_data, offset=-1, default_tf=primary_tf)
-                prev_right = self._resolve(cond.right, cond, kline_data, chan_data, indicator_data, offset=-1, default_tf=primary_tf)
-                prev_prev_left = self._resolve(cond.left, cond, kline_data, chan_data, indicator_data, offset=-2, default_tf=primary_tf)
-                evaluations.append(self._compare(
-                    left_val, cond.operator, right_val, prev_left, prev_right, right2_val,
-                    prev_prev_left=prev_prev_left,
-                ))
+                evaluations.append(self._evaluate_one(
+                    cond, kline_data, chan_data, indicator_data, primary_tf,
+                ).satisfied)
 
             group_results.append((
                 all(evaluations) if group.logic == "AND" else any(evaluations)
@@ -196,7 +207,8 @@ class ConditionService:
     def _resolve(
         self, value, cond, kline_data, chan_data, indicator_data,
         offset: int = 0, default_tf: str = "1d", forced_tf: str | None = None,
-    ) -> float:
+    ) -> float | None:
+        """解析操作数。返回 None 表示该侧“暂无值”（如指标样本不足）。"""
         from app.schemas.signal import (
             PriceValue, IndicatorValue, ChanValue,
             ConstantValue, TimeframeValue,
@@ -245,7 +257,12 @@ class ConditionService:
                 field = "support"
             elif value.indicator_type == "ma" and cond.operator == "resistance":
                 field = "resistance"
-            return float(indicator_vals[idx].get(field, 0))
+            raw = indicator_vals[idx].get(field)
+            # 样本不足(None)表示“暂无值”，必须与数值 0 区分开：
+            # 否则 close > MA260 会在没有足够历史的标的上变成 close > 0 的假信号。
+            if raw is None:
+                return None
+            return float(raw)
 
         if isinstance(value, ChanValue):
             chan = chan_data.get(tf)

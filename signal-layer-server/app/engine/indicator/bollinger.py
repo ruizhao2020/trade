@@ -21,16 +21,16 @@ class BollingerCalculator(IndicatorCalculator):
 
         sma = _sma(closes, period)
 
-        upper: list[float] = []
-        middle: list[float] = []
-        lower: list[float] = []
+        upper: list[float | None] = []
+        middle: list[float | None] = []
+        lower: list[float | None] = []
 
         for i in range(len(closes)):
+            # 样本不足 period 根时中轨与上下轨都无意义，输出 None 让前端断线
             if i < period - 1:
-                mid = closes[i]
-                upper.append(mid)
-                middle.append(mid)
-                lower.append(mid)
+                upper.append(None)
+                middle.append(None)
+                lower.append(None)
                 continue
 
             window = closes[i - period + 1:i + 1]
@@ -43,13 +43,13 @@ class BollingerCalculator(IndicatorCalculator):
             middle.append(mean)
             lower.append(mean - band_diff)
 
-        values: list[dict[str, float]] = []
+        values: list[dict[str, Any]] = []
         for i in range(len(times)):
             values.append({
                 "time": float(times[i]),
-                "upper": round(upper[i], 8),
-                "middle": round(middle[i], 8),
-                "lower": round(lower[i], 8),
+                "upper": None if upper[i] is None else round(upper[i], 8),
+                "middle": None if middle[i] is None else round(middle[i], 8),
+                "lower": None if lower[i] is None else round(lower[i], 8),
             })
 
         return IndicatorResult(

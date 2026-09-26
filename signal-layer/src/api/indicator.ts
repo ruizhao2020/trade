@@ -20,7 +20,8 @@ interface ApiMarkerSpec {
 interface ApiIndicatorResult {
   type: string
   params: Record<string, number>
-  values: Record<string, number>[]
+  /** 值为 null 表示该根样本不足（如长周期均线预热期），渲染时应断线 */
+  values: Record<string, number | null>[]
   render: {
     window: string
     plots: { field: string; type: string; color: string; label: string }[]
@@ -57,12 +58,27 @@ interface ApiListResponse {
   indicators: ApiInfo[]
 }
 
+/**
+ * 后端用 null 表示“样本不足、暂无值”（如长周期均线预热期）。
+ * 渲染层按“字段缺失”处理即可断线，这里统一在边界丢弃空字段，
+ * 避免 null 渗透到只关心数值的渲染与展示代码里。
+ */
+function dropEmptyValues(rows: Record<string, number | null>[]): Record<string, number>[] {
+  return rows.map((row) => {
+    const out: Record<string, number> = {}
+    for (const [key, value] of Object.entries(row)) {
+      if (value !== null && value !== undefined) out[key] = value
+    }
+    return out
+  })
+}
+
 /** 后端 snake_case → 前端类型 */
 function toFrontend(r: ApiIndicatorResult): IndicatorResult {
   return applyIndicatorPeriodColor({
     type: r.type,
     params: r.params,
-    values: r.values,
+    values: dropEmptyValues(r.values),
     render: {
       window: r.render.window as 'main' | 'sub',
       plots: r.render.plots.map(p => ({

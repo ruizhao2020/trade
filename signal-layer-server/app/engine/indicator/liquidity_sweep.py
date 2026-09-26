@@ -263,11 +263,11 @@ class LiquiditySweepCalculator(IndicatorCalculator):
             # FILTERS → FINAL SIGNALS
             # ═══════════════════════════════════════════════════════════
             if bull_sweep or bear_sweep:
-                # Volume gate
+                # Volume gate：成交量均线样本不足时无法判断“放量”，该扫描不成立
                 vol_ok = True
                 if use_vol:
-                    va = vol_avg[i] if i < len(vol_avg) else 0
-                    vol_ok = va > 0 and vols[i] >= va * vol_mult
+                    va = vol_avg[i] if i < len(vol_avg) else None
+                    vol_ok = va is not None and va > 0 and vols[i] >= va * vol_mult
 
                 # Dual-side block
                 dual_blocked = block_dual and bull_sweep and bear_sweep

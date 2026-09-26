@@ -308,7 +308,7 @@ export function SignalPanel({ symbol = '', embedded = false, showLayers = true, 
                 <div key={`${activeTemplate.id}:entry:${groupIndex}:${condition.id}:${conditionIndex}`} className="min-h-10 px-2 py-1.5 mb-1 rounded-md bg-[var(--bg-tertiary)]/55 flex items-center gap-2">
                   <span className={`w-1.5 h-1.5 rounded-full shrink-0 ${evaluation?.satisfied ? 'bg-[var(--accent-green)]' : 'bg-[var(--text-muted)]'}`} />
                   <span className="flex-1 min-w-0"><span className="block truncate text-[11px] text-[var(--text-secondary)]">{conditionLabel(condition)}</span><span className="block text-[11px] font-mono text-[var(--text-muted)]">{timeframeLabel(condition.timeframeId ?? activeTemplate.primaryTimeframeId)}</span></span>
-                  {evaluation && <span className={`text-[11px] font-mono ${evaluation.satisfied ? 'text-[var(--accent-green)]' : 'text-[var(--text-muted)]'}`}>{evaluation.leftValue.toFixed(2)}</span>}
+                  {evaluation && <span className={`text-[11px] font-mono ${evaluation.satisfied ? 'text-[var(--accent-green)]' : 'text-[var(--text-muted)]'}`} title={evaluation.leftValue === null ? '该周期样本不足，暂无数值' : undefined}>{evaluation.leftValue === null ? '—' : evaluation.leftValue.toFixed(2)}</span>}
                 </div>
               )
             })}

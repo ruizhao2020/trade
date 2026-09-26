@@ -20,16 +20,24 @@ class MACalculator(IndicatorCalculator):
         times = _get_times(klines)
         sma = _sma(closes, period)
 
-        values: list[dict[str, float]] = []
+        values: list[dict[str, Any]] = []
         for i in range(len(times)):
             ma = sma[i]
+            # 样本不足 period 根时不产生均线值，前端据此断线（不与收盘价重合）
+            if ma is None:
+                values.append({
+                    "time": float(times[i]),
+                    "value": None,
+                    "support": 0.0,
+                    "resistance": 0.0,
+                })
+                continue
             open_price = float(klines[i].get("open", closes[i]))
             high = float(klines[i].get("high", closes[i]))
             low = float(klines[i].get("low", closes[i]))
             tolerance = abs(ma) * touch_tolerance_pct / 100
-            ready = i >= period - 1
-            support = ready and low <= ma + tolerance and closes[i] >= ma and closes[i] >= open_price
-            resistance = ready and high >= ma - tolerance and closes[i] <= ma and closes[i] <= open_price
+            support = low <= ma + tolerance and closes[i] >= ma and closes[i] >= open_price
+            resistance = high >= ma - tolerance and closes[i] <= ma and closes[i] <= open_price
             values.append({
                 "time": float(times[i]),
                 "value": ma,

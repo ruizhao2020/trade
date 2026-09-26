@@ -27,7 +27,7 @@ class IndicatorCalculateRequest(BaseModel):
 class IndicatorResultItem(BaseModel):
     type: str
     params: dict[str, Any]
-    values: list[dict[str, float]]
+    values: list[dict[str, Any]]  # 样本不足的字段为 None（前端按断线渲染）
     render: Optional[RenderSpec] = None
     profile_data: Optional[ProfileData] = None
     cached: bool = False

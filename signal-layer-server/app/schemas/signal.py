@@ -105,8 +105,9 @@ class EvaluateRequest(BaseModel):
 class ConditionEval(BaseModel):
     condition_id: str
     satisfied: bool
-    left_value: float = 0.0
-    right_value: float = 0.0
+    # None 表示该侧“暂无值”（如指标样本不足），前端展示为 —
+    left_value: Optional[float] = None
+    right_value: Optional[float] = None
     diff_percent: float = 0.0
 
 

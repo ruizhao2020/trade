@@ -231,7 +231,8 @@ export interface IndicatorProfileData {
 export interface IndicatorResult {
   type: string
   params: Record<string, number>
-  values: Record<string, number>[]   // 每根 K 线一个对象,字段由指标决定(必含 time)
+  // 每根 K 线一个对象,字段由指标决定(必含 time);数值字段缺失表示样本不足,渲染时断线
+  values: Record<string, number>[]
   render: RenderSpec
   profileData?: IndicatorProfileData
 }
@@ -324,8 +325,9 @@ export type SignalState = (typeof SignalState)[keyof typeof SignalState]
 export interface ConditionEvaluation {
   conditionId: string
   satisfied: boolean
-  leftValue: number
-  rightValue: number
+  /** null 表示该侧暂无值（如指标样本不足），展示为 — */
+  leftValue: number | null
+  rightValue: number | null
   diffPercent: number
 }
 

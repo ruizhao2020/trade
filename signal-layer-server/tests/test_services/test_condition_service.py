@@ -210,3 +210,67 @@ def test_indicator_resolution_distinguishes_parameters_and_timeframes():
         default_tf="1d",
     )
     assert value == 20.0
+
+
+def _unavailable_ma_condition(operator: str, right: float):
+    condition = ConditionSchema.model_validate({
+        "id": "ma-warmup",
+        "name": "MA260 未就绪",
+        "left": {"source": "indicator", "indicator_type": "ma", "params": {"period": 260}},
+        "operator": operator,
+        "right": {"source": "constant", "value": right},
+    })
+    key = indicator_data_key("ma", condition.left.params)
+    # 预热期：后端明确给出 value = None
+    indicator_data = {"1d": {key: [{"value": None, "support": 0.0, "resistance": 0.0}]}}
+    return condition, indicator_data
+
+
+def test_condition_is_unsatisfied_when_indicator_has_no_value():
+    """样本不足时不能拿 0 顶替：gte 0 这类条件会因此变成假信号。"""
+    service = ConditionService()
+    condition, indicator_data = _unavailable_ma_condition("gte", 0)
+
+    evaluation = service._evaluate_one(condition, {}, {}, indicator_data, "1d")
+
+    assert evaluation.satisfied is False
+    assert evaluation.left_value is None
+    assert evaluation.diff_percent == 0.0
+
+
+def test_condition_still_compares_when_indicator_has_value():
+    """有真实值时比较照常进行。"""
+    service = ConditionService()
+    condition = ConditionSchema.model_validate({
+        "id": "ma-ready",
+        "name": "MA260 就绪",
+        "left": {"source": "indicator", "indicator_type": "ma", "params": {"period": 260}},
+        "operator": "gt",
+        "right": {"source": "constant", "value": 50},
+    })
+    key = indicator_data_key("ma", condition.left.params)
+    indicator_data = {"1d": {key: [{"value": 100.0, "support": 0.0, "resistance": 0.0}]}}
+
+    evaluation = service._evaluate_one(condition, {}, {}, indicator_data, "1d")
+
+    assert evaluation.satisfied is True
+    assert evaluation.left_value == 100.0
+
+
+def test_resolve_returns_none_for_missing_indicator_field():
+    service = ConditionService()
+    condition = ConditionSchema.model_validate({
+        "id": "ma-missing",
+        "name": "MA260 缺字段",
+        "left": {"source": "indicator", "indicator_type": "ma", "params": {"period": 260}},
+        "operator": "gt",
+        "right": {"source": "constant", "value": 0},
+    })
+    key = indicator_data_key("ma", condition.left.params)
+
+    # 字段整个缺失（等价于 NaN）也应视为暂无值
+    missing = service._resolve(
+        condition.left, condition, kline_data={}, chan_data={},
+        indicator_data={"1d": {key: [{"support": 0.0, "resistance": 0.0}]}}, default_tf="1d",
+    )
+    assert missing is None

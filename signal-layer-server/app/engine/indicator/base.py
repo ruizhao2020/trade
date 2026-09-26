@@ -144,7 +144,7 @@ class IndicatorResult(BaseModel):
     """指标计算结果标准结构"""
     type: str                              # 指标类型,如 "ma" / "macd"
     params: dict[str, Any]                 # 本次计算使用的参数
-    values: list[dict[str, float]]         # 每根 K 线对应的指标值(含 time 字段)
+    values: list[dict[str, Any]]           # 每根 K 线对应的指标值(含 time)；样本不足的字段为 None
     render: Optional[RenderSpec] = None    # 渲染提示(前端据此画图)
     profile_data: Optional[ProfileData] = None
 
@@ -193,12 +193,16 @@ def _get_times(klines: list[dict]) -> list[int]:
     return [int(k["open_time"]) for k in klines]
 
 
-def _sma(values: list[float], period: int) -> list[float]:
-    """简单移动平均。period-1 之前的位置用原值填充(避免 NaN)"""
-    result: list[float] = []
+def _sma(values: list[float], period: int) -> list[Optional[float]]:
+    """简单移动平均。period-1 之前样本不足，返回 None 表示“暂无值”。
+
+    不能拿原值填充：那会让长周期均线在预热期画出一条恰好等于收盘价的线，
+    看起来像有效均线。None 会被前端渲染成断线（渲染层已过滤 null）。
+    """
+    result: list[Optional[float]] = []
     for i in range(len(values)):
         if i < period - 1:
-            result.append(values[i])
+            result.append(None)
             continue
         result.append(sum(values[i - period + 1:i + 1]) / period)
     return result

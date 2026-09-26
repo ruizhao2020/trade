@@ -64,8 +64,8 @@ export interface ApiTemplate {
 interface ApiConditionEvaluation {
   condition_id: string
   satisfied: boolean
-  left_value: number
-  right_value: number
+  left_value: number | null
+  right_value: number | null
   diff_percent: number
 }
 
