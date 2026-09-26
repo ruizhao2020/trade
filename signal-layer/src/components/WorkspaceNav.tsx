@@ -84,8 +84,8 @@ export function WorkspaceNav({ active, onChange, modules, user, onLogout, onChan
         <div title={user.display_name || user.username} className="w-full flex justify-center mb-2">
           <span className="w-7 h-7 rounded-full bg-[rgba(108,140,255,.10)] border border-[rgba(108,140,255,.24)] flex items-center justify-center text-[11px] font-semibold text-[#b9c9ff]">{(user.display_name || user.username).slice(0, 1).toUpperCase()}</span>
         </div>
-        {user.id !== 0 && <button type="button" onClick={onChangePassword} className="w-full h-7 rounded-md text-[10px] text-[var(--text-muted)] hover:text-[var(--text-secondary)] hover:bg-[var(--bg-tertiary)]">改密</button>}
-        {(user.id !== 0 || showAuthEntry) && <button type="button" onClick={user.id === 0 ? onLogin : onLogout} className="w-full h-7 rounded-md text-[10px] text-[var(--text-muted)] hover:text-[var(--accent-red)] hover:bg-[var(--bg-tertiary)]">{user.id === 0 ? '登录 / 注册' : '退出'}</button>}
+        {user.id !== 0 && <button type="button" onClick={onChangePassword} className="w-full h-7 rounded-md text-[11px] text-[var(--text-muted)] hover:text-[var(--text-secondary)] hover:bg-[var(--bg-tertiary)]">改密</button>}
+        {(user.id !== 0 || showAuthEntry) && <button type="button" onClick={user.id === 0 ? onLogin : onLogout} className="w-full h-7 rounded-md text-[11px] text-[var(--text-muted)] hover:text-[var(--accent-red)] hover:bg-[var(--bg-tertiary)]">{user.id === 0 ? '登录 / 注册' : '退出'}</button>}
       </div>
     </nav>
   )

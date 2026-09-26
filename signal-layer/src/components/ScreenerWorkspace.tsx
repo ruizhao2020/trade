@@ -205,7 +205,7 @@ export function ScreenerWorkspace({
     <div className="flex flex-col h-full min-h-0">
       <div className="px-4 pt-3 pb-4 space-y-3">
         <div>
-          <label className="block text-[10px] font-semibold uppercase tracking-[0.12em] text-[var(--text-muted)] mb-1.5">选股策略</label>
+          <label className="block text-[11px] font-semibold uppercase tracking-[0.12em] text-[var(--text-muted)] mb-1.5">选股策略</label>
           <select
             value={activeTemplate?.id ?? ''}
             onChange={(event) => setActiveTemplateId(event.target.value || null)}
@@ -218,20 +218,20 @@ export function ScreenerWorkspace({
           </select>
         </div>
         <div className="grid grid-cols-[1fr_88px] gap-2">
-          <label className="block text-[10px] font-semibold uppercase tracking-[0.12em] text-[var(--text-muted)]">市场
+          <label className="block text-[11px] font-semibold uppercase tracking-[0.12em] text-[var(--text-muted)]">市场
             <select value={market} onChange={(event) => setMarket(event.target.value)} disabled={scanning} className="mt-1.5 w-full h-9 px-3 rounded-md border border-[var(--border-primary)] bg-[var(--bg-tertiary)] text-[12px] text-[var(--text-primary)] outline-none focus:border-[var(--accent)] disabled:opacity-60">
               <option value="">请选择市场</option>
               {markets.map((item) => <option key={item.id} value={item.id}>{item.name}</option>)}
             </select>
           </label>
-          <label className="block text-[10px] font-semibold uppercase tracking-[0.12em] text-[var(--text-muted)]">选出数量
+          <label className="block text-[11px] font-semibold uppercase tracking-[0.12em] text-[var(--text-muted)]">选出数量
             <input type="number" min="1" max="100" value={targetCount} disabled={scanning} onChange={(event) => setTargetCount(Math.min(100, Math.max(1, Number(event.target.value) || 1)))} className="mt-1.5 w-full h-9 px-2 rounded-md border border-[var(--border-primary)] bg-[var(--bg-tertiary)] text-[12px] font-mono text-[var(--text-primary)] outline-none focus:border-[var(--accent)] disabled:opacity-60" />
           </label>
         </div>
         <div>
           <div className="flex items-center justify-between mb-1.5">
-            <span className="text-[10px] font-semibold uppercase tracking-[0.12em] text-[var(--text-muted)]">信号状态</span>
-            <span className="text-[9px] text-[var(--text-muted)]">可多选</span>
+            <span className="text-[11px] font-semibold uppercase tracking-[0.12em] text-[var(--text-muted)]">信号状态</span>
+            <span className="text-[11px] text-[var(--text-muted)]">可多选</span>
           </div>
           <div className="grid grid-cols-3 gap-1.5">
             {SIGNAL_STATES.map((item) => {
@@ -243,7 +243,7 @@ export function ScreenerWorkspace({
                   aria-pressed={selected}
                   disabled={scanning}
                   onClick={() => toggleState(item.value)}
-                  className={`h-8 rounded-md border text-[10px] transition-colors disabled:opacity-60 ${selected ? 'border-[var(--border-accent)] bg-[rgba(108,140,255,.12)]' : 'border-[var(--border-primary)] bg-[var(--bg-primary)] text-[var(--text-muted)] hover:border-[var(--border-accent)]'}`}
+                  className={`h-8 rounded-md border text-[11px] transition-colors disabled:opacity-60 ${selected ? 'border-[var(--border-accent)] bg-[rgba(108,140,255,.12)]' : 'border-[var(--border-primary)] bg-[var(--bg-primary)] text-[var(--text-muted)] hover:border-[var(--border-accent)]'}`}
                   style={selected ? { color: item.color } : undefined}
                 >
                   {item.label}
@@ -254,18 +254,18 @@ export function ScreenerWorkspace({
         </div>
         <div className="grid grid-cols-2 gap-2">
           <div className="rounded-md border border-[var(--border-primary)] bg-[var(--bg-primary)] px-3 py-2">
-            <div className="text-[10px] text-[var(--text-muted)]">信号周期</div>
+            <div className="text-[11px] text-[var(--text-muted)]">信号周期</div>
             <div className="text-[12px] font-mono mt-0.5">{activeTemplate?.primaryTimeframeId ?? '—'}</div>
           </div>
           <div className="rounded-md border border-[var(--border-primary)] bg-[var(--bg-primary)] px-3 py-2">
-            <div className="text-[10px] text-[var(--text-muted)]">条件数量</div>
+            <div className="text-[11px] text-[var(--text-muted)]">条件数量</div>
             <div className="text-[12px] font-mono mt-0.5">{conditionCount}</div>
           </div>
         </div>
       </div>
 
       <div className="px-4 py-3 border-t border-[var(--border-primary)]">
-        <div className="text-[10px] font-semibold uppercase tracking-[0.12em] text-[var(--text-muted)] mb-2">筛选条件</div>
+        <div className="text-[11px] font-semibold uppercase tracking-[0.12em] text-[var(--text-muted)] mb-2">筛选条件</div>
         <div className="space-y-2">
           {activeTemplate?.conditionGroups.flatMap((group) => group.conditions).filter((condition) => condition.enabled).slice(0, 5).map((condition) => (
             <div key={condition.id} className="flex items-start gap-2 text-[11px] text-[var(--text-secondary)]">
@@ -286,7 +286,7 @@ export function ScreenerWorkspace({
         >
           {scanning ? stopRequested ? '正在停止…' : `停止选股 · ${progress.done}/${progress.total}` : activeTemplate && !activeTemplate.enabled ? '策略已停用' : !activeTemplate ? '请选择策略' : !market ? '请选择市场' : '开始选股'}
         </button>
-        {error && <div className="mt-2 text-[10px] text-[var(--accent-red)] break-all">{error}</div>}
+        {error && <div className="mt-2 text-[11px] text-[var(--accent-red)] break-all">{error}</div>}
       </div>
     </div>
   )
@@ -307,12 +307,12 @@ export function ScreenerWorkspace({
       <section className="shrink-0 min-w-0 flex flex-col bg-[var(--bg-primary)]" style={{ width: resultWidth }}>
         <div className="h-12 px-4 flex items-center gap-3 border-b border-[var(--border-primary)] shrink-0">
           <span className="text-[12px] font-semibold">{results.length} 个标的匹配</span>
-          {progress.total > 0 && <span className="text-[10px] text-[var(--text-muted)]">{scanning ? `扫描中 ${progress.done}/${progress.total}，结果逐批返回` : wasStopped ? `已停止，已扫描 ${progress.done}/${progress.total}` : `已扫描 ${progress.done} 个标的`}</span>}
+          {progress.total > 0 && <span className="text-[11px] text-[var(--text-muted)]">{scanning ? `扫描中 ${progress.done}/${progress.total}，结果逐批返回` : wasStopped ? `已停止，已扫描 ${progress.done}/${progress.total}` : `已扫描 ${progress.done} 个标的`}</span>}
         </div>
         <div className="flex-1 overflow-auto">
           <table className="w-full min-w-[260px] border-collapse">
             <thead className="sticky top-0 bg-[var(--bg-secondary)] z-10">
-              <tr className="text-left text-[10px] uppercase tracking-wider text-[var(--text-muted)]">
+              <tr className="text-left text-[11px] uppercase tracking-wider text-[var(--text-muted)]">
                 <th className="font-medium px-4 py-2.5 border-b border-[var(--border-primary)]">标的</th>
                 <th className="font-medium px-3 py-2.5 border-b border-[var(--border-primary)]">匹配度</th>
                 <th className="font-medium px-3 py-2.5 border-b border-[var(--border-primary)]">状态</th>
@@ -329,7 +329,7 @@ export function ScreenerWorkspace({
                   >
                     <td className="px-4 py-3 border-b border-[var(--border-primary)]">
                       <div className="text-[12px] font-medium">{item.name}</div>
-                      <div className="text-[10px] text-[var(--text-muted)] mt-0.5"><span className="font-mono">{item.symbol}</span>{item.industry && <span> · {item.industry}</span>}</div>
+                      <div className="text-[11px] text-[var(--text-muted)] mt-0.5"><span className="font-mono">{item.symbol}</span>{item.industry && <span> · {item.industry}</span>}</div>
                     </td>
                     <td className="px-3 py-3 border-b border-[var(--border-primary)] font-mono text-[12px] text-[var(--accent-green)]">{progressPercent}%</td>
                     <td className="px-3 py-3 border-b border-[var(--border-primary)] text-[11px]" style={{ color: signalStateColor(state) }}>{signalStateLabel(state)}</td>
@@ -362,9 +362,9 @@ export function ScreenerWorkspace({
           <div className="flex items-center justify-between gap-3">
             <div>
               <div className="text-[12px] font-semibold">{selectedName || '尚未选择标的'}</div>
-              <div className="text-[10px] font-mono text-[var(--text-muted)]">{selectedSymbol || '—'}</div>
+              <div className="text-[11px] font-mono text-[var(--text-muted)]">{selectedSymbol || '—'}</div>
             </div>
-            <span className="text-[10px] text-[var(--text-muted)]">{activeTemplate?.name ?? '未选策略'}</span>
+            <span className="text-[11px] text-[var(--text-muted)]">{activeTemplate?.name ?? '未选策略'}</span>
           </div>
           <div className="flex items-center gap-1.5 overflow-x-auto">
             {strategyTimeframes.map((item) => {
@@ -377,7 +377,7 @@ export function ScreenerWorkspace({
                   key={item}
                   onClick={() => onTimeframeChange(item)}
                   title={detail || `${timeframeLabel(item)}无引用指标`}
-                  className={`h-7 px-2.5 rounded-md border text-[10px] whitespace-nowrap transition-colors ${activeTimeframe === item ? 'border-[var(--accent)] bg-[rgba(108,140,255,.12)] text-[var(--text-primary)]' : 'border-[var(--border-primary)] text-[var(--text-muted)] hover:text-[var(--text-secondary)]'}`}
+                  className={`h-7 px-2.5 rounded-md border text-[11px] whitespace-nowrap transition-colors ${activeTimeframe === item ? 'border-[var(--accent)] bg-[rgba(108,140,255,.12)] text-[var(--text-primary)]' : 'border-[var(--border-primary)] text-[var(--text-muted)] hover:text-[var(--text-secondary)]'}`}
                 >
                   {timeframeLabel(item)}{detail ? ` · ${detail}` : ''}
                 </button>

@@ -66,7 +66,7 @@ function ArticleChartCard({ spec }: { spec: ArticleChartSpec }) {
       <div className="h-11 px-4 flex items-center gap-3 border-b border-[var(--border-primary)]">
         <div className="flex-1">
           <div className="text-[11px] font-medium">{spec.title}</div>
-          <div className="text-[9px] text-[var(--text-muted)]">单指标图 · 16:9 · {spec.timeframe}</div>
+          <div className="text-[11px] text-[var(--text-muted)]">单指标图 · 16:9 · {spec.timeframe}</div>
         </div>
         <button type="button" onClick={() => setSnapshotRequest((value) => value + 1)} className="action-secondary">下载截图</button>
       </div>
@@ -109,10 +109,10 @@ function TemplateDialog({
           <button type="button" onClick={onClose} className="ml-auto icon-button">×</button>
         </div>
         <div className="p-5 space-y-4">
-          <label className="block text-[10px] text-[var(--text-muted)]">模板名称<input value={name} onChange={(event) => onName(event.target.value)} className="field mt-1 w-full" /></label>
-          <label className="block text-[10px] text-[var(--text-muted)]">模板说明<textarea value={description} onChange={(event) => onDescription(event.target.value)} className="mt-1 w-full min-h-20 p-3 rounded-md border border-[var(--border-primary)] bg-[var(--bg-tertiary)] text-[11px] outline-none" /></label>
+          <label className="block text-[11px] text-[var(--text-muted)]">模板名称<input value={name} onChange={(event) => onName(event.target.value)} className="field mt-1 w-full" /></label>
+          <label className="block text-[11px] text-[var(--text-muted)]">模板说明<textarea value={description} onChange={(event) => onDescription(event.target.value)} className="mt-1 w-full min-h-20 p-3 rounded-md border border-[var(--border-primary)] bg-[var(--bg-tertiary)] text-[11px] outline-none" /></label>
           <div>
-            <div className="text-[10px] text-[var(--text-muted)] mb-2">文章区块</div>
+            <div className="text-[11px] text-[var(--text-muted)] mb-2">文章区块</div>
             <div className="grid grid-cols-2 gap-2">
               {SECTION_OPTIONS.map(([code, label]) => (
                 <label key={code} className="min-h-9 px-3 rounded-md border border-[var(--border-primary)] flex items-center gap-2 text-[11px] text-[var(--text-secondary)]">
@@ -235,8 +235,8 @@ export function ContentWorkspace() {
   return (
     <div className="flex-1 min-h-0 flex flex-col bg-[var(--bg-primary)]">
       <header className="h-16 px-6 flex items-center border-b border-[var(--border-primary)] bg-[var(--bg-secondary)]">
-        <div><h1 className="text-[16px] font-semibold">内容研究</h1><p className="mt-1 text-[10px] text-[var(--text-muted)]">结构化分析、图表快照与多平台文章草稿</p></div>
-        <div className="ml-auto text-[10px] text-[var(--text-muted)]">首版仅生成草稿，不自动发布</div>
+        <div><h1 className="text-[16px] font-semibold">内容研究</h1><p className="mt-1 text-[11px] text-[var(--text-muted)]">结构化分析、图表快照与多平台文章草稿</p></div>
+        <div className="ml-auto text-[11px] text-[var(--text-muted)]">首版仅生成草稿，不自动发布</div>
       </header>
       {error && <div role="alert" className="mx-5 mt-4 px-3 py-2 rounded-md border border-[rgba(255,107,114,.25)] text-[11px] text-[var(--accent-red)]">{error}</div>}
       <div className="flex-1 min-h-0 grid grid-cols-[320px_minmax(0,1fr)] overflow-hidden">
@@ -244,26 +244,26 @@ export function ContentWorkspace() {
           <div className="p-4 space-y-4 border-b border-[var(--border-primary)]">
             <div className="text-[11px] font-semibold">新建内容任务</div>
             <div>
-              <label className="block text-[10px] text-[var(--text-muted)]">分析模板<select value={templateId} onChange={(event) => setTemplateId(event.target.value)} className="field mt-1 w-full">{templates.map((item) => <option key={item.id} value={item.id}>{item.name}</option>)}</select></label>
+              <label className="block text-[11px] text-[var(--text-muted)]">分析模板<select value={templateId} onChange={(event) => setTemplateId(event.target.value)} className="field mt-1 w-full">{templates.map((item) => <option key={item.id} value={item.id}>{item.name}</option>)}</select></label>
               <div className="mt-2 flex gap-2"><button type="button" onClick={openNewTemplate} className="action-secondary flex-1">新建模板</button><button type="button" disabled={!selectedTemplate?.editable} onClick={openEditTemplate} className="action-secondary flex-1 disabled:opacity-35">编辑</button><button type="button" disabled={!selectedTemplate?.editable} onClick={() => void removeTemplate()} className="icon-button disabled:opacity-35">×</button></div>
             </div>
             <div>
-              <div className="text-[10px] text-[var(--text-muted)] mb-1.5">市场与标的</div>
+              <div className="text-[11px] text-[var(--text-muted)] mb-1.5">市场与标的</div>
               <div className="content-symbol-selector"><SymbolSelector market={market} symbol={symbol} symbolName={symbolName} onMarketChange={handleMarketChange} onSymbolChange={handleSymbolChange} /></div>
             </div>
-            <div><div className="text-[10px] text-[var(--text-muted)] mb-2">分析周期</div><div className="flex gap-3">{['1d', '30m', '5m'].map((item) => <label key={item} className="inline-flex items-center gap-1 text-[10px] text-[var(--text-secondary)]"><input type="checkbox" checked={timeframes.includes(item)} onChange={() => toggleTimeframe(item)} className="accent-[var(--accent)]" />{item}</label>)}</div></div>
+            <div><div className="text-[11px] text-[var(--text-muted)] mb-2">分析周期</div><div className="flex gap-3">{['1d', '30m', '5m'].map((item) => <label key={item} className="inline-flex items-center gap-1 text-[11px] text-[var(--text-secondary)]"><input type="checkbox" checked={timeframes.includes(item)} onChange={() => toggleTimeframe(item)} className="accent-[var(--accent)]" />{item}</label>)}</div></div>
             <button type="button" disabled={generating || !templateId || !market || !symbol || !timeframes.length} onClick={() => void generate()} className="action-primary w-full">{generating ? '分析并生成中…' : '生成文章草稿'}</button>
           </div>
-          <div className="p-3"><div className="px-1 mb-2 text-[10px] font-semibold text-[var(--text-muted)]">历史草稿</div>{drafts.map((draft) => <button type="button" key={draft.id} onClick={() => chooseDraft(draft)} className={`w-full p-2.5 rounded-md text-left ${selected?.id === draft.id ? 'bg-[rgba(108,140,255,.12)]' : 'hover:bg-[var(--bg-tertiary)]'}`}><div className="text-[11px] truncate">{draft.title}</div><div className="mt-1 text-[9px] text-[var(--text-muted)]">{new Date(draft.created_at).toLocaleString('zh-CN')} · {draft.status === 'reviewed' ? '已审核' : '草稿'}</div></button>)}</div>
+          <div className="p-3"><div className="px-1 mb-2 text-[11px] font-semibold text-[var(--text-muted)]">历史草稿</div>{drafts.map((draft) => <button type="button" key={draft.id} onClick={() => chooseDraft(draft)} className={`w-full p-2.5 rounded-md text-left ${selected?.id === draft.id ? 'bg-[rgba(108,140,255,.12)]' : 'hover:bg-[var(--bg-tertiary)]'}`}><div className="text-[11px] truncate">{draft.title}</div><div className="mt-1 text-[11px] text-[var(--text-muted)]">{new Date(draft.created_at).toLocaleString('zh-CN')} · {draft.status === 'reviewed' ? '已审核' : '草稿'}</div></button>)}</div>
         </aside>
         <main className="min-w-0 overflow-y-auto p-5">
           {selected ? <div className="max-w-6xl mx-auto space-y-4">
             <section className="rounded-lg border border-[var(--border-primary)] bg-[var(--bg-secondary)] overflow-hidden">
-              <div className="h-12 px-4 flex items-center gap-2 border-b border-[var(--border-primary)]"><div className="flex-1"><div className="text-[12px] font-semibold">{selected.title}</div><div className="text-[9px] text-[var(--text-muted)]">数据截止 {new Date(selected.as_of).toLocaleString('zh-CN')} · 规则版本 {selected.structured_data.generator}</div></div><button type="button" onClick={() => void navigator.clipboard.writeText(activeText)} className="action-secondary">复制正文</button><button type="button" disabled={saving} onClick={() => void save()} className="action-secondary">{saving ? '保存中…' : '保存修改'}</button><button type="button" onClick={() => void review()} className="action-primary">{selected.status === 'reviewed' ? '取消审核' : '审核通过'}</button></div>
+              <div className="h-12 px-4 flex items-center gap-2 border-b border-[var(--border-primary)]"><div className="flex-1"><div className="text-[12px] font-semibold">{selected.title}</div><div className="text-[11px] text-[var(--text-muted)]">数据截止 {new Date(selected.as_of).toLocaleString('zh-CN')} · 规则版本 {selected.structured_data.generator}</div></div><button type="button" onClick={() => void navigator.clipboard.writeText(activeText)} className="action-secondary">复制正文</button><button type="button" disabled={saving} onClick={() => void save()} className="action-secondary">{saving ? '保存中…' : '保存修改'}</button><button type="button" onClick={() => void review()} className="action-primary">{selected.status === 'reviewed' ? '取消审核' : '审核通过'}</button></div>
               <div className="px-4 pt-3 flex gap-1 border-b border-[var(--border-primary)]">{Object.entries(PLATFORM_LABELS).map(([key, label]) => <button type="button" key={key} onClick={() => setPlatform(key as PreviewPlatform)} className={`h-8 px-3 text-[11px] border-b-2 ${platform === key ? 'border-[var(--accent)] text-[var(--text-primary)]' : 'border-transparent text-[var(--text-muted)]'}`}>{label}</button>)}</div>
               <textarea value={activeText} onChange={(event) => setActiveText(event.target.value)} className="w-full min-h-[460px] p-5 bg-[var(--bg-primary)] text-[12px] leading-6 text-[var(--text-secondary)] outline-none resize-y font-mono" />
             </section>
-            <section className="rounded-lg border border-[var(--border-primary)] bg-[var(--bg-secondary)] p-4"><div className="text-[11px] font-semibold mb-3">结构化事实</div><div className="grid grid-cols-1 lg:grid-cols-2 gap-3">{(selected.structured_data.sections || []).map((section) => <div key={section.code} className="p-3 rounded-md bg-[var(--bg-tertiary)]"><div className="text-[11px] font-medium">{section.title}</div>{section.facts.map((fact) => <div key={`${section.code}-${fact.label}`} className="mt-1 flex justify-between gap-3 text-[10px]"><span className="text-[var(--text-muted)]">{fact.label}</span><span className="font-mono">{fact.value}</span></div>)}</div>)}</div></section>
+            <section className="rounded-lg border border-[var(--border-primary)] bg-[var(--bg-secondary)] p-4"><div className="text-[11px] font-semibold mb-3">结构化事实</div><div className="grid grid-cols-1 lg:grid-cols-2 gap-3">{(selected.structured_data.sections || []).map((section) => <div key={section.code} className="p-3 rounded-md bg-[var(--bg-tertiary)]"><div className="text-[11px] font-medium">{section.title}</div>{section.facts.map((fact) => <div key={`${section.code}-${fact.label}`} className="mt-1 flex justify-between gap-3 text-[11px]"><span className="text-[var(--text-muted)]">{fact.label}</span><span className="font-mono">{fact.value}</span></div>)}</div>)}</div></section>
             {selected.chart_specs.map((spec) => <ArticleChartCard key={spec.id} spec={spec} />)}
           </div> : <div className="h-full grid place-items-center text-[11px] text-[var(--text-muted)]">创建任务或选择历史草稿后查看文章和图表</div>}
         </main>

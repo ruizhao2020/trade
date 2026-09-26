@@ -24,6 +24,8 @@
 - app.cache.indicator_cache.IndicatorCache: Redis 缓存管理
 """
 
+from __future__ import annotations
+
 import logging
 from app.engine.chan import ChanEngine, ChanResult
 from app.cache.indicator_cache import IndicatorCache, key_chan
@@ -64,35 +66,63 @@ class ChanService:
         Returns:
             ChanResult: 包含 bis/duans/zhongshus/buy_sell_points 的完整结构
         """
-        cache_key = key_chan(symbol, timeframe, self._divergence_power_ratio)
+        # 窗口长度并入缓存键：缠论结构随窗口变化，选股(200 根)与图表(500 根)
+        # 必须各自独立成条目，否则结果取决于谁先写入。
+        cache_key = key_chan(symbol, timeframe, self._divergence_power_ratio, window=len(klines))
         cached = await self._cache.get(cache_key)
 
         if cached and klines:
-            last_time = klines[-1]["open_time"]
-            if cached.get("updated_at") == last_time:
-                logger.info(f"Chan cache HIT {symbol} {timeframe} ({len(cached.get('bis', []))} bis, "
+            # 缓存必须完整覆盖当前请求区间。仅终点相同但历史更短的缓存
+            # （例如先算 200 根，再请求 500 根）不能复用，否则缠论只会
+            # 覆盖图表的后半段。此处与 indicator_service 的校验保持一致。
+            data_end = cached.get("data_end_time", cached.get("updated_at", 0))
+            data_start = cached.get("data_start_time")
+            data_count = int(cached.get("data_count", 0))
+            requested_start = int(klines[0]["open_time"])
+            if (
+                data_end == klines[-1]["open_time"]
+                and data_start is not None
+                and int(data_start) <= requested_start
+                and data_count >= len(klines)
+            ):
+                logger.info(f"Chan cache HIT {symbol} {timeframe} window={len(klines)} "
+                            f"({len(cached.get('bis', []))} bis, "
                             f"{len(cached.get('duans', []))} duans, "
                             f"{len(cached.get('zhongshus', []))} zhongshus, "
                             f"{len(cached.get('divergences', []))} divergences, "
                             f"{len(cached.get('buy_sell_points', []))} points)")
                 return self._deserialize(cached)
+            logger.info(f"Chan cache STALE {symbol} {timeframe} - cached "
+                        f"{data_count} bars ending {data_end} does not cover requested "
+                        f"{len(klines)} bars from {requested_start}")
 
-        logger.info(f"Chan cache MISS {symbol} {timeframe} - computing...")
+        logger.info(f"Chan cache MISS {symbol} {timeframe} window={len(klines)} - computing...")
         result = self._engine.analyze(
             klines, symbol=symbol, timeframe=timeframe,
             divergence_power_ratio=self._divergence_power_ratio,
         )
 
-        logger.info(f"Chan analysis {symbol} {timeframe} -> {len(result.bis)} bis, "
+        logger.info(f"Chan analysis {symbol} {timeframe} window={len(klines)} -> {len(result.bis)} bis, "
                     f"{len(result.duans)} duans, {len(result.zhongshus)} zhongshus, "
                     f"{len(result.divergences)} divergences, "
                     f"{len(result.buy_sell_points)} buy_sell_points")
-        await self._cache.set(cache_key, self._serialize(result))
+        await self._cache.set(cache_key, self._serialize(result, klines))
         return result
 
-    def _serialize(self, result: ChanResult) -> dict:
-        """将计算结果序列化为 JSON 可存储的 dict。价格字段转字符串避免精度丢失"""
+    def _serialize(self, result: ChanResult, klines: list[dict] | None = None) -> dict:
+        """将计算结果序列化为 JSON 可存储的 dict。价格字段转字符串避免精度丢失
+
+        klines 用于记录本次计算所覆盖的区间，命中缓存时据此判断能否复用。
+        """
+        window: dict = {}
+        if klines:
+            window = {
+                "data_start_time": int(klines[0]["open_time"]),
+                "data_end_time": int(klines[-1]["open_time"]),
+                "data_count": len(klines),
+            }
         return {
+            **window,
             "symbol": result.symbol,
             "timeframe": result.timeframe,
             "bis": [

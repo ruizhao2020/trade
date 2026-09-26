@@ -20,7 +20,7 @@ export function LoginScreen({ onAuthenticated, onGuest }: { onAuthenticated: (us
         : await register(username, password, displayName)
       onAuthenticated(user)
     } catch (submitError) {
-      setError(submitError instanceof Error ? submitError.message.replace(/^API \d+:\s*/, '') : String(submitError))
+      setError(submitError instanceof Error ? submitError.message : String(submitError))
     } finally {
       setSubmitting(false)
     }
@@ -34,7 +34,7 @@ export function LoginScreen({ onAuthenticated, onGuest }: { onAuthenticated: (us
           <div className="w-10 h-10 rounded-xl bg-[var(--accent)] text-white flex items-center justify-center shadow-[0_10px_30px_rgba(108,140,255,.22)]">
             <svg viewBox="0 0 20 20" fill="none" className="w-5 h-5"><path d="M3 15 7.5 5l3.2 6L17 3" stroke="currentColor" strokeWidth="1.7" strokeLinecap="round" strokeLinejoin="round" /></svg>
           </div>
-          <div><div className="text-[14px] font-semibold tracking-tight">SignalLayer</div><div className="text-[10px] text-[var(--text-muted)] uppercase tracking-[0.14em]">Strategy Workspace</div></div>
+          <div><div className="text-[14px] font-semibold tracking-tight">SignalLayer</div><div className="text-[11px] text-[var(--text-muted)] uppercase tracking-[0.14em]">Strategy Workspace</div></div>
         </div>
         <h1 className="text-[24px] leading-tight font-semibold tracking-tight">{mode === 'login' ? '欢迎回来' : '创建账户'}</h1>
         <p className="mt-2 text-[12px] text-[var(--text-muted)]">{mode === 'login' ? '登录后继续管理指标、策略与选股任务' : '注册后将自动获得系统配置的默认角色'}</p>

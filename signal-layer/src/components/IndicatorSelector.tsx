@@ -90,7 +90,7 @@ export function IndicatorSelector({ selectedIndicators, onChange }: Props) {
 
   return (
     <div className="flex items-center gap-1 px-3 py-2 bg-[var(--bg-secondary)] border-b border-[var(--border-primary)] overflow-x-auto relative">
-      <span className="text-[10px] font-semibold uppercase tracking-wider text-[var(--text-muted)] mr-2 shrink-0">
+      <span className="text-[11px] font-semibold uppercase tracking-wider text-[var(--text-muted)] mr-2 shrink-0">
         指标
       </span>
 
@@ -137,7 +137,7 @@ export function IndicatorSelector({ selectedIndicators, onChange }: Props) {
       )}
 
       {error && !loading && available.length === 0 && (
-        <span className="text-[10px] text-[var(--accent-red)] shrink-0 ml-1">加载失败</span>
+        <span className="text-[11px] text-[var(--accent-red)] shrink-0 ml-1">加载失败</span>
       )}
 
       {pickerOpen && (
@@ -176,7 +176,7 @@ export function IndicatorSelector({ selectedIndicators, onChange }: Props) {
                   />
                   <span className="flex-1 text-left font-medium">{info.name}</span>
                   {selected && (
-                    <span className="text-[10px] font-mono text-[var(--accent)]">ON</span>
+                    <span className="text-[11px] font-mono text-[var(--accent)]">ON</span>
                   )}
                 </button>
               )

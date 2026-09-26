@@ -50,7 +50,7 @@ export function ParameterHint({ label, text }: Props) {
         aria-label={`${label ?? '参数'}说明`}
         aria-expanded={open}
         onClick={toggle}
-        className="w-4 h-4 rounded-full border border-[var(--border-accent)] text-[9px] leading-none text-[var(--accent)] hover:bg-[rgba(108,140,255,.12)] transition-colors"
+        className="w-4 h-4 rounded-full border border-[var(--border-accent)] text-[11px] leading-none text-[var(--accent)] hover:bg-[rgba(108,140,255,.12)] transition-colors"
       >
         i
       </button>

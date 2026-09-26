@@ -243,10 +243,10 @@ export function SignalPanel({ symbol = '', embedded = false, showLayers = true, 
   const management = (
     <div className="relative px-3 py-3 border-b border-[var(--border-primary)] shrink-0">
       <div className="flex items-center justify-between mb-2">
-        <span className="text-[10px] font-semibold uppercase tracking-[0.12em] text-[var(--text-muted)]">策略模板</span>
+        <span className="text-[11px] font-semibold uppercase tracking-[0.12em] text-[var(--text-muted)]">策略模板</span>
         <div className="flex items-center gap-2">
-          {activeTemplate && <span className={`px-1.5 py-0.5 rounded text-[10px] font-medium ${activeTemplate.enabled ? 'bg-[rgba(54,201,149,0.10)] text-[var(--accent-green)]' : 'bg-[var(--bg-tertiary)] text-[var(--text-muted)]'}`}>{activeTemplate.enabled ? '已启用' : '已停用'}</span>}
-          <span className="text-[10px] font-mono text-[var(--text-muted)]">{templates.length} 个</span>
+          {activeTemplate && <span className={`px-1.5 py-0.5 rounded text-[11px] font-medium ${activeTemplate.enabled ? 'bg-[rgba(54,201,149,0.10)] text-[var(--accent-green)]' : 'bg-[var(--bg-tertiary)] text-[var(--text-muted)]'}`}>{activeTemplate.enabled ? '已启用' : '已停用'}</span>}
+          <span className="text-[11px] font-mono text-[var(--text-muted)]">{templates.length} 个</span>
         </div>
       </div>
       <div className="grid grid-cols-[minmax(0,1fr)_34px_34px_34px] gap-1.5">
@@ -257,6 +257,7 @@ export function SignalPanel({ symbol = '', embedded = false, showLayers = true, 
             setPanelView('live')
             setBacktestResult(null)
           }}
+          aria-label="选择策略模板"
           className="min-w-0 h-9 px-3 rounded-md border border-[var(--border-primary)] bg-[var(--bg-tertiary)] text-[12px] text-[var(--text-primary)] outline-none focus:border-[var(--accent)]"
         >
           <option value="">选择策略...</option>
@@ -292,33 +293,33 @@ export function SignalPanel({ symbol = '', embedded = false, showLayers = true, 
             <span className="ml-auto text-[11px] font-mono text-[var(--text-muted)]">{activeSignal ? `${activeSignal.progressPercent}%` : '—'}</span>
           </div>
           {activeSignal?.state === SignalState.Partial && <div className="h-1 mt-2 rounded-full bg-[var(--bg-tertiary)] overflow-hidden"><div className="h-full bg-[var(--accent-orange)]" style={{ width: `${activeSignal.progressPercent}%` }} /></div>}
-          <div className="mt-1.5 text-[10px] text-[var(--text-muted)]">{!symbol ? '选择市场和标的后可运行策略评估' : !activeTemplate.enabled ? '启用后才能运行实时评估和参与选股' : activeSignal ? '条件结果已同步到右侧图表' : '运行评估后显示当前标的的策略状态'}</div>
+          <div className="mt-1.5 text-[11px] text-[var(--text-muted)]">{!symbol ? '选择市场和标的后可运行策略评估' : !activeTemplate.enabled ? '启用后才能运行实时评估和参与选股' : activeSignal ? '条件结果已同步到右侧图表' : '运行评估后显示当前标的的策略状态'}</div>
         </div>
       </div>
 
       <div className="px-3 py-3">
-        <div className="flex items-center gap-2 mb-2"><span className="text-[11px] font-semibold">入场条件</span><span className="px-1.5 py-0.5 rounded bg-[var(--bg-tertiary)] text-[10px] text-[var(--text-muted)]">{activeTemplate.logic === 'AND' ? '全部满足' : '满足任一组'}</span></div>
+        <div className="flex items-center gap-2 mb-2"><span className="text-[11px] font-semibold">入场条件</span><span className="px-1.5 py-0.5 rounded bg-[var(--bg-tertiary)] text-[11px] text-[var(--text-muted)]">{activeTemplate.logic === 'AND' ? '全部满足' : '满足任一组'}</span></div>
         {activeTemplate.conditionGroups.map((group, groupIndex) => (
           <div key={`${activeTemplate.id}:entry:${group.id}:${groupIndex}`} className="mb-3 last:mb-0">
-            <div className="flex items-center gap-2 mb-1.5"><span className="text-[10px] tracking-wider text-[var(--text-muted)]">{group.name?.trim() || `条件组 ${groupIndex + 1}`}</span><span className="text-[9px] text-[var(--text-muted)]">组内{(group.logic ?? 'AND') === 'AND' ? '全部满足' : '任一满足'}</span><span className="h-px flex-1 bg-[var(--border-primary)]" /></div>
+            <div className="flex items-center gap-2 mb-1.5"><span className="text-[11px] tracking-wider text-[var(--text-muted)]">{group.name?.trim() || `条件组 ${groupIndex + 1}`}</span><span className="text-[11px] text-[var(--text-muted)]">组内{(group.logic ?? 'AND') === 'AND' ? '全部满足' : '任一满足'}</span><span className="h-px flex-1 bg-[var(--border-primary)]" /></div>
             {group.conditions.filter((condition) => condition.enabled).map((condition, conditionIndex) => {
               const evaluation = activeSignal?.groups[groupIndex]?.evaluations.find((item) => item.conditionId === condition.id)
               return (
                 <div key={`${activeTemplate.id}:entry:${groupIndex}:${condition.id}:${conditionIndex}`} className="min-h-10 px-2 py-1.5 mb-1 rounded-md bg-[var(--bg-tertiary)]/55 flex items-center gap-2">
                   <span className={`w-1.5 h-1.5 rounded-full shrink-0 ${evaluation?.satisfied ? 'bg-[var(--accent-green)]' : 'bg-[var(--text-muted)]'}`} />
-                  <span className="flex-1 min-w-0"><span className="block truncate text-[11px] text-[var(--text-secondary)]">{conditionLabel(condition)}</span><span className="block text-[10px] font-mono text-[var(--text-muted)]">{timeframeLabel(condition.timeframeId ?? activeTemplate.primaryTimeframeId)}</span></span>
-                  {evaluation && <span className={`text-[10px] font-mono ${evaluation.satisfied ? 'text-[var(--accent-green)]' : 'text-[var(--text-muted)]'}`}>{evaluation.leftValue.toFixed(2)}</span>}
+                  <span className="flex-1 min-w-0"><span className="block truncate text-[11px] text-[var(--text-secondary)]">{conditionLabel(condition)}</span><span className="block text-[11px] font-mono text-[var(--text-muted)]">{timeframeLabel(condition.timeframeId ?? activeTemplate.primaryTimeframeId)}</span></span>
+                  {evaluation && <span className={`text-[11px] font-mono ${evaluation.satisfied ? 'text-[var(--accent-green)]' : 'text-[var(--text-muted)]'}`}>{evaluation.leftValue.toFixed(2)}</span>}
                 </div>
               )
             })}
           </div>
         ))}
 
-        <div className="flex items-center gap-2 mt-4 mb-2"><span className="text-[11px] font-semibold">卖出与风控</span><span className="ml-auto text-[10px] text-[var(--text-muted)]">{activeTemplate.tradeParams ? (activeTemplate.tradeParams.exitLogic === 'AND' ? '全部满足' : '满足任一组') : '止盈/止损'}</span></div>
+        <div className="flex items-center gap-2 mt-4 mb-2"><span className="text-[11px] font-semibold">卖出与风控</span><span className="ml-auto text-[11px] text-[var(--text-muted)]">{activeTemplate.tradeParams ? (activeTemplate.tradeParams.exitLogic === 'AND' ? '全部满足' : '满足任一组') : '止盈/止损'}</span></div>
         {activeTemplate.tradeParams ? (
           <div className="grid grid-cols-2 gap-px overflow-hidden rounded-md bg-[var(--border-primary)]">
-            <div className="bg-[var(--bg-tertiary)] p-2"><span className="block text-[10px] text-[var(--text-muted)]">止损</span><span className="block mt-1 text-[11px] font-mono">{activeTemplate.tradeParams.stopLossType === 'none' ? '关闭' : `${activeTemplate.tradeParams.stopLossValue}${STOP_LOSS_UNIT[activeTemplate.tradeParams.stopLossType] ?? ''}`}</span></div>
-            <div className="bg-[var(--bg-tertiary)] p-2"><span className="block text-[10px] text-[var(--text-muted)]">止盈</span><span className="block mt-1 text-[11px] font-mono">{activeTemplate.tradeParams.takeProfitType === 'none' ? '关闭' : `${activeTemplate.tradeParams.takeProfitValue}${TAKE_PROFIT_UNIT[activeTemplate.tradeParams.takeProfitType] ?? ''}`}</span></div>
+            <div className="bg-[var(--bg-tertiary)] p-2"><span className="block text-[11px] text-[var(--text-muted)]">止损</span><span className="block mt-1 text-[11px] font-mono">{activeTemplate.tradeParams.stopLossType === 'none' ? '关闭' : `${activeTemplate.tradeParams.stopLossValue}${STOP_LOSS_UNIT[activeTemplate.tradeParams.stopLossType] ?? ''}`}</span></div>
+            <div className="bg-[var(--bg-tertiary)] p-2"><span className="block text-[11px] text-[var(--text-muted)]">止盈</span><span className="block mt-1 text-[11px] font-mono">{activeTemplate.tradeParams.takeProfitType === 'none' ? '关闭' : `${activeTemplate.tradeParams.takeProfitValue}${TAKE_PROFIT_UNIT[activeTemplate.tradeParams.takeProfitType] ?? ''}`}</span></div>
           </div>
         ) : <div className="text-[11px] text-[var(--text-muted)]">未配置风控参数</div>}
 
@@ -326,7 +327,7 @@ export function SignalPanel({ symbol = '', embedded = false, showLayers = true, 
           <div className="mt-4">
             <div className="flex items-center gap-2 mb-2">
               <span className="text-[11px] font-semibold">条件卖出</span>
-              <span className="px-1.5 py-0.5 rounded bg-[var(--bg-tertiary)] text-[10px] text-[var(--text-muted)]">
+              <span className="px-1.5 py-0.5 rounded bg-[var(--bg-tertiary)] text-[11px] text-[var(--text-muted)]">
                 {activeTemplate.tradeParams.exitLogic === 'AND' ? '全部满足' : '任一组'}
               </span>
             </div>
@@ -334,15 +335,15 @@ export function SignalPanel({ symbol = '', embedded = false, showLayers = true, 
               {activeTemplate.tradeParams.exitConditions.map((group, groupIndex) => (
                 <div key={`${activeTemplate.id}:exit:${group.id}:${groupIndex}`} className="rounded-md border border-[var(--border-primary)] bg-[var(--bg-tertiary)]/45 p-2.5">
                   <div className="flex items-center gap-2 mb-1.5">
-                    <span className="text-[10px] text-[var(--text-muted)]">{group.name?.trim() || `条件组 ${groupIndex + 1}`}</span>
-                    <span className="text-[9px] text-[var(--text-muted)]">组内{(group.logic ?? 'AND') === 'AND' ? '全部满足' : '任一满足'}</span>
+                    <span className="text-[11px] text-[var(--text-muted)]">{group.name?.trim() || `条件组 ${groupIndex + 1}`}</span>
+                    <span className="text-[11px] text-[var(--text-muted)]">组内{(group.logic ?? 'AND') === 'AND' ? '全部满足' : '任一满足'}</span>
                   </div>
                   <div className="space-y-1">
                     {group.conditions.filter((condition) => condition.enabled).map((condition, conditionIndex) => (
-                      <div key={`${condition.id}:${conditionIndex}`} className="flex items-center gap-2 text-[10px] text-[var(--text-secondary)]">
+                      <div key={`${condition.id}:${conditionIndex}`} className="flex items-center gap-2 text-[11px] text-[var(--text-secondary)]">
                         <span className="w-1.5 h-1.5 rounded-full bg-[var(--accent-orange)] shrink-0" />
                         <span className="truncate">{conditionLabel(condition)}</span>
-                        <span className="ml-auto text-[9px] font-mono text-[var(--text-muted)] shrink-0">{timeframeLabel(condition.timeframeId ?? activeTemplate.primaryTimeframeId)}</span>
+                        <span className="ml-auto text-[11px] font-mono text-[var(--text-muted)] shrink-0">{timeframeLabel(condition.timeframeId ?? activeTemplate.primaryTimeframeId)}</span>
                       </div>
                     ))}
                   </div>
@@ -366,17 +367,17 @@ export function SignalPanel({ symbol = '', embedded = false, showLayers = true, 
       {!backtesting && !backtestResult && <div className="h-40 flex flex-col items-center justify-center gap-3 text-[11px] text-[var(--text-muted)]"><span>{symbol ? '尚未生成回测结果' : '请先选择市场和标的'}</span><button type="button" onClick={handleBacktest} disabled={!symbol} className="h-8 px-3 rounded-md bg-[var(--accent)] text-white disabled:opacity-40">运行回测</button></div>}
       {backtestResult && (
         <>
-          <div className="flex items-center justify-between mb-3"><span className="text-[11px] font-semibold">最近 300 根 K 线</span><span className="text-[10px] text-[var(--text-muted)]">{backtestResult.totalTrades} 笔交易</span></div>
+          <div className="flex items-center justify-between mb-3"><span className="text-[11px] font-semibold">最近 300 根 K 线</span><span className="text-[11px] text-[var(--text-muted)]">{backtestResult.totalTrades} 笔交易</span></div>
           <div className="grid grid-cols-2 gap-1.5">
-            <div className="rounded-md bg-[var(--bg-tertiary)] p-2.5"><span className="block text-[10px] text-[var(--text-muted)]">累计收益</span><span className={`block mt-1 text-[15px] font-mono ${financialValueColorClass(backtestResult.totalReturn)}`}>{backtestResult.totalReturn}%</span></div>
-            <div className="rounded-md bg-[var(--bg-tertiary)] p-2.5"><span className="block text-[10px] text-[var(--text-muted)]">最大回撤</span><span className={`block mt-1 text-[15px] font-mono ${financialValueColorClass(-backtestResult.maxDrawdown)}`}>-{backtestResult.maxDrawdown}%</span></div>
-            <div className="rounded-md bg-[var(--bg-tertiary)] p-2.5"><span className="block text-[10px] text-[var(--text-muted)]">胜率</span><span className="block mt-1 text-[15px] font-mono">{backtestResult.winRate}%</span></div>
-            <div className="rounded-md bg-[var(--bg-tertiary)] p-2.5"><span className="block text-[10px] text-[var(--text-muted)]">盈亏因子</span><span className="block mt-1 text-[15px] font-mono">{backtestResult.profitFactor}</span></div>
-            <div className="rounded-md bg-[var(--bg-tertiary)] p-2.5"><span className="block text-[10px] text-[var(--text-muted)]">平均盈亏比</span><span className="block mt-1 text-[15px] font-mono">{backtestResult.payoffRatio > 0 ? `1:${backtestResult.payoffRatio}` : '—'}</span></div>
-            <div className="rounded-md bg-[rgba(108,140,255,.10)] border border-[rgba(108,140,255,.22)] p-2.5"><span className="block text-[10px] text-[var(--text-muted)]">凯利建议仓位</span><span className="block mt-1 text-[15px] font-mono text-[var(--accent)]">{backtestResult.suggestedPosition}%</span></div>
+            <div className="rounded-md bg-[var(--bg-tertiary)] p-2.5"><span className="block text-[11px] text-[var(--text-muted)]">累计收益</span><span className={`block mt-1 text-[15px] font-mono ${financialValueColorClass(backtestResult.totalReturn)}`}>{backtestResult.totalReturn}%</span></div>
+            <div className="rounded-md bg-[var(--bg-tertiary)] p-2.5"><span className="block text-[11px] text-[var(--text-muted)]">最大回撤</span><span className={`block mt-1 text-[15px] font-mono ${financialValueColorClass(-backtestResult.maxDrawdown)}`}>-{backtestResult.maxDrawdown}%</span></div>
+            <div className="rounded-md bg-[var(--bg-tertiary)] p-2.5"><span className="block text-[11px] text-[var(--text-muted)]">胜率</span><span className="block mt-1 text-[15px] font-mono">{backtestResult.winRate}%</span></div>
+            <div className="rounded-md bg-[var(--bg-tertiary)] p-2.5"><span className="block text-[11px] text-[var(--text-muted)]">盈亏因子</span><span className="block mt-1 text-[15px] font-mono">{backtestResult.profitFactor}</span></div>
+            <div className="rounded-md bg-[var(--bg-tertiary)] p-2.5"><span className="block text-[11px] text-[var(--text-muted)]">平均盈亏比</span><span className="block mt-1 text-[15px] font-mono">{backtestResult.payoffRatio > 0 ? `1:${backtestResult.payoffRatio}` : '—'}</span></div>
+            <div className="rounded-md bg-[rgba(108,140,255,.10)] border border-[rgba(108,140,255,.22)] p-2.5"><span className="block text-[11px] text-[var(--text-muted)]">凯利建议仓位</span><span className="block mt-1 text-[15px] font-mono text-[var(--accent)]">{backtestResult.suggestedPosition}%</span></div>
           </div>
-          <div className="mt-2 text-[9px] leading-4 text-[var(--text-muted)]">建议仓位 = 胜率 −（1 − 胜率）÷ 平均盈亏比；仅基于本次历史样本。</div>
-          {backtestResult.trades.length > 0 && <div className="mt-4"><div className="text-[11px] font-semibold mb-2">交易明细</div>{backtestResult.trades.map((trade, index) => <div key={`${trade.entryTime}-${index}`} className="grid grid-cols-[24px_1fr_auto] gap-2 py-2 border-b border-[var(--border-primary)] text-[10px]"><span className="text-[var(--text-muted)]">#{index + 1}</span><span className="font-mono text-[var(--text-secondary)]">{trade.entryPrice} → {trade.exitPrice}</span><span className={`font-mono ${financialValueColorClass(trade.pnlPct)}`}>{trade.pnlPct >= 0 ? '+' : ''}{trade.pnlPct}%</span></div>)}</div>}
+          <div className="mt-2 text-[11px] leading-4 text-[var(--text-muted)]">建议仓位 = 胜率 −（1 − 胜率）÷ 平均盈亏比；仅基于本次历史样本。</div>
+          {backtestResult.trades.length > 0 && <div className="mt-4"><div className="text-[11px] font-semibold mb-2">交易明细</div>{backtestResult.trades.map((trade, index) => <div key={`${trade.entryTime}-${index}`} className="grid grid-cols-[24px_1fr_auto] gap-2 py-2 border-b border-[var(--border-primary)] text-[11px]"><span className="text-[var(--text-muted)]">#{index + 1}</span><span className="font-mono text-[var(--text-secondary)]">{trade.entryPrice} → {trade.exitPrice}</span><span className={`font-mono ${financialValueColorClass(trade.pnlPct)}`}>{trade.pnlPct >= 0 ? '+' : ''}{trade.pnlPct}%</span></div>)}</div>}
           <button type="button" onClick={handleBacktest} disabled={!symbol} className="w-full h-9 mt-4 rounded-md bg-[var(--accent)] text-white text-[11px] font-medium disabled:opacity-40">重新回测</button>
         </>
       )}

@@ -56,7 +56,7 @@ export function LayerControls() {
               }}
             />
 
-            <span className={`text-[10px] w-8 text-right shrink-0 font-mono tabular-nums transition-colors duration-150 ${
+            <span className={`text-[11px] w-8 text-right shrink-0 font-mono tabular-nums transition-colors duration-150 ${
               layer.visible ? 'text-[var(--text-secondary)]' : 'text-[var(--text-muted)]'
             }`}>
               {Math.round(layer.opacity * 100)}%

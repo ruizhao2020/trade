@@ -42,9 +42,14 @@ class IndicatorCache:
             pass
 
 
-def key_chan(symbol: str, timeframe: str, divergence_power_ratio: float = 0.7) -> str:
+def key_chan(symbol: str, timeframe: str, divergence_power_ratio: float = 0.7, window: int | None = None) -> str:
     # v3: 缓存包含背驰力度阈值，配置修改后不会复用旧结果。
-    return f"chan:v3:{symbol}:{timeframe}:divergence={divergence_power_ratio:.6f}"
+    # v4: 缓存值新增 data_start_time/data_count，命中时要求覆盖请求区间；
+    #     旧版本只记录终点，会把 200 根的缠论结果复用给 500 根的请求。
+    # v5: 窗口长度并入 key。缠论结构随窗口变化（笔/中枢数量不同），
+    #     选股用 200 根、图表用 500 根，若共用一个 key，结果会取决于谁先写入。
+    window_part = f":window={window}" if window is not None else ""
+    return f"chan:v5:{symbol}:{timeframe}{window_part}:divergence={divergence_power_ratio:.6f}"
 
 
 def key_indicator(symbol: str, timeframe: str, indicator_type: str, params: dict[str, Any]) -> str:

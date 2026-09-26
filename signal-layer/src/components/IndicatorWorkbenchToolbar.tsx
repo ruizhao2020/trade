@@ -198,12 +198,12 @@ export function IndicatorWorkbenchToolbar({
   return (
     <div className="relative shrink-0 bg-[var(--bg-secondary)] border-b border-[var(--border-primary)]">
       <div className="min-h-11 px-4 py-1.5 flex items-center gap-1.5 overflow-x-auto">
-        <span className="text-[10px] font-semibold uppercase tracking-[0.12em] text-[var(--text-muted)] mr-1 shrink-0">主指标</span>
+        <span className="text-[11px] font-semibold uppercase tracking-[0.12em] text-[var(--text-muted)] mr-1 shrink-0">主指标</span>
         <div className={`h-9 rounded-md flex items-center shrink-0 overflow-hidden transition-colors ${activeType === 'ma' ? 'bg-[var(--bg-tertiary)] text-[var(--text-primary)] shadow-[inset_0_-2px_0_var(--accent)]' : 'text-[var(--text-secondary)] hover:bg-[var(--bg-tertiary)]'}`}>
           <button type="button" onClick={() => setActiveType('ma')} className="h-9 px-3 flex items-center gap-2 text-[12px]">
             <span className="w-2 h-2 rounded-full bg-[var(--accent-orange)]" />
             MA
-            <span className="font-mono text-[10px] text-[var(--text-muted)]">{maCount}</span>
+            <span className="font-mono text-[11px] text-[var(--text-muted)]">{maCount}</span>
           </button>
           {maCount > 0 && (
             <button type="button" aria-label="关闭 MA" onClick={() => onIndicatorChange(selectedIndicators.filter((item) => item.type !== 'ma'))} className="w-8 h-9 border-l border-[var(--border-primary)] flex items-center justify-center text-[var(--text-muted)] hover:text-[var(--accent-red)] hover:bg-[var(--bg-surface)]">
@@ -215,7 +215,7 @@ export function IndicatorWorkbenchToolbar({
           <button type="button" onClick={() => setActiveType('chan')} className="h-9 px-3 flex items-center gap-2 text-[12px]">
             <span className="w-2 h-2 rounded-full bg-[#e7c66b]" />
             缠论
-            <span className="font-mono text-[10px] text-[var(--text-muted)]">{chanCount}</span>
+            <span className="font-mono text-[11px] text-[var(--text-muted)]">{chanCount}</span>
           </button>
           {chanEnabled && (
             <button type="button" aria-label="关闭缠论" onClick={toggleChanMaster} className="w-8 h-9 border-l border-[var(--border-primary)] flex items-center justify-center text-[var(--text-muted)] hover:text-[var(--accent-red)] hover:bg-[var(--bg-surface)]">
@@ -260,7 +260,7 @@ export function IndicatorWorkbenchToolbar({
       <div className="min-h-11 px-4 py-1.5 flex items-center gap-2 flex-wrap border-t border-[var(--border-primary)] bg-[var(--bg-primary)]/40">
         {activeType === 'ma' && (
           <>
-            <span className="text-[10px] text-[var(--text-muted)] mr-1">MA 子指标</span>
+            <span className="text-[11px] text-[var(--text-muted)] mr-1">MA 子指标</span>
             {MA_PERIODS.map((period) => {
               const enabled = selectedIndicators.some((item) => item.type === 'ma' && item.params.period === period)
               return (
@@ -282,7 +282,7 @@ export function IndicatorWorkbenchToolbar({
 
         {activeType === 'chan' && (
           <>
-            <span className="text-[10px] text-[var(--text-muted)] mr-1">缠论子指标</span>
+            <span className="text-[11px] text-[var(--text-muted)] mr-1">缠论子指标</span>
             {visibleChanItems.map((item) => {
               const enabled = Boolean(chanOptions[item.key])
               const count = item.key === 'showZhongshu' && chanOptions.zsLevel === 'duan'
@@ -298,11 +298,11 @@ export function IndicatorWorkbenchToolbar({
                 >
                   <span className="w-1.5 h-1.5 rounded-full" style={{ backgroundColor: enabled ? item.color : 'transparent', border: `1px solid ${item.color}` }} />
                   {chanFeatureLabels?.[chanFeatureCode[item.key]] ?? item.label}
-                  {count > 0 && <span className="font-mono text-[10px] text-[var(--text-muted)]">{count}</span>}
+                  {count > 0 && <span className="font-mono text-[11px] text-[var(--text-muted)]">{count}</span>}
                 </button>
               )
             })}
-            <span className="ml-auto text-[10px] text-[var(--text-muted)]">中枢级别</span>
+            <span className="ml-auto text-[11px] text-[var(--text-muted)]">中枢级别</span>
             <select
               value={chanOptions.zsLevel}
               onChange={(event) => onChanChange({ ...chanOptions, zsLevel: event.target.value as 'bi' | 'duan' })}
@@ -317,19 +317,19 @@ export function IndicatorWorkbenchToolbar({
 
         {activeType !== 'ma' && activeType !== 'chan' && activeInfo && (
           <>
-            <span className="text-[10px] text-[var(--text-muted)] mr-1">{activeInfo.name} 参数</span>
+            <span className="text-[11px] text-[var(--text-muted)] mr-1">{activeInfo.name} 参数</span>
             {activeType === 'volume' && (
               <div className="flex items-center gap-1.5 mr-2 pr-2 border-r border-[var(--border-primary)]">
-                <span className="h-6 px-1.5 rounded border border-[var(--border-primary)] flex items-center gap-1 text-[10px] text-[var(--text-muted)] whitespace-nowrap">
+                <span className="h-6 px-1.5 rounded border border-[var(--border-primary)] flex items-center gap-1 text-[11px] text-[var(--text-muted)] whitespace-nowrap">
                   <span className="w-2 h-2" style={{ backgroundColor: VOLUME_UP_COLOR }} />阳量
                 </span>
-                <span className="h-6 px-1.5 rounded border border-[var(--border-primary)] flex items-center gap-1 text-[10px] text-[var(--text-muted)] whitespace-nowrap">
+                <span className="h-6 px-1.5 rounded border border-[var(--border-primary)] flex items-center gap-1 text-[11px] text-[var(--text-muted)] whitespace-nowrap">
                   <span className="w-2 h-2" style={{ backgroundColor: VOLUME_DOWN_COLOR }} />阴量
                 </span>
               </div>
             )}
             {Object.entries(activeIndicator?.params ?? activeInfo.default_params).map(([key, value]) => (
-              <label key={key} className="flex items-center gap-1.5 text-[10px] text-[var(--text-muted)]">
+              <label key={key} className="flex items-center gap-1.5 text-[11px] text-[var(--text-muted)]">
                 {PARAM_LABELS[key] ?? key}
                 <input
                   type="number"
@@ -340,7 +340,7 @@ export function IndicatorWorkbenchToolbar({
                 />
               </label>
             ))}
-            <span className="ml-auto text-[10px] text-[var(--text-muted)]">显示</span>
+            <span className="ml-auto text-[11px] text-[var(--text-muted)]">显示</span>
             <Toggle
               enabled={Boolean(activeIndicator)}
               label={`显示${activeInfo.name}`}
@@ -371,7 +371,7 @@ export function IndicatorWorkbenchToolbar({
               >
                 <span className={`w-2 h-2 rounded-full ${selected ? 'bg-[var(--accent)]' : 'border border-[var(--text-muted)]'}`} />
                 <span className="flex-1 text-[11px] text-[var(--text-secondary)]">{info.name}</span>
-                {selected && <span className="text-[10px] font-mono text-[var(--text-muted)]">ON</span>}
+                {selected && <span className="text-[11px] font-mono text-[var(--text-muted)]">ON</span>}
               </button>
             )
           })}

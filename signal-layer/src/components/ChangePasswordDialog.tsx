@@ -20,7 +20,7 @@ export function ChangePasswordDialog({ onClose }: { onClose: () => void }) {
       await changePassword(currentPassword, newPassword)
       onClose()
     } catch (submitError) {
-      setError(submitError instanceof Error ? submitError.message.replace(/^API \d+:\s*/, '') : String(submitError))
+      setError(submitError instanceof Error ? submitError.message : String(submitError))
     } finally {
       setSaving(false)
     }

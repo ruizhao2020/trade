@@ -277,7 +277,7 @@ export function ConditionGroupEditor({ groups, indicators, onChange, allowEmpty 
             </div>
             <div className="flex flex-wrap items-center justify-end gap-3">
               <div className="flex items-center gap-2">
-                <span className="text-[10px] text-[var(--text-muted)] whitespace-nowrap">组内关系</span>
+                <span className="text-[11px] text-[var(--text-muted)] whitespace-nowrap">组内关系</span>
                 <div className="flex h-10 p-1 rounded-lg bg-[var(--bg-primary)] border border-[var(--border-primary)]" aria-label={`条件组 ${gi + 1} 组内关系`}>
                   <button type="button" onClick={() => updateGroupLogic(gi, 'AND')} className={`min-w-[64px] px-3 rounded-md text-[11px] font-medium transition-colors ${(group.logic ?? 'AND') === 'AND' ? 'bg-[var(--accent)] text-white shadow-sm' : 'text-[var(--text-muted)] hover:text-[var(--text-secondary)] hover:bg-[var(--bg-tertiary)]'}`}>与 · 全部</button>
                   <button type="button" onClick={() => updateGroupLogic(gi, 'OR')} className={`min-w-[64px] px-3 rounded-md text-[11px] font-medium transition-colors ${(group.logic ?? 'AND') === 'OR' ? 'bg-[var(--accent)] text-white shadow-sm' : 'text-[var(--text-muted)] hover:text-[var(--text-secondary)] hover:bg-[var(--bg-tertiary)]'}`}>或 · 任一</button>
@@ -349,7 +349,7 @@ export function ConditionGroupEditor({ groups, indicators, onChange, allowEmpty 
 
               return (
                 <div key={`${cond.id}:${conditionIndex}`} className="flex flex-wrap items-center gap-3 p-3 rounded-xl border border-[var(--border-primary)] bg-[var(--bg-primary)]/45 transition-colors duration-150 hover:border-[var(--border-accent)] group">
-                  <span className="min-w-6 h-6 px-1.5 rounded-md bg-[var(--bg-tertiary)] flex items-center justify-center text-[10px] font-mono text-[var(--text-muted)] shrink-0">{conditionIndex + 1}</span>
+                  <span className="min-w-6 h-6 px-1.5 rounded-md bg-[var(--bg-tertiary)] flex items-center justify-center text-[11px] font-mono text-[var(--text-muted)] shrink-0">{conditionIndex + 1}</span>
                   {/* 级别选择（周期） */}
                   <select value={cond.timeframeId ?? ''}
                     onChange={e => updateCondition(gi, conditionIndex, { timeframeId: e.target.value || undefined })}

@@ -96,7 +96,7 @@ export function PublicApp() {
   }, [])
   const headerProps = useMemo(() => ({ market, symbol, symbolName, timeframe, onMarketChange: handleMarket, onSymbolChange: (next: string, name: string) => { setSymbol(next); setSymbolName(name); setCursorTime(null) }, onTimeframeChange: (next: SupportedTimeframeId) => { setTimeframe(next); setCursorTime(null) } }), [handleMarket, market, symbol, symbolName, timeframe])
 
-  const dataStatusBadge = marketDataStatus?.stale ? <span title={marketDataStatus.statusMessage || undefined} className="h-7 px-2.5 rounded-md border border-[rgba(240,163,90,.35)] bg-[rgba(240,163,90,.08)] flex items-center text-[10px] text-[var(--accent-orange)] whitespace-nowrap">数据截至 {marketDataStatus.toTime ? new Date(marketDataStatus.toTime).toLocaleDateString('zh-CN') : '未知'}{marketDataStatus.refreshFailed ? ' · 更新失败' : ' · 暂无更新'}</span> : null
+  const dataStatusBadge = marketDataStatus?.stale ? <span title={marketDataStatus.statusMessage || undefined} className="h-7 px-2.5 rounded-md border border-[rgba(240,163,90,.35)] bg-[rgba(240,163,90,.08)] flex items-center text-[11px] text-[var(--accent-orange)] whitespace-nowrap">数据截至 {marketDataStatus.toTime ? new Date(marketDataStatus.toTime).toLocaleDateString('zh-CN') : '未知'}{marketDataStatus.refreshFailed ? ' · 更新失败' : ' · 暂无更新'}</span> : null
 
   const refreshButton = (
     <button
@@ -111,7 +111,7 @@ export function PublicApp() {
         <path d="M14 8a6 6 0 1 1-1.76-4.24" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round" />
         <path d="M14 2v4h-4" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round" />
       </svg>
-      <span className="text-[10px] font-mono">刷新</span>
+      <span className="text-[11px] font-mono">刷新</span>
     </button>
   )
   return <div className="flex h-full w-full overflow-hidden bg-[var(--bg-primary)]"><PublicRail /><main className="flex-1 min-w-0 flex flex-col overflow-hidden"><WorkbenchHeader title="指标分析" {...headerProps} trailing={<div className="flex items-center gap-2">{dataStatusBadge}{refreshButton}</div>} /><IndicatorWorkbenchToolbar selectedIndicators={selected} onIndicatorChange={setSelected} chanOptions={chanOptions} onChanChange={setChanOptions} analysis={analysis ?? undefined} visibleChanFeatures={visibleChanFeatures} chanFeatureLabels={chanFeatureLabels} /><div className="flex flex-1 min-h-0 overflow-hidden"><ChartStage loading={loading} error={error} klines={klines} analysis={analysis} options={chanOptions} indicators={results} onCursor={setCursorTime} detailFeatures={detailChanFeatures} emptyMessage={!market ? '请选择市场' : !symbol ? '请选择标的' : '暂无行情数据'} /><IndicatorInfoPanel collapsed={collapsed} onToggle={() => setCollapsed((value) => !value)} klineData={klines} analysis={analysis ?? undefined} chanOptions={chanOptions} indicators={selected} results={results} cursorTime={cursorTime} visibleChanFeatures={visibleChanFeatures} visibleIndicatorDetails={visibleIndicatorDetails} /></div></main></div>

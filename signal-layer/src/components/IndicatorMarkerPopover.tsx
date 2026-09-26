@@ -31,7 +31,7 @@ export function IndicatorMarkerPopover({ detail, left, top, onClose, popupRef }:
         <span className="mt-1 w-2 h-2 rounded-sm shrink-0" style={{ backgroundColor: detail.accentColor }} />
         <div className="min-w-0 flex-1">
           <div className="text-[13px] font-semibold text-[var(--text-primary)]">{detail.title}</div>
-          {detail.subtitle && <div className="mt-0.5 text-[10px] text-[var(--text-muted)]">{detail.subtitle}</div>}
+          {detail.subtitle && <div className="mt-0.5 text-[11px] text-[var(--text-muted)]">{detail.subtitle}</div>}
         </div>
         <button
           type="button"
@@ -47,7 +47,7 @@ export function IndicatorMarkerPopover({ detail, left, top, onClose, popupRef }:
         <dl className="grid grid-cols-[76px_minmax(0,1fr)] gap-x-3 gap-y-2">
           {detail.fields.map(field => (
             <div key={`${field.label}:${field.value}`} className="contents">
-              <dt className="text-[10px] text-[var(--text-muted)]">{field.label}</dt>
+              <dt className="text-[11px] text-[var(--text-muted)]">{field.label}</dt>
               <dd className="text-[11px] font-mono text-[var(--text-secondary)] text-right break-words">{field.value}</dd>
             </div>
           ))}
@@ -55,10 +55,10 @@ export function IndicatorMarkerPopover({ detail, left, top, onClose, popupRef }:
 
         {detail.reasons && detail.reasons.length > 0 && (
           <section className="mt-3 pt-3 border-t border-[var(--border-primary)]">
-            <div className="mb-2 text-[10px] font-medium text-[var(--text-secondary)]">判定依据</div>
+            <div className="mb-2 text-[11px] font-medium text-[var(--text-secondary)]">判定依据</div>
             <ol className="space-y-1.5">
               {detail.reasons.map((reason, index) => (
-                <li key={`${index}:${reason}`} className="flex gap-2 text-[10px] leading-4 text-[var(--text-muted)]">
+                <li key={`${index}:${reason}`} className="flex gap-2 text-[11px] leading-4 text-[var(--text-muted)]">
                   <span className="font-mono shrink-0" style={{ color: detail.accentColor }}>{index + 1}</span>
                   <span>{reason}</span>
                 </li>

@@ -17,7 +17,8 @@
   /* Text */
   --text-primary: #EDF1F7;
   --text-secondary: #A7AFBD;
-  --text-muted: #70798A;
+  /* 提亮后的弱化文字：在原 --bg-nav(#0E1117) 与深色面板上均达到 WCAG AA 4.5:1 */
+  --text-muted: #8A93A5;
 
   /* Accent */
   --accent: #6C8CFF;

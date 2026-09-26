@@ -221,7 +221,7 @@ export function Chart({ klineData, chanAnalysis, chanOptions, indicatorResults, 
       {/* 重置视图按钮:一键回到全量视图 */}
       <button
         onClick={() => chartRef.current?.timeScale().fitContent()}
-        className="absolute top-2 right-2 z-10 px-2.5 py-1.5 text-[10px] font-mono rounded-md bg-[var(--bg-tertiary)]/90 text-[var(--text-muted)] hover:text-[var(--text-primary)] hover:bg-[var(--bg-surface)] border border-[var(--border-primary)] transition-colors"
+        className="absolute top-2 right-2 z-10 px-2.5 py-1.5 text-[11px] font-mono rounded-md bg-[var(--bg-tertiary)]/90 text-[var(--text-muted)] hover:text-[var(--text-primary)] hover:bg-[var(--bg-surface)] border border-[var(--border-primary)] transition-colors"
         title="重置视图(双击时间轴也可重置)"
       >
         重置视图

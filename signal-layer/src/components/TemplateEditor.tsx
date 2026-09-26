@@ -27,7 +27,7 @@ const selectArrow = `url("data:image/svg+xml,%3csvg xmlns='http://www.w3.org/200
 function LogicControl({ value, onChange }: { value: 'AND' | 'OR'; onChange: (value: 'AND' | 'OR') => void }) {
   return (
     <div className="flex items-center gap-3 shrink-0">
-      <span className="text-[10px] text-[var(--text-muted)]">组间关系</span>
+      <span className="text-[11px] text-[var(--text-muted)]">组间关系</span>
       <div className="flex h-10 p-1 rounded-lg bg-[var(--bg-primary)] border border-[var(--border-primary)]">
         <button type="button" onClick={() => onChange('AND')} className={`min-w-[82px] px-4 rounded-md text-[11px] font-medium transition-colors ${value === 'AND' ? 'bg-[var(--accent)] text-white shadow-sm' : 'text-[var(--text-muted)] hover:text-[var(--text-secondary)] hover:bg-[var(--bg-tertiary)]'}`}>全部满足</button>
         <button type="button" onClick={() => onChange('OR')} className={`min-w-[82px] px-4 rounded-md text-[11px] font-medium transition-colors ${value === 'OR' ? 'bg-[var(--accent)] text-white shadow-sm' : 'text-[var(--text-muted)] hover:text-[var(--text-secondary)] hover:bg-[var(--bg-tertiary)]'}`}>任一组</button>
@@ -132,7 +132,7 @@ export function TemplateEditor({ template, onClose }: Props) {
               <div className="flex items-center gap-2.5">
                 <span className="w-1 h-4 rounded-full bg-[var(--accent)]" />
                 <h4 className="text-[13px] font-semibold text-[var(--text-primary)]">入场条件</h4>
-                <span className="text-[10px] font-mono text-[var(--text-muted)]">{groups.length} 组</span>
+                <span className="text-[11px] font-mono text-[var(--text-muted)]">{groups.length} 组</span>
               </div>
               {groups.length > 1 && <LogicControl value={logic} onChange={setLogic} />}
             </div>
@@ -147,7 +147,7 @@ export function TemplateEditor({ template, onClose }: Props) {
 
             <div className="grid grid-cols-1 md:grid-cols-2 gap-5">
               <div>
-                <label className="text-[10px] text-[var(--text-muted)] block mb-1.5"><ParameterHint label="止损" text="当持仓价格向不利方向达到设定条件时退出。选择关闭表示回测不触发止损。" /></label>
+                <label className="text-[11px] text-[var(--text-muted)] block mb-1.5"><ParameterHint label="止损" text="当持仓价格向不利方向达到设定条件时退出。选择关闭表示回测不触发止损。" /></label>
                 <select value={`${tradeParams.stopLossType}:${tradeParams.stopLossValue}`}
                   onChange={e => {
                     const [t, v] = e.target.value.split(':')
@@ -173,7 +173,7 @@ export function TemplateEditor({ template, onClose }: Props) {
                 </select>
               </div>
               <div>
-                <label className="text-[10px] text-[var(--text-muted)] block mb-1.5"><ParameterHint label="止盈" text="当持仓价格向有利方向达到设定条件时退出。选择关闭表示回测不触发止盈。盈亏比止盈依赖已开启的止损。" /></label>
+                <label className="text-[11px] text-[var(--text-muted)] block mb-1.5"><ParameterHint label="止盈" text="当持仓价格向有利方向达到设定条件时退出。选择关闭表示回测不触发止盈。盈亏比止盈依赖已开启的止损。" /></label>
                 <select value={`${tradeParams.takeProfitType}:${tradeParams.takeProfitValue}`}
                   onChange={e => {
                     const [t, v] = e.target.value.split(':')
@@ -196,8 +196,8 @@ export function TemplateEditor({ template, onClose }: Props) {
               <div className="flex flex-wrap items-center justify-between gap-5 mb-5">
                 <div className="flex items-center gap-2">
                   <h5 className="text-[12px] font-medium text-[var(--text-secondary)]"><ParameterHint label="条件出场" text="使用价格、指标或缠论条件作为卖出依据；满足条件后按当前K线收盘价执行退出。" /></h5>
-                  <span className="text-[10px] text-[var(--text-muted)]">可选 · 收盘价执行</span>
-                  <span className="text-[10px] font-mono text-[var(--text-muted)]">{exitGroups.length} 组</span>
+                  <span className="text-[11px] text-[var(--text-muted)]">可选 · 收盘价执行</span>
+                  <span className="text-[11px] font-mono text-[var(--text-muted)]">{exitGroups.length} 组</span>
                 </div>
                 {exitGroups.length > 1 && <LogicControl value={exitLogic} onChange={setExitLogic} />}
               </div>

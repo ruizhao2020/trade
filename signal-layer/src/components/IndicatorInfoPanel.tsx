@@ -110,7 +110,7 @@ export function IndicatorInfoPanel({
               {change === undefined ? '—' : `${change >= 0 ? '+' : ''}${change.toFixed(2)}%`}
             </span>
           </div>
-          <div className="text-[10px] text-[var(--text-muted)] mt-1">最新收盘数据</div>
+          <div className="text-[11px] text-[var(--text-muted)] mt-1">最新收盘数据</div>
           <div className="grid grid-cols-2 gap-x-5 gap-y-2 mt-4 text-[11px]">
             <div className="flex justify-between"><span className="text-[var(--text-muted)]">开盘</span><span className="font-mono">{formatNumber(latest?.open)}</span></div>
             <div className="flex justify-between"><span className="text-[var(--text-muted)]">最高</span><span className="font-mono">{formatNumber(latest?.high)}</span></div>
@@ -123,7 +123,7 @@ export function IndicatorInfoPanel({
           <section className="py-4 border-b border-[var(--border-primary)]">
             <div className="flex items-center justify-between mb-3">
               <span className="text-[11px] font-semibold text-[var(--text-secondary)]">筹码分布</span>
-              <span className="text-[10px] text-[var(--text-muted)]">{chipTimeLabel || `近${formatNumber(chipMetrics.valid_turnover_days, 0)}日估算`}</span>
+              <span className="text-[11px] text-[var(--text-muted)]">{chipTimeLabel || `近${formatNumber(chipMetrics.valid_turnover_days, 0)}日估算`}</span>
             </div>
             <div className="space-y-2 text-[11px]">
               <div className="flex justify-between"><span className="text-[var(--text-muted)]">主筹码峰</span><span className="font-mono text-[#e7c66b]">{formatNumber(chipMetrics.peak_price)}</span></div>
@@ -142,7 +142,7 @@ export function IndicatorInfoPanel({
               <div className="flex justify-between"><span className="text-[var(--text-muted)]">数据覆盖</span><span className="font-mono">{formatNumber(chipMetrics.coverage_ratio)}%</span></div>
               {chipMetrics.intraday_bars > 0 && <div className="flex justify-between"><span className="text-[var(--text-muted)]">分钟演进</span><span className="font-mono">{formatNumber(chipMetrics.intraday_bars, 0)} 根</span></div>}
             </div>
-            <div className="mt-3 pt-3 border-t border-[var(--border-primary)] flex items-center gap-3 text-[10px] text-[var(--text-muted)]">
+            <div className="mt-3 pt-3 border-t border-[var(--border-primary)] flex items-center gap-3 text-[11px] text-[var(--text-muted)]">
               <span className="flex items-center gap-1"><span className="w-2 h-2 bg-[rgba(108,140,255,0.8)]" />获利筹码</span>
               <span className="flex items-center gap-1"><span className="w-2 h-2 bg-[rgba(155,140,242,0.75)]" />套牢筹码</span>
             </div>
@@ -152,7 +152,7 @@ export function IndicatorInfoPanel({
         <section className="py-4 border-b border-[var(--border-primary)]">
           <div className="flex items-center justify-between mb-3">
             <span className="text-[11px] font-semibold text-[var(--text-secondary)]">指标数值</span>
-            <span className="text-[10px] font-mono text-[var(--text-muted)]">{indicators.length} 个图层</span>
+            <span className="text-[11px] font-mono text-[var(--text-muted)]">{indicators.length} 个图层</span>
           </div>
           {latestIndicatorValues.length > 0 ? (
             <div className="space-y-2">
@@ -171,7 +171,7 @@ export function IndicatorInfoPanel({
         <section className="py-4 border-b border-[var(--border-primary)]">
           <div className="flex items-center justify-between mb-3">
             <span className="text-[11px] font-semibold text-[var(--text-secondary)]">缠论统计</span>
-            <span className="text-[10px] font-mono text-[var(--text-muted)]">{chanOptions.zsLevel === 'duan' ? '段中枢' : '笔中枢'}</span>
+            <span className="text-[11px] font-mono text-[var(--text-muted)]">{chanOptions.zsLevel === 'duan' ? '段中枢' : '笔中枢'}</span>
           </div>
           <div className="space-y-2 text-[11px]">
             <div className="flex justify-between"><span className="text-[var(--text-muted)]">笔</span><span className="font-mono">{analysis?.bis.length ?? 0}</span></div>
