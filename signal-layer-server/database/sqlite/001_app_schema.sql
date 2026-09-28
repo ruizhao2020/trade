@@ -266,3 +266,63 @@ CREATE TABLE IF NOT EXISTS public_indicator_feature_policies (
     updated_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
     UNIQUE (indicator_type, feature_code)
 );
+
+-- 策略建议：与 mysql/001_app_schema.sql 保持一致的字段定义
+CREATE TABLE IF NOT EXISTS advisor_runs (
+    id INTEGER NOT NULL PRIMARY KEY AUTOINCREMENT,
+    user_id INTEGER NOT NULL,
+    symbol VARCHAR(32) NOT NULL,
+    symbol_name VARCHAR(80) NULL,
+    market VARCHAR(20) NULL,
+    status VARCHAR(20) NOT NULL DEFAULT 'pending',
+    progress_percent INTEGER NOT NULL DEFAULT 0,
+    stage VARCHAR(120) NULL,
+    error TEXT NULL,
+    config JSON NULL,
+    data_range JSON NULL,
+    engine_version VARCHAR(20) NOT NULL DEFAULT '1',
+    verdict VARCHAR(20) NULL,
+    summary TEXT NULL,
+    profile JSON NULL,
+    evaluated_count INTEGER NOT NULL DEFAULT 0,
+    truncated BOOLEAN NOT NULL DEFAULT 0,
+    started_at DATETIME NULL,
+    finished_at DATETIME NULL,
+    created_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    updated_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP
+);
+
+CREATE TABLE IF NOT EXISTS advisor_candidates (
+    id INTEGER NOT NULL PRIMARY KEY AUTOINCREMENT,
+    run_id INTEGER NOT NULL,
+    rank INTEGER NULL,
+    family VARCHAR(40) NOT NULL,
+    primary_level VARCHAR(10) NOT NULL,
+    entry_level VARCHAR(10) NOT NULL,
+    description VARCHAR(400) NOT NULL,
+    passed BOOLEAN NOT NULL DEFAULT 0,
+    rejected_reason VARCHAR(200) NULL,
+    plateau_stable BOOLEAN NOT NULL DEFAULT 0,
+    score DOUBLE NOT NULL DEFAULT 0,
+    in_sample JSON NULL,
+    out_of_sample JSON NULL,
+    notes JSON NULL,
+    payload JSON NULL,
+    created_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    updated_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP
+);
+
+CREATE TABLE IF NOT EXISTS advisor_recommendations (
+    id INTEGER NOT NULL PRIMARY KEY AUTOINCREMENT,
+    run_id INTEGER NOT NULL,
+    user_id INTEGER NOT NULL,
+    symbol VARCHAR(32) NOT NULL,
+    template_id VARCHAR(64) NULL,
+    status VARCHAR(20) NOT NULL DEFAULT 'active',
+    baseline_profile JSON NULL,
+    review_after_bars INTEGER NOT NULL DEFAULT 20,
+    drift_state VARCHAR(20) NULL,
+    drift_detail TEXT NULL,
+    created_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    updated_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP
+);

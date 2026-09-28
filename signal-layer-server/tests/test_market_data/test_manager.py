@@ -1,6 +1,7 @@
 import asyncio
+import time
 
-from app.market_data.manager import MarketDataManager
+from app.market_data.manager import MarketDataManager, stamp_closed_flags
 from app.market_data.ranges import TimeRange, merge_ranges
 
 
@@ -298,3 +299,74 @@ def test_concurrent_requests_for_same_symbol_share_one_gap_fill():
     assert source.calls == [(3, 5)]
     assert first[1] is False
     assert second[1] is True
+
+
+def test_stamp_closed_flags_marks_intraday_bar_only_after_interval():
+    """5 分钟 K 线要在 5 分钟走完之后才算收盘。"""
+    minute_ms = 60 * 1000
+    open_time = 1_700_000_000_000
+
+    bars = stamp_closed_flags([bar(open_time)], "5m", now_ms=open_time + 4 * minute_ms)
+    assert bars[0]["is_closed"] is False
+
+    bars = stamp_closed_flags([bar(open_time)], "5m", now_ms=open_time + 5 * minute_ms)
+    assert bars[0]["is_closed"] is True
+
+
+def test_stamp_closed_flags_keeps_daily_bar_open_until_next_day():
+    """日线没有交易日历，按保守口径要到次日零点才算收盘。"""
+    day_ms = 1440 * 60 * 1000
+    open_time = 1_700_000_000_000
+
+    same_day = stamp_closed_flags([bar(open_time)], "1d", now_ms=open_time + day_ms - 1)
+    assert same_day[0]["is_closed"] is False
+
+    next_day = stamp_closed_flags([bar(open_time)], "1d", now_ms=open_time + day_ms)
+    assert next_day[0]["is_closed"] is True
+
+
+def test_stamp_closed_flags_does_not_mutate_input():
+    """返回浅拷贝，避免污染内存缓存里持有的原始 dict。"""
+    day_ms = 1440 * 60 * 1000
+    original = bar(1_700_000_000_000)
+    result = stamp_closed_flags([original], "1d", now_ms=1_700_000_000_000 + day_ms * 2)
+
+    assert result[0] is not original
+    assert result[0]["is_closed"] is True
+    assert original["is_closed"] is True  # 原对象保持原样（未被改成 False）
+
+
+def test_manager_marks_still_forming_latest_bar():
+    """读取出口重算 is_closed：数据源写死的 True 不再被信任。"""
+    day_ms = 1440 * 60 * 1000
+    now_ms = int(time.time() * 1000)
+    store = MemoryStore()
+    source = RangeSource()
+    manager = MarketDataManager(store, source, source)
+
+    async def scenario():
+        await manager.fetch("000001_sz", "1d", start_time=0, end_time=0)
+        stored = store.fetch_latest("000001_sz", "1d", 10)
+        stored[0]["open_time"] = now_ms - 60_000  # 刚刚开始走的一根
+        store.upsert("000001_sz", "1d", stored)
+        return await manager.fetch("000001_sz", "1d", limit=10)
+
+    bars, _ = asyncio.run(scenario())
+
+    assert bars[-1]["is_closed"] is False
+    assert all(item["is_closed"] for item in bars[:-1])
+
+
+def test_manager_marks_long_ago_daily_bar_closed():
+    day_ms = 1440 * 60 * 1000
+    now_ms = int(time.time() * 1000)
+    store = MemoryStore()
+    store.upsert("000001_sz", "1d", [bar(now_ms - 3 * day_ms)])
+    source = RangeSource()
+    manager = MarketDataManager(store, source, source)
+
+    async def scenario():
+        return await manager.fetch("000001_sz", "1d", limit=10)
+
+    bars, _ = asyncio.run(scenario())
+    assert bars[-1]["is_closed"] is True

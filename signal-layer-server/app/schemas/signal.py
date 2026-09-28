@@ -91,7 +91,8 @@ class ConditionTemplateSchema(BaseModel):
     name: str
     logic: Literal["AND", "OR"]
     condition_groups: list[ConditionGroupSchema]
-    primary_tf: str = "15m"
+    # 与 models/template.py 及 database/*/001_app_schema.sql 的默认值保持一致
+    primary_tf: str = "1d"
     secondary_tfs: list[str] = Field(default_factory=list)
     enabled: bool = True
     trade_params: Optional[TradeParams] = None
@@ -109,6 +110,8 @@ class ConditionEval(BaseModel):
     left_value: Optional[float] = None
     right_value: Optional[float] = None
     diff_percent: float = 0.0
+    # 条件级别为「次级周期」时，记录实际命中的级别（如 "60m"）
+    matched_timeframe: Optional[str] = None
 
 
 class GroupEval(BaseModel):

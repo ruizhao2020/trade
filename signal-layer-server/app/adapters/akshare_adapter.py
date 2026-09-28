@@ -31,6 +31,7 @@ TF_PERIOD: dict[str, str] = {
 
 TF_MINUTE: dict[str, str] = {
     "5m": "5",
+    "15m": "15",
     "30m": "30",
     "60m": "60",
 }

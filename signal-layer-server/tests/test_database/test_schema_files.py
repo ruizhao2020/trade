@@ -53,8 +53,12 @@ def test_sqlite_seed_creates_default_admin_roles_and_modules():
         seed_sql = (ROOT / "database/sqlite/010_access_control_seed.sql").read_text(encoding="utf-8")
         connection.executescript(seed_sql)
         connection.executescript(seed_sql)
-        assert connection.execute("SELECT COUNT(*) FROM modules").fetchone()[0] == 6
-        assert connection.execute("SELECT COUNT(*) FROM permissions").fetchone()[0] == 21
+        # 断言"核心模块/权限存在 + 管理员拥有全部权限"，避免每新增一个模块就改数量
+        module_codes = {row[0] for row in connection.execute("SELECT code FROM modules")}
+        assert {"indicators", "strategy", "screener", "admin", "notifications", "content", "advisor"} <= module_codes
+        permission_codes = {row[0] for row in connection.execute("SELECT code FROM permissions")}
+        assert {"indicators.view", "strategy.view", "screener.view", "admin.view",
+                "notifications.view", "content.view", "advisor.view", "advisor.run"} <= permission_codes
         assert connection.execute("SELECT COUNT(*) FROM roles").fetchone()[0] == 3
         assert connection.execute("SELECT COUNT(*) FROM users WHERE username='admin'").fetchone()[0] == 1
         assert connection.execute("SELECT public_access FROM modules WHERE code='indicators'").fetchone()[0] == 1
@@ -67,7 +71,7 @@ def test_sqlite_seed_creates_default_admin_roles_and_modules():
         admin_permissions = connection.execute(
             "SELECT COUNT(*) FROM role_permissions rp JOIN roles r ON r.id=rp.role_id WHERE r.code='admin'"
         ).fetchone()[0]
-        assert admin_permissions == 21
+        assert admin_permissions == len(permission_codes), "管理员应当拥有全部权限"
     finally:
         connection.close()
 

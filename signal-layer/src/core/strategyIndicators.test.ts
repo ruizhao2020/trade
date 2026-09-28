@@ -144,3 +144,34 @@ describe('strategy indicator dependencies by timeframe', () => {
     expect(collectStrategyIndicatorsForTimeframe(target, '1d')).toEqual([])
   })
 })
+
+describe('「次级周期」条件的依赖展开', () => {
+  const maLeft: ConditionValue = { source: 'indicator', indicatorType: 'ma', params: { period: 5 }, field: 'value' }
+
+  it('在每个声明过的次级级别上都登记一次指标需求', () => {
+    const tpl = template([group(condition(maLeft, 'secondary'))])
+    tpl.secondaryTimeframeIds = ['60m', '30m']
+
+    for (const timeframe of ['60m', '30m']) {
+      const requests = collectStrategyIndicatorsForTimeframe(tpl, timeframe)
+      expect(requests).toHaveLength(1)
+      expect(requests[0]?.type).toBe('ma')
+    }
+    // 主周期不应被这个条件带上
+    expect(collectStrategyIndicatorsForTimeframe(tpl, '1d')).toHaveLength(0)
+  })
+
+  it('策略的周期列表包含次级级别', () => {
+    const tpl = template([group(condition(maLeft, 'secondary'))])
+    tpl.secondaryTimeframeIds = ['60m', '30m']
+
+    expect(collectStrategyTimeframes(tpl)).toEqual(['1d', '60m', '30m'])
+  })
+
+  it('未声明次级周期时不产生任何级别依赖', () => {
+    const tpl = template([group(condition(maLeft, 'secondary'))])
+    tpl.secondaryTimeframeIds = []
+
+    expect(collectStrategyTimeframes(tpl)).toEqual(['1d'])
+  })
+})

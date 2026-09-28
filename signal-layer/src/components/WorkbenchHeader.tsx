@@ -1,6 +1,6 @@
 import type { ReactNode } from 'react'
 import { SymbolSelector } from './SymbolSelector.tsx'
-import { SUPPORTED_TIMEFRAME_IDS } from '../core/constants.ts'
+import { SUPPORTED_TIMEFRAME_IDS, timeframeLabel } from '../core/constants.ts'
 import type { SupportedTimeframeId } from '../core/constants.ts'
 
 interface Props {
@@ -44,13 +44,13 @@ export function WorkbenchHeader({
             key={tf}
             type="button"
             onClick={() => onTimeframeChange(tf)}
-            className={`h-8 min-w-11 px-3 rounded-md border text-[11px] font-mono transition-colors duration-150 ${
+            className={`h-8 min-w-11 px-3 rounded-md border text-[11px] transition-colors duration-150 ${
               timeframe === tf
                 ? 'border-[var(--border-accent)] bg-[var(--bg-surface)] text-[var(--text-primary)]'
                 : 'border-[var(--border-primary)] bg-[var(--bg-primary)] text-[var(--text-muted)] hover:border-[var(--border-accent)] hover:text-[var(--text-secondary)]'
             }`}
           >
-            {tf === '1d' ? '日线' : tf}
+            {timeframeLabel(tf)}
           </button>
         ))}
       </div>

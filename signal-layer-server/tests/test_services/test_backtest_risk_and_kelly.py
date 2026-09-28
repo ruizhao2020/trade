@@ -28,7 +28,10 @@ class ConditionOnlyService:
     async def evaluate(self, template, kline_data, chan_data, indicator_data):
         return SimpleNamespace(is_ready=len(kline_data[template.primary_tf]) == 21)
 
-    async def evaluate_groups(self, groups, logic, primary_tf, kline_data, chan_data, indicator_data):
+    async def evaluate_groups(
+        self, groups, logic, primary_tf, kline_data, chan_data, indicator_data,
+        secondary_tfs=None,
+    ):
         return len(kline_data[primary_tf]) == 125
 
 

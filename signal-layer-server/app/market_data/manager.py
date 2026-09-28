@@ -17,6 +17,24 @@ _LATEST_CACHE_TTL = {"5m": 15.0, "15m": 30.0, "30m": 60.0, "60m": 90.0, "1d": 30
 _LATEST_CACHE_MAX_ENTRIES = 128
 _LATEST_PROBE_LIMIT = 20
 
+# 日线按“次日零点”判定走完：没有交易日历，这是永不误判为已收盘的保守取法。
+# 代价是最新一根日线要等次日零点才算收盘（对“按收盘信号推送”是可接受的）。
+_CLOSED_GRACE_MS = 0
+
+
+def stamp_closed_flags(bars: list[dict], timeframe: str, now_ms: int) -> list[dict]:
+    """按 open_time + 周期长度重新判定每根 K 线是否已经走完。
+
+    DB 与各适配器写死的 is_closed 一律是 True（不携带信息），所以在唯一的
+    K 线读取出口统一重算，避免把还在走的那根当成完整 K 线使用。
+    返回浅拷贝，不改动缓存/调用方持有的原始 dict。
+    """
+    interval_ms = TIMEFRAME_MINUTES[timeframe] * 60 * 1000
+    return [
+        {**bar, "is_closed": int(bar["open_time"]) + interval_ms + _CLOSED_GRACE_MS <= now_ms}
+        for bar in bars
+    ]
+
 
 class MarketDataStore(Protocol):
     def fetch_latest(self, symbol: str, timeframe: str, limit: int) -> list[dict]: ...
@@ -161,10 +179,13 @@ class MarketDataManager:
         lock = self._locks.setdefault((symbol, timeframe), asyncio.Lock())
         async with lock:
             if start_time is not None and end_time is not None:
-                return await self._fetch_range(
+                bars, cached = await self._fetch_range(
                     symbol, timeframe, TimeRange(start_time, end_time), force_refresh=force_refresh,
                 )
-            return await self._fetch_latest(symbol, timeframe, limit, force_refresh=force_refresh)
+            else:
+                bars, cached = await self._fetch_latest(symbol, timeframe, limit, force_refresh=force_refresh)
+        # 在唯一出口统一标注“是否已走完”，缓存命中的结果同样重算，避免标记过期
+        return stamp_closed_flags(bars, timeframe, int(time.time() * 1000)), cached
 
     async def _fetch_latest(
         self,

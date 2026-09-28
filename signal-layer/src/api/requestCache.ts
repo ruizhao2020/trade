@@ -31,10 +31,17 @@ export class RecentRequestCache {
   }
 }
 
+/** 与后端 MarketDataManager 的 latest 缓存 TTL 保持一致 */
+const MARKET_REQUEST_TTL_MS: Record<string, number> = {
+  '5m': 15_000,
+  '15m': 30_000,
+  '30m': 60_000,
+  '60m': 90_000,
+  '1d': 300_000,
+}
+
 export function marketRequestTtl(timeframe: string): number {
-  if (timeframe === '5m') return 15_000
-  if (timeframe === '30m') return 60_000
-  return 300_000
+  return MARKET_REQUEST_TTL_MS[timeframe] ?? 300_000
 }
 
 export const recentMarketRequests = new RecentRequestCache()

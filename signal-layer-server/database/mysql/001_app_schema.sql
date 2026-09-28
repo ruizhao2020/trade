@@ -273,3 +273,69 @@ CREATE TABLE IF NOT EXISTS screener_schedules (
     CONSTRAINT fk_screener_schedule_user FOREIGN KEY (user_id) REFERENCES users(id) ON DELETE CASCADE,
     CONSTRAINT fk_screener_schedule_template FOREIGN KEY (template_id) REFERENCES templates(id) ON DELETE CASCADE
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
+
+-- ── 策略建议（advisor）────────────────────────────────────────────────
+-- runs 保存"候选空间版本 + 评分函数版本 + 数据区间"，让历史结论可重放
+CREATE TABLE IF NOT EXISTS advisor_runs (
+    id INT NOT NULL AUTO_INCREMENT PRIMARY KEY,
+    user_id INT NOT NULL,
+    symbol VARCHAR(32) NOT NULL,
+    symbol_name VARCHAR(80) NULL,
+    market VARCHAR(20) NULL,
+    status VARCHAR(20) NOT NULL DEFAULT 'pending',
+    progress_percent INT NOT NULL DEFAULT 0,
+    stage VARCHAR(120) NULL,
+    error TEXT NULL,
+    config JSON NULL,
+    data_range JSON NULL,
+    engine_version VARCHAR(20) NOT NULL DEFAULT '1',
+    verdict VARCHAR(20) NULL,
+    summary TEXT NULL,
+    profile JSON NULL,
+    evaluated_count INT NOT NULL DEFAULT 0,
+    truncated TINYINT(1) NOT NULL DEFAULT 0,
+    started_at DATETIME NULL,
+    finished_at DATETIME NULL,
+    created_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    updated_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
+    INDEX idx_advisor_run_user (user_id),
+    INDEX idx_advisor_run_symbol (symbol)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
+
+CREATE TABLE IF NOT EXISTS advisor_candidates (
+    id INT NOT NULL AUTO_INCREMENT PRIMARY KEY,
+    run_id INT NOT NULL,
+    rank INT NULL,
+    family VARCHAR(40) NOT NULL,
+    primary_level VARCHAR(10) NOT NULL,
+    entry_level VARCHAR(10) NOT NULL,
+    description VARCHAR(400) NOT NULL,
+    passed TINYINT(1) NOT NULL DEFAULT 0,
+    rejected_reason VARCHAR(200) NULL,
+    plateau_stable TINYINT(1) NOT NULL DEFAULT 0,
+    score DOUBLE NOT NULL DEFAULT 0,
+    in_sample JSON NULL,
+    out_of_sample JSON NULL,
+    notes JSON NULL,
+    payload JSON NULL,
+    created_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    updated_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
+    INDEX idx_advisor_candidate_run (run_id)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
+
+CREATE TABLE IF NOT EXISTS advisor_recommendations (
+    id INT NOT NULL AUTO_INCREMENT PRIMARY KEY,
+    run_id INT NOT NULL,
+    user_id INT NOT NULL,
+    symbol VARCHAR(32) NOT NULL,
+    template_id VARCHAR(64) NULL,
+    status VARCHAR(20) NOT NULL DEFAULT 'active',
+    baseline_profile JSON NULL,
+    review_after_bars INT NOT NULL DEFAULT 20,
+    drift_state VARCHAR(20) NULL,
+    drift_detail TEXT NULL,
+    created_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    updated_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
+    INDEX idx_advisor_recommendation_user (user_id),
+    INDEX idx_advisor_recommendation_symbol (symbol)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;

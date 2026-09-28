@@ -67,6 +67,7 @@ interface ApiConditionEvaluation {
   left_value: number | null
   right_value: number | null
   diff_percent: number
+  matched_timeframe?: string | null
 }
 
 interface ApiGroupEvaluation {
@@ -217,6 +218,7 @@ function evaluationFromSnake(e: ApiConditionEvaluation): ConditionEvaluation {
     satisfied: e.satisfied,
     leftValue: e.left_value,
     rightValue: e.right_value,
+    matchedTimeframe: e.matched_timeframe ?? null,
     diffPercent: e.diff_percent,
   }
 }

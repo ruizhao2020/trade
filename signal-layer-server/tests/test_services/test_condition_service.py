@@ -274,3 +274,124 @@ def test_resolve_returns_none_for_missing_indicator_field():
         indicator_data={"1d": {key: [{"support": 0.0, "resistance": 0.0}]}}, default_tf="1d",
     )
     assert missing is None
+
+
+def _secondary_condition(operator: str = "gt", right: float = 0):
+    """级别设为「次级周期」的 MA 条件。"""
+    return ConditionSchema.model_validate({
+        "id": "ma-secondary",
+        "name": "次级周期 MA5 > 0",
+        "left": {"source": "indicator", "indicator_type": "ma", "params": {"period": 5}},
+        "operator": operator,
+        "right": {"source": "constant", "value": right},
+        "timeframe_id": "secondary",
+    })
+
+
+def _ma_data(condition, **by_timeframe: float):
+    """按级别构造 MA 指标数据。
+
+    键必须从条件自身的 params 派生：schema 会把 period 规范成 float，
+    用整数构造会得到不同的键。
+    """
+    key = indicator_data_key("ma", condition.left.params)
+    return {
+        timeframe: {key: [{"value": value}, {"value": value}]}
+        for timeframe, value in by_timeframe.items()
+    }
+
+
+def test_secondary_condition_is_satisfied_when_any_declared_level_matches():
+    service = ConditionService()
+    condition = _secondary_condition()
+
+    # 60分钟 不满足、30分钟 满足 -> 或的关系应成立
+    evaluation = service._evaluate_one(
+        condition, {}, {}, _ma_data(condition, **{"60m": 0.0, "30m": 1.0}),
+        "1d", secondary_tfs=["60m", "30m"],
+    )
+
+    assert evaluation.satisfied is True
+    assert evaluation.matched_timeframe == "30m"
+
+
+def test_secondary_condition_reports_the_first_matching_level():
+    service = ConditionService()
+    condition = _secondary_condition()
+
+    evaluation = service._evaluate_one(
+        condition, {}, {}, _ma_data(condition, **{"60m": 1.0, "30m": 1.0}),
+        "1d", secondary_tfs=["60m", "30m"],
+    )
+
+    assert evaluation.satisfied is True
+    assert evaluation.matched_timeframe == "60m"
+
+
+def test_secondary_condition_is_unsatisfied_when_no_declared_level_matches():
+    service = ConditionService()
+    condition = _secondary_condition()
+
+    evaluation = service._evaluate_one(
+        condition, {}, {}, _ma_data(condition, **{"60m": 0.0, "30m": 0.0}),
+        "1d", secondary_tfs=["60m", "30m"],
+    )
+
+    assert evaluation.satisfied is False
+    # 都不成立时展示第一个级别的取值，便于排查
+    assert evaluation.matched_timeframe == "60m"
+
+
+def test_secondary_condition_without_declared_secondaries_never_matches():
+    service = ConditionService()
+    condition = _secondary_condition()
+
+    evaluation = service._evaluate_one(
+        condition, {}, {}, _ma_data(condition, **{"60m": 1.0}),
+        "1d", secondary_tfs=[],
+    )
+
+    assert evaluation.satisfied is False
+    assert evaluation.left_value is None
+    assert evaluation.matched_timeframe is None
+
+
+def test_concrete_level_condition_ignores_other_levels():
+    """钉死某个具体级别的条件不能被别的级别满足。"""
+    service = ConditionService()
+    condition = ConditionSchema.model_validate({
+        "id": "ma-30m",
+        "name": "30分钟 MA5 > 0",
+        "left": {"source": "indicator", "indicator_type": "ma", "params": {"period": 5}},
+        "operator": "gt",
+        "right": {"source": "constant", "value": 0},
+        "timeframe_id": "30m",
+    })
+
+    evaluation = service._evaluate_one(
+        condition, {}, {}, _ma_data(condition, **{"60m": 1.0, "30m": 0.0}),
+        "1d", secondary_tfs=["60m", "30m"],
+    )
+
+    assert evaluation.satisfied is False
+    assert evaluation.matched_timeframe == "30m"
+
+
+def test_primary_condition_uses_primary_timeframe_only():
+    """未指定级别的条件行为不变：只按主周期判定。"""
+    service = ConditionService()
+    condition = ConditionSchema.model_validate({
+        "id": "ma-primary",
+        "name": "主周期 MA5 > 0",
+        "left": {"source": "indicator", "indicator_type": "ma", "params": {"period": 5}},
+        "operator": "gt",
+        "right": {"source": "constant", "value": 0},
+    })
+
+    evaluation = service._evaluate_one(
+        condition, {}, {}, _ma_data(condition, **{"1d": 1.0, "30m": 0.0}),
+        "1d", secondary_tfs=["30m"],
+    )
+
+    assert evaluation.satisfied is True
+    assert evaluation.matched_timeframe == "1d"

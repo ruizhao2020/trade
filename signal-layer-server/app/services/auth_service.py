@@ -96,6 +96,7 @@ MODULE_DEFINITIONS = [
     ("admin", "系统", "settings", "admin", "/admin", "/api/v1/admin", "admin.view", 100, False),
     ("notifications", "通知", "bell", "notifications", "/notifications", "/api/v1/notifications", "notifications.view", 40, False),
     ("content", "内容", "file", "content", "/content", "/api/v1/content", "content.view", 50, False),
+    ("advisor", "策略建议", "bulb", "advisor", "/advisor", "/api/v1/advisor", "advisor.view", 60, False),
 ]
 
 PERMISSION_DEFINITIONS = [
@@ -118,6 +119,8 @@ PERMISSION_DEFINITIONS = [
     ("notifications.manage", "管理个人通知任务", "notifications"),
     ("notifications.admin", "管理通知渠道和模板", "notifications"),
     ("content.view", "查看内容草稿", "content"),
+    ("advisor.view", "查看策略建议", "advisor"),
+    ("advisor.run", "执行策略建议分析", "advisor"),
     ("content.generate", "生成分析文章", "content"),
     ("content.manage", "审核内容草稿", "content"),
 ]

@@ -11,6 +11,8 @@ from app.services.data_service import DataService
 from app.services.chan_service import ChanService
 from app.services.indicator_service import IndicatorService
 from app.services.condition_service import ConditionService
+from app.services.advisor_service import AdvisorService
+from app.services.backtest_service import BacktestService
 from app.services.notification_service import NotificationService
 from app.services.system_setting_service import get_divergence_power_ratio
 
@@ -21,6 +23,7 @@ _data_service: DataService | None = None
 _chan_service: ChanService | None = None
 _indicator_service: IndicatorService | None = None
 _condition_service: ConditionService | None = None
+_advisor_service: AdvisorService | None = None
 _notification_service: NotificationService | None = None
 
 
@@ -40,6 +43,20 @@ def get_data_service() -> DataService:
     if _data_service is None:
         _data_service = DataService()
     return _data_service
+
+
+def get_advisor_service() -> AdvisorService:
+    """策略建议服务；复用既有的行情/缠论/指标/回测服务。"""
+    global _advisor_service
+    if _advisor_service is None:
+        condition = get_condition_service()
+        _advisor_service = AdvisorService(
+            get_data_service(),
+            get_chan_service(),
+            get_indicator_service(),
+            BacktestService(condition),
+        )
+    return _advisor_service
 
 
 def get_chan_service() -> ChanService:

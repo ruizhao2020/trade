@@ -11,7 +11,8 @@
 
 import type { ConditionGroup, Condition, ConditionValue, IndicatorInfo } from '../core/types.ts'
 import { ConditionOperator } from '../core/types.ts'
-import { DEFAULT_TIMEFRAMES } from '../core/constants.ts'
+import { SECONDARY_TIMEFRAME, SUPPORTED_TIMEFRAME_IDS, isFinerTimeframe, timeframeLabel } from '../core/constants.ts'
+import type { SupportedTimeframeId } from '../core/constants.ts'
 import { MA_PERIODS } from '../core/indicatorColors.ts'
 import { ParameterHint } from './ParameterHint.tsx'
 
@@ -24,6 +25,10 @@ interface Props {
   onChange: (groups: ConditionGroup[]) => void
   /** 是否允许空（出场条件可为空，入场条件至少一组） */
   allowEmpty?: boolean
+  /** 策略主周期：用于提示“比主周期更细的条件仍按主周期节流推送” */
+  primaryTimeframeId?: SupportedTimeframeId
+  /** 策略次级周期：在级别下拉里单独成组，便于条件直接选用 */
+  secondaryTimeframeIds?: SupportedTimeframeId[]
 }
 
 let _idSequence = 0
@@ -214,7 +219,12 @@ function defaultCondition(): Condition {
   }
 }
 
-export function ConditionGroupEditor({ groups, indicators, onChange, allowEmpty = false }: Props) {
+function isFinerThanPrimary(conditionTimeframe: string, primaryTimeframeId?: SupportedTimeframeId): boolean {
+  if (!primaryTimeframeId) return false
+  return isFinerTimeframe(conditionTimeframe, primaryTimeframeId)
+}
+
+export function ConditionGroupEditor({ groups, indicators, onChange, allowEmpty = false, primaryTimeframeId, secondaryTimeframeIds }: Props) {
   function addGroup() {
     onChange([...groups, {
       id: nextGroupId(),
@@ -259,6 +269,17 @@ export function ConditionGroupEditor({ groups, indicators, onChange, allowEmpty 
 
   const selClass = "h-10 bg-[var(--bg-tertiary)] text-[12px] text-[var(--text-primary)] px-3 rounded-lg border border-[var(--border-primary)] outline-none focus:border-[var(--accent)] transition-colors duration-150 appearance-none"
   const selStyle = { backgroundImage: selectArrow, backgroundRepeat: 'no-repeat', backgroundPosition: 'right 10px center', backgroundSize: '8px 5px', paddingRight: '28px' }
+
+  // 级别下拉：上层是抽象级别（主周期 / 次级周期），下层是具体级别并标注其归属
+  const secondaryLevels = secondaryTimeframeIds ?? []
+  const hasSecondaryLevels = secondaryLevels.length > 0
+  const secondarySet = new Set<string>(secondaryLevels)
+  const primaryLabel = primaryTimeframeId ? timeframeLabel(primaryTimeframeId) : ''
+  const levelSuffix = (id: string) => {
+    if (id === primaryTimeframeId) return '（主周期）'
+    if (secondarySet.has(id)) return '（次级周期）'
+    return ''
+  }
 
   return (
     <div className="space-y-5">
@@ -353,10 +374,38 @@ export function ConditionGroupEditor({ groups, indicators, onChange, allowEmpty 
                   {/* 级别选择（周期） */}
                   <select value={cond.timeframeId ?? ''}
                     onChange={e => updateCondition(gi, conditionIndex, { timeframeId: e.target.value || undefined })}
-                    className={`${selClass} w-[96px] font-mono`} style={selStyle}>
-                    <option value="" className="bg-[var(--bg-secondary)] text-[var(--text-muted)]">主周期</option>
-                    {DEFAULT_TIMEFRAMES.map(tf => <option key={tf.id} value={tf.id} className="bg-[var(--bg-secondary)] text-[var(--text-primary)]">{tf.label}</option>)}
+                    aria-label={`条件 ${conditionIndex + 1} 级别`}
+                    className={`${selClass} w-[188px]`} style={selStyle}>
+                    <option value="" className="bg-[var(--bg-secondary)] text-[var(--text-muted)]">主周期{primaryLabel ? `（${primaryLabel}）` : ''}</option>
+                    <option
+                      value={SECONDARY_TIMEFRAME}
+                      disabled={!hasSecondaryLevels}
+                      className="bg-[var(--bg-secondary)] text-[var(--text-muted)]"
+                    >
+                      {hasSecondaryLevels
+                        ? `次级周期（${secondaryLevels.map((id) => timeframeLabel(id)).join(' 或 ')}）`
+                        : '次级周期（未设置）'}
+                    </option>
+                    {SUPPORTED_TIMEFRAME_IDS.map(tf => (
+                      <option key={tf} value={tf} className="bg-[var(--bg-secondary)] text-[var(--text-primary)]">
+                        {timeframeLabel(tf)}{levelSuffix(tf)}
+                      </option>
+                    ))}
+                    {/* 兼容历史数据：级别不在当前可选集合里时也要保留，避免保存时被改掉 */}
+                    {cond.timeframeId && !SUPPORTED_TIMEFRAME_IDS.includes(cond.timeframeId as SupportedTimeframeId) && cond.timeframeId !== SECONDARY_TIMEFRAME && (
+                      <option value={cond.timeframeId} className="bg-[var(--bg-secondary)] text-[var(--text-primary)]">{timeframeLabel(cond.timeframeId)}</option>
+                    )}
                   </select>
+                  {cond.timeframeId && primaryTimeframeId
+                      && (cond.timeframeId === SECONDARY_TIMEFRAME || isFinerThanPrimary(cond.timeframeId, primaryTimeframeId))
+                      && (
+                    <span
+                      className="shrink-0 text-[11px] text-[var(--accent-orange)]"
+                      title={`监控推送按主周期（${timeframeLabel(primaryTimeframeId)}）K 线节流，该条件的盘中变化不会立即推送`}
+                    >
+                      按{timeframeLabel(primaryTimeframeId)}节流推送
+                    </span>
+                  )}
 
                   <select value={srcValue(cond.left)} onChange={onSrcChange('left')}
                     className={`${selClass} flex-1 min-w-[168px]`} style={selStyle}>

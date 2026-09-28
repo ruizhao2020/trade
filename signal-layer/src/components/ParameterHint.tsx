@@ -4,10 +4,12 @@ import { useEffect, useRef, useState } from 'react'
 interface Props {
   label?: string
   text: string
+  /** 只显示按钮、不显示 label 文本时，用它提供无障碍名称 */
+  ariaLabel?: string
 }
 
 /** 参数旁的小信息按钮；点击显示说明，点击外部或再次点击关闭。 */
-export function ParameterHint({ label, text }: Props) {
+export function ParameterHint({ label, text, ariaLabel }: Props) {
   const [open, setOpen] = useState(false)
   const [position, setPosition] = useState<{ left: number; top: number }>({ left: 0, top: 0 })
   const rootRef = useRef<HTMLSpanElement>(null)
@@ -47,7 +49,7 @@ export function ParameterHint({ label, text }: Props) {
       <button
         type="button"
         ref={buttonRef}
-        aria-label={`${label ?? '参数'}说明`}
+        aria-label={ariaLabel ?? `${label ?? '参数'}说明`}
         aria-expanded={open}
         onClick={toggle}
         className="w-4 h-4 rounded-full border border-[var(--border-accent)] text-[11px] leading-none text-[var(--accent)] hover:bg-[rgba(108,140,255,.12)] transition-colors"

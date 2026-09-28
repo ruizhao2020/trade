@@ -39,6 +39,7 @@ import { getAccessToken } from './api/client.ts'
 import { ChangePasswordDialog } from './components/ChangePasswordDialog.tsx'
 import { NotificationWorkspace } from './components/NotificationWorkspace.tsx'
 import { ContentWorkspace } from './components/ContentWorkspace.tsx'
+import { AdvisorWorkspace } from './components/AdvisorWorkspace.tsx'
 
 const DEFAULT_CHAN_OPTIONS: ChanRenderOptions = {
   showFenxing: false,
@@ -501,7 +502,9 @@ function WorkbenchApp({ user, onLogout, onUserChange, onLogin }: { user: AuthUse
 
         {effectiveActiveModule === 'content' && <ContentWorkspace />}
 
-        {!['indicators', 'strategy', 'screener', 'admin', 'notifications', 'content'].includes(effectiveActiveModule) && (
+        {effectiveActiveModule === 'advisor' && <AdvisorWorkspace />}
+
+        {!['indicators', 'strategy', 'screener', 'admin', 'notifications', 'content', 'advisor'].includes(effectiveActiveModule) && (
           <div className="flex-1 flex items-center justify-center text-[var(--text-muted)]">
             <div className="text-center"><div className="text-[14px] text-[var(--text-secondary)]">模块已配置</div><div className="mt-1 text-[11px]">页面组件尚未接入：{effectiveActiveModule}</div></div>
           </div>

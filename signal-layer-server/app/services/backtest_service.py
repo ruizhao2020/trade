@@ -1,4 +1,7 @@
 import logging
+from bisect import bisect_right
+from dataclasses import replace
+
 from app.schemas.signal import (
     ConditionTemplateSchema, TradeParams,
     BacktestResult, TradeRecord,
@@ -6,6 +9,26 @@ from app.schemas.signal import (
 from app.services.condition_service import ConditionService
 
 logger = logging.getLogger(__name__)
+
+
+def _chan_until(result, current_time: int):
+    """只保留截至 current_time 已经确认的缠论结构。
+
+    缠论是在整段 K 线上一次性算出来的，直接拿去逐根回测会把当前K线之后才
+    形成的一买/中枢也算进计数，等于用了未来数据。这里按元素结束时间截断。
+    """
+    if result is None:
+        return None
+    return replace(
+        result,
+        fenxings=[fx for fx in result.fenxings if fx.merged_kline.dt <= current_time],
+        bis=[bi for bi in result.bis if bi.end_time <= current_time],
+        duans=[duan for duan in result.duans if duan.end_time <= current_time],
+        zhongshus=[zs for zs in result.zhongshus if zs.end_time <= current_time],
+        duan_zhongshus=[zs for zs in result.duan_zhongshus if zs.end_time <= current_time],
+        buy_sell_points=[p for p in result.buy_sell_points if p.time <= current_time],
+        divergences=[d for d in result.divergences if d.time <= current_time],
+    )
 
 
 def _kelly_metrics(trades: list[TradeRecord]) -> tuple[float, float]:
@@ -72,11 +95,25 @@ class BacktestService:
         lows = [float(k["low"]) for k in klines]
         closes = [float(k["close"]) for k in klines]
 
+        # 各周期的时间轴（升序），用于按当前主周期K线快速定位截断点
+        series_times = {
+            name: [int(item["open_time"]) for item in series]
+            for name, series in kline_data.items()
+        }
+
         for i in range(20, len(klines)):
-            bar_klines = klines[:i + 1]
             current_time = int(klines[i]["open_time"])
-            bar_kline_data = {tf: bar_klines}
-            bar_chan = {tf: chan_data.get(tf)} if chan_data.get(tf) else {}
+            # 所有级别都截断到当前主周期K线，这样次级周期条件拿到的是
+            # "该K线时间范围内最后一根已收盘K线"，不会看到未来数据。
+            bar_kline_data = {
+                name: series[:bisect_right(series_times[name], current_time)]
+                for name, series in kline_data.items()
+            }
+            bar_chan = {}
+            for name, chan in chan_data.items():
+                truncated = _chan_until(chan, current_time)
+                if truncated is not None:
+                    bar_chan[name] = truncated
             bar_ind = {}
             for ind_tf, ind_map in indicator_data.items():
                 bar_ind[ind_tf] = {}
@@ -125,6 +162,7 @@ class BacktestService:
                     should_exit = await self._cond.evaluate_groups(
                         tp.exit_conditions, tp.exit_logic, tf,
                         bar_kline_data, bar_chan, bar_ind,
+                        secondary_tfs=list(template.secondary_tfs or []),
                     )
                     if should_exit:
                         pnl = (closes[i] - entry_price) / entry_price * 100

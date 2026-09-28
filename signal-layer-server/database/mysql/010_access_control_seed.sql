@@ -9,7 +9,8 @@ VALUES
     ('screener', '选股', 'filter', 'screener', '/screener', '/api/v1/screener', 'screener.view', 30, 1, 1, 0),
     ('admin', '系统', 'settings', 'admin', '/admin', '/api/v1/admin', 'admin.view', 100, 1, 1, 0),
     ('notifications', '通知', 'bell', 'notifications', '/notifications', '/api/v1/notifications', 'notifications.view', 40, 1, 1, 0),
-    ('content', '内容', 'file', 'content', '/content', '/api/v1/content', 'content.view', 50, 1, 1, 0)
+    ('content', '内容', 'file', 'content', '/content', '/api/v1/content', 'content.view', 50, 1, 1, 0),
+    ('advisor', '策略建议', 'bulb', 'advisor', '/advisor', '/api/v1/advisor', 'advisor.view', 60, 1, 1, 0)
 ON DUPLICATE KEY UPDATE
     name=VALUES(name), icon=VALUES(icon), component_key=VALUES(component_key),
     route_path=VALUES(route_path), api_prefixes=VALUES(api_prefixes),
@@ -43,6 +44,8 @@ FROM (
     UNION ALL SELECT 'content.view', '查看内容草稿', 'content'
     UNION ALL SELECT 'content.generate', '生成分析文章', 'content'
     UNION ALL SELECT 'content.manage', '审核内容草稿', 'content'
+    UNION ALL SELECT 'advisor.view', '查看策略建议', 'advisor'
+    UNION ALL SELECT 'advisor.run', '执行策略建议分析', 'advisor'
 ) AS seed
 JOIN modules ON modules.code = seed.module_code
 ON DUPLICATE KEY UPDATE name=VALUES(name), module_id=VALUES(module_id);

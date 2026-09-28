@@ -8,7 +8,8 @@ VALUES
     ('screener', '选股', 'filter', 'screener', '/screener', '/api/v1/screener', 'screener.view', 30, 1, 1, 0),
     ('admin', '系统', 'settings', 'admin', '/admin', '/api/v1/admin', 'admin.view', 100, 1, 1, 0),
     ('notifications', '通知', 'bell', 'notifications', '/notifications', '/api/v1/notifications', 'notifications.view', 40, 1, 1, 0),
-    ('content', '内容', 'file', 'content', '/content', '/api/v1/content', 'content.view', 50, 1, 1, 0)
+    ('content', '内容', 'file', 'content', '/content', '/api/v1/content', 'content.view', 50, 1, 1, 0),
+    ('advisor', '策略建议', 'bulb', 'advisor', '/advisor', '/api/v1/advisor', 'advisor.view', 60, 1, 1, 0)
 ON CONFLICT(code) DO UPDATE SET
     name=excluded.name, icon=excluded.icon, component_key=excluded.component_key,
     route_path=excluded.route_path, api_prefixes=excluded.api_prefixes,
@@ -36,6 +37,8 @@ INSERT INTO permissions (code, name, description, module_id) VALUES
     ,('content.view', '查看内容草稿', '', (SELECT id FROM modules WHERE code='content'))
     ,('content.generate', '生成分析文章', '', (SELECT id FROM modules WHERE code='content'))
     ,('content.manage', '审核内容草稿', '', (SELECT id FROM modules WHERE code='content'))
+    ,('advisor.view', '查看策略建议', '', (SELECT id FROM modules WHERE code='advisor'))
+    ,('advisor.run', '执行策略建议分析', '', (SELECT id FROM modules WHERE code='advisor'))
 ON CONFLICT(code) DO UPDATE SET name=excluded.name, module_id=excluded.module_id;
 
 INSERT INTO roles (code, name, description, built_in, enabled, registration_default) VALUES

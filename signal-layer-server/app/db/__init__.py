@@ -9,6 +9,7 @@ from app.models.kline import Kline  # noqa: F401 — 注册固定 K 线模型
 from app.models.notification import NotificationChannel, NotificationEvent, NotificationTemplate, ScreenerSchedule, StrategyMonitor  # noqa: F401
 from app.models.content import ArticleDraft, ContentTemplate  # noqa: F401
 from app.models.system_setting import SystemSetting  # noqa: F401
+from app.models.advisor import AdvisorCandidate, AdvisorRecommendation, AdvisorRun  # noqa: F401
 from app.config import settings
 
 _engine = None
@@ -134,6 +135,9 @@ def _ensure_mysql_utf8mb4(connection):
         "notification_channels", "notification_templates", "strategy_monitors", "notification_events", "screener_schedules",
         "content_templates", "article_drafts",
         "system_settings",
+        # 策略建议：这三张表由 create_all 建出，若不在此清单里会落到数据库默认字符集，
+        # 导致中文（标的名称等）写入失败。
+        "advisor_runs", "advisor_candidates", "advisor_recommendations",
     )
     inspector = inspect(connection)
     existing = set(inspector.get_table_names())

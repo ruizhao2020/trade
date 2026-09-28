@@ -36,6 +36,9 @@ function NavIcon({ type }: { type: string }) {
   if (type === 'bell' || type === 'notifications') {
     return <svg viewBox="0 0 20 20" fill="none" aria-hidden="true"><path d="M5.2 8.3a4.8 4.8 0 0 1 9.6 0v2.1c0 1.1.4 2.1 1.2 2.9H4c.8-.8 1.2-1.8 1.2-2.9V8.3Z" stroke="currentColor" strokeWidth="1.5" strokeLinejoin="round"/><path d="M8 16h4" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round"/></svg>
   }
+  if (type === 'bulb' || type === 'advisor') {
+    return <svg viewBox="0 0 20 20" fill="none" aria-hidden="true"><path d="M10 2.8a5 5 0 0 0-2.9 9.07V13h5.8v-1.13A5 5 0 0 0 10 2.8Z" stroke="currentColor" strokeWidth="1.5" strokeLinejoin="round"/><path d="M8.2 15.4h3.6M9.2 17.4h1.6" stroke="currentColor" strokeWidth="1.4" strokeLinecap="round"/></svg>
+  }
   if (type === 'file' || type === 'content') {
     return <svg viewBox="0 0 20 20" fill="none" aria-hidden="true"><path d="M5 2.8h6.2L15 6.6v10.6H5V2.8Z" stroke="currentColor" strokeWidth="1.5" strokeLinejoin="round"/><path d="M11 2.8v4h4M7.5 10h5M7.5 13h5" stroke="currentColor" strokeWidth="1.3" strokeLinecap="round"/></svg>
   }

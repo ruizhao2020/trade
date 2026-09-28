@@ -5,7 +5,7 @@ import { fetchTemplates } from '../api/template.ts'
 import { useAppStore } from '../store/useAppStore.ts'
 import { fetchMarkets, type MarketItem } from '../api/symbol.ts'
 import { collectStrategyIndicatorsForTimeframe, templateUsesChanIndicator } from '../core/strategyIndicators.ts'
-import { timeframeLabel, type SupportedTimeframeId } from '../core/constants.ts'
+import { conditionTimeframeLabel, timeframeLabel, type SupportedTimeframeId } from '../core/constants.ts'
 
 interface Props {
   selectedSymbol: string
@@ -255,7 +255,7 @@ export function ScreenerWorkspace({
         <div className="grid grid-cols-2 gap-2">
           <div className="rounded-md border border-[var(--border-primary)] bg-[var(--bg-primary)] px-3 py-2">
             <div className="text-[11px] text-[var(--text-muted)]">信号周期</div>
-            <div className="text-[12px] font-mono mt-0.5">{activeTemplate?.primaryTimeframeId ?? '—'}</div>
+            <div className="text-[12px] mt-0.5">{activeTemplate ? timeframeLabel(activeTemplate.primaryTimeframeId) : '—'}</div>
           </div>
           <div className="rounded-md border border-[var(--border-primary)] bg-[var(--bg-primary)] px-3 py-2">
             <div className="text-[11px] text-[var(--text-muted)]">条件数量</div>
@@ -270,7 +270,10 @@ export function ScreenerWorkspace({
           {activeTemplate?.conditionGroups.flatMap((group) => group.conditions).filter((condition) => condition.enabled).slice(0, 5).map((condition) => (
             <div key={condition.id} className="flex items-start gap-2 text-[11px] text-[var(--text-secondary)]">
               <span className="w-1.5 h-1.5 mt-1.5 rounded-full bg-[var(--accent-green)] shrink-0" />
-              <span className="line-clamp-2">{condition.name || '策略条件'}</span>
+              <span className="line-clamp-2 min-w-0">
+                {condition.name || '策略条件'}
+                <span className="ml-1.5 text-[10px] text-[var(--text-muted)]">{conditionTimeframeLabel(condition.timeframeId, activeTemplate.primaryTimeframeId)}</span>
+              </span>
             </div>
           ))}
           {conditionCount === 0 && <div className="text-[11px] text-[var(--text-muted)]">当前策略没有启用条件</div>}

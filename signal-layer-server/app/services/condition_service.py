@@ -45,6 +45,7 @@ import logging
 from app.schemas.signal import (
     ConditionTemplateSchema, ConditionEval, GroupEval, SignalResult,
 )
+from app.services.condition_timeframes import resolve_condition_timeframes
 from app.services.indicator_service import IndicatorService
 from app.engine.chan import ChanResult
 
@@ -79,7 +80,10 @@ class ConditionService:
                     continue
                 total_conds += 1
 
-                evaluation = self._evaluate_one(cond, kline_data, chan_data, indicator_data, primary_tf)
+                evaluation = self._evaluate_one(
+                    cond, kline_data, chan_data, indicator_data, primary_tf,
+                    secondary_tfs=list(template.secondary_tfs or []),
+                )
                 evaluations.append(evaluation)
                 if evaluation.satisfied:
                     satisfied_conds += 1
@@ -122,18 +126,54 @@ class ConditionService:
 
     def _evaluate_one(
         self, cond, kline_data, chan_data, indicator_data, primary_tf,
+        secondary_tfs: list[str] | None = None,
     ) -> ConditionEval:
-        """解析并比较单个条件。
+        """在条件声明的所有级别上判定，集合内满足任一即成立。
+
+        - 未指定级别 -> 只在主周期判定
+        - 具体级别   -> 只在该级别判定
+        - 次级周期   -> 在模板声明的每个次级级别上判定，或的关系
+
+        这是逐级别的包装；单级别的比较在 _evaluate_on。
+        """
+        timeframes = resolve_condition_timeframes(cond.timeframe_id, primary_tf, secondary_tfs)
+        if not timeframes:
+            # 选了「次级周期」但模板没声明任何次级周期：条件无法成立
+            return ConditionEval(
+                condition_id=cond.id,
+                satisfied=False,
+                left_value=None,
+                right_value=None,
+                diff_percent=0.0,
+                matched_timeframe=None,
+            )
+
+        fallback: ConditionEval | None = None
+        for timeframe in timeframes:
+            evaluation = self._evaluate_on(cond, kline_data, chan_data, indicator_data, timeframe)
+            if evaluation.satisfied:
+                return evaluation
+            # 都不成立时展示第一个级别的取值，便于排查
+            if fallback is None:
+                fallback = evaluation
+        return fallback if fallback is not None else ConditionEval(
+            condition_id=cond.id, satisfied=False, diff_percent=0.0,
+        )
+
+    def _evaluate_on(
+        self, cond, kline_data, chan_data, indicator_data, timeframe: str,
+    ) -> ConditionEval:
+        """在单个级别上解析并比较条件。
 
         任一侧“暂无值”（指标样本不足等）时判定为不满足，并把 None 原样上报，
         避免用 0 顶替而产出假信号。
         """
-        left_val = self._resolve(cond.left, cond, kline_data, chan_data, indicator_data, default_tf=primary_tf)
-        right_val = self._resolve(cond.right, cond, kline_data, chan_data, indicator_data, default_tf=primary_tf)
-        right2_val = self._resolve(cond.right2, cond, kline_data, chan_data, indicator_data, default_tf=primary_tf) if cond.right2 else None
-        prev_left = self._resolve(cond.left, cond, kline_data, chan_data, indicator_data, offset=-1, default_tf=primary_tf)
-        prev_right = self._resolve(cond.right, cond, kline_data, chan_data, indicator_data, offset=-1, default_tf=primary_tf)
-        prev_prev_left = self._resolve(cond.left, cond, kline_data, chan_data, indicator_data, offset=-2, default_tf=primary_tf)
+        left_val = self._resolve(cond.left, cond, kline_data, chan_data, indicator_data, default_tf=timeframe)
+        right_val = self._resolve(cond.right, cond, kline_data, chan_data, indicator_data, default_tf=timeframe)
+        right2_val = self._resolve(cond.right2, cond, kline_data, chan_data, indicator_data, default_tf=timeframe) if cond.right2 else None
+        prev_left = self._resolve(cond.left, cond, kline_data, chan_data, indicator_data, offset=-1, default_tf=timeframe)
+        prev_right = self._resolve(cond.right, cond, kline_data, chan_data, indicator_data, offset=-1, default_tf=timeframe)
+        prev_prev_left = self._resolve(cond.left, cond, kline_data, chan_data, indicator_data, offset=-2, default_tf=timeframe)
 
         # right2 本就允许缺省，不参与有值判定
         if None in (left_val, right_val, prev_left, prev_right, prev_prev_left):
@@ -143,6 +183,7 @@ class ConditionService:
                 left_value=left_val,
                 right_value=right_val,
                 diff_percent=0.0,
+                matched_timeframe=timeframe,
             )
 
         satisfied = self._compare(
@@ -158,6 +199,7 @@ class ConditionService:
             left_value=left_val,
             right_value=right_val,
             diff_percent=round(diff, 2),
+            matched_timeframe=timeframe,
         )
 
     async def evaluate_groups(
@@ -168,6 +210,7 @@ class ConditionService:
         kline_data: dict[str, list[dict]],
         chan_data: dict[str, ChanResult],
         indicator_data: dict[str, dict[str, list[dict]]],
+        secondary_tfs: list[str] | None = None,
     ) -> bool:
         """评估一组条件组是否满足（用于条件式出场判断）。
 
@@ -194,6 +237,7 @@ class ConditionService:
                     continue
                 evaluations.append(self._evaluate_one(
                     cond, kline_data, chan_data, indicator_data, primary_tf,
+                    secondary_tfs=secondary_tfs,
                 ).satisfied)
 
             group_results.append((
@@ -229,7 +273,9 @@ class ConditionService:
         if isinstance(value, ConstantValue):
             return float(value.value)
 
-        tf = forced_tf or cond.timeframe_id or default_tf
+        # 条件的级别（含「次级周期」哨兵值）已由调用方解析成具体的 default_tf，
+        # 这里不再读 cond.timeframe_id，避免哨兵值覆盖解析结果。
+        tf = forced_tf or default_tf
 
         if isinstance(value, PriceValue):
             klines = kline_data.get(tf, [])

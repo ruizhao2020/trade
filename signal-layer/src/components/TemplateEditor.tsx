@@ -14,6 +14,8 @@ import { useAppStore } from '../store/useAppStore.ts'
 import { createTemplate, updateTemplate } from '../api/template.ts'
 import { fetchIndicatorList } from '../api/indicator.ts'
 import type { ConditionTemplate, ConditionGroup, IndicatorInfo, TradeParams } from '../core/types.ts'
+import { SUPPORTED_TIMEFRAME_IDS, isFinerTimeframe, isSupportedTimeframeId, timeframeLabel } from '../core/constants.ts'
+import type { SupportedTimeframeId } from '../core/constants.ts'
 import { ConditionGroupEditor } from './ConditionGroupEditor.tsx'
 import { ParameterHint } from './ParameterHint.tsx'
 
@@ -49,6 +51,28 @@ export function TemplateEditor({ template, onClose }: Props) {
 
   const [name, setName] = useState(template?.name ?? '')
   const [logic, setLogic] = useState<'AND' | 'OR'>(template?.logic ?? 'AND')
+  // 主周期决定未指定级别的条件、回测步进与推送节流粒度；次级周期用于多周期共振
+  const [primaryTimeframeId, setPrimaryTimeframeId] = useState<SupportedTimeframeId>(
+    template && isSupportedTimeframeId(template.primaryTimeframeId) ? template.primaryTimeframeId : '1d',
+  )
+  const [secondaryTimeframeIds, setSecondaryTimeframeIds] = useState<SupportedTimeframeId[]>(
+    (template?.secondaryTimeframeIds ?? []).filter(isSupportedTimeframeId),
+  )
+
+  // 主周期变粗后，原本更粗或同级的次级周期不再合法，需要一并剔除
+  function handlePrimaryTimeframeChange(next: SupportedTimeframeId) {
+    setPrimaryTimeframeId(next)
+    setSecondaryTimeframeIds((current) => current.filter((id) => isFinerTimeframe(id, next)))
+  }
+
+  function toggleSecondaryTimeframe(id: SupportedTimeframeId) {
+    if (!isFinerTimeframe(id, primaryTimeframeId)) return
+    setSecondaryTimeframeIds((current) => (
+      current.includes(id)
+        ? current.filter((item) => item !== id)
+        : SUPPORTED_TIMEFRAME_IDS.filter((tf) => current.includes(tf) || tf === id)
+    ))
+  }
   // 止损/止盈/仓位（不含条件式出场，后者独立管理）
   const [tradeParams, setTradeParams] = useState<Omit<TradeParams, 'exitConditions' | 'exitLogic'>>(template?.tradeParams ?? {
     stopLossType: 'atr', stopLossValue: 2.0,
@@ -70,8 +94,8 @@ export function TemplateEditor({ template, onClose }: Props) {
       name: name.trim(),
       logic,
       conditionGroups: groups,
-      primaryTimeframeId: template?.primaryTimeframeId ?? '1d',
-      secondaryTimeframeIds: template?.secondaryTimeframeIds ?? [],
+      primaryTimeframeId,
+      secondaryTimeframeIds,
       createdAt: template?.createdAt ?? now,
       updatedAt: now,
       enabled: true,
@@ -116,16 +140,78 @@ export function TemplateEditor({ template, onClose }: Props) {
 
         <div className="flex-1 overflow-y-auto px-8 py-7 flex flex-col gap-8">
           <div>
-            <label className="text-[11px] font-medium text-[var(--text-muted)] block mb-2">
+            <label htmlFor="template-name" className="text-[11px] font-medium text-[var(--text-muted)] block mb-2">
               策略名称
             </label>
             <input
+              id="template-name"
               value={name}
               onChange={(e) => setName(e.target.value)}
               className="w-full h-11 bg-[var(--bg-tertiary)] text-[14px] text-[var(--text-primary)] px-4 rounded-lg border border-[var(--border-primary)] outline-none focus:border-[var(--accent)] transition-colors duration-150 placeholder:text-[var(--text-muted)]"
               placeholder="请输入策略名称"
             />
           </div>
+
+          <section className="rounded-2xl border border-[var(--border-primary)] bg-[var(--bg-primary)]/30 p-6">
+            <div className="flex items-center gap-2.5 mb-5">
+              <span className="w-1 h-4 rounded-full bg-[var(--accent-green)]" />
+              <h4 className="text-[13px] font-semibold text-[var(--text-primary)]">周期设置</h4>
+            </div>
+            <div className="flex flex-wrap items-start gap-x-10 gap-y-5">
+              <div className="block">
+                <span className="mb-2 flex items-center gap-1.5 text-[11px] font-medium text-[var(--text-muted)]">
+                  主周期
+                  <ParameterHint
+                    ariaLabel="主周期说明"
+                    text="策略的判定基准级别：没有单独指定级别的条件按主周期判定；回测按主周期的K线逐根推进；监控推送也以「每根主周期K线走完推送一次」为节流粒度。"
+                  />
+                </span>
+                <select
+                  value={primaryTimeframeId}
+                  onChange={(e) => handlePrimaryTimeframeChange(e.target.value as SupportedTimeframeId)}
+                  aria-label="主周期"
+                  className="h-10 min-w-[132px] px-3 rounded-lg bg-[var(--bg-tertiary)] border border-[var(--border-primary)] text-[12px] text-[var(--text-primary)] outline-none focus:border-[var(--accent)] transition-colors duration-150 appearance-none"
+                  style={{ backgroundImage: selectArrow, backgroundRepeat: 'no-repeat', backgroundPosition: 'right 8px center', backgroundSize: '8px 5px', paddingRight: '26px' }}
+                >
+                  {SUPPORTED_TIMEFRAME_IDS.map((id) => <option key={id} value={id}>{timeframeLabel(id)}</option>)}
+                </select>
+              </div>
+              <div>
+                <span className="mb-2 flex items-center gap-1.5 text-[11px] font-medium text-[var(--text-muted)]">
+                  次级周期
+                  <ParameterHint
+                    ariaLabel="次级周期说明"
+                    text="可勾选多个。条件的级别选「次级周期」时，表示这些级别里任意一个满足即成立（或的关系）。只能选比主周期更细的级别。"
+                  />
+                </span>
+                <div className="flex items-center gap-2" role="group" aria-label="次级周期">
+                  {SUPPORTED_TIMEFRAME_IDS.map((id) => {
+                    const selectable = isFinerTimeframe(id, primaryTimeframeId)
+                    const active = secondaryTimeframeIds.includes(id)
+                    return (
+                      <button
+                        key={id}
+                        type="button"
+                        disabled={!selectable}
+                        aria-pressed={active}
+                        title={selectable ? undefined : `不细于主周期（${timeframeLabel(primaryTimeframeId)}），不可作为次级周期`}
+                        onClick={() => toggleSecondaryTimeframe(id)}
+                        className={`h-10 px-4 rounded-lg border text-[12px] transition-colors duration-150 ${
+                          !selectable
+                            ? 'border-[var(--border-primary)] text-[var(--text-muted)] opacity-40 cursor-not-allowed'
+                            : active
+                              ? 'border-[var(--accent)] text-[#b9c9ff] bg-[rgba(108,140,255,.1)]'
+                              : 'border-[var(--border-primary)] text-[var(--text-muted)] hover:border-[var(--border-accent)] hover:text-[var(--text-secondary)]'
+                        }`}
+                      >
+                        {timeframeLabel(id)}
+                      </button>
+                    )
+                  })}
+                </div>
+              </div>
+            </div>
+          </section>
 
           <section className="rounded-2xl border border-[var(--border-primary)] bg-[var(--bg-primary)]/30 p-6">
             <div className="flex flex-wrap items-center justify-between gap-5 mb-5">
@@ -136,7 +222,7 @@ export function TemplateEditor({ template, onClose }: Props) {
               </div>
               {groups.length > 1 && <LogicControl value={logic} onChange={setLogic} />}
             </div>
-            <ConditionGroupEditor groups={groups} indicators={indicators} onChange={setGroups} />
+            <ConditionGroupEditor groups={groups} indicators={indicators} onChange={setGroups} primaryTimeframeId={primaryTimeframeId} secondaryTimeframeIds={secondaryTimeframeIds} />
           </section>
 
           <section className="rounded-2xl border border-[var(--border-primary)] bg-[var(--bg-primary)]/30 p-6">
@@ -194,14 +280,16 @@ export function TemplateEditor({ template, onClose }: Props) {
 
             <div className="mt-6 pt-6 border-t border-[var(--border-primary)]">
               <div className="flex flex-wrap items-center justify-between gap-5 mb-5">
-                <div className="flex items-center gap-2">
-                  <h5 className="text-[12px] font-medium text-[var(--text-secondary)]"><ParameterHint label="条件出场" text="使用价格、指标或缠论条件作为卖出依据；满足条件后按当前K线收盘价执行退出。" /></h5>
+                <div className="flex items-center gap-2.5">
+                  <span className="w-1 h-4 rounded-full bg-[var(--accent)]" />
+                  <h4 className="text-[13px] font-semibold text-[var(--text-primary)]">出场条件</h4>
+                  <ParameterHint ariaLabel="出场条件说明" text="使用价格、指标或缠论条件作为卖出依据；满足条件后按当前K线收盘价执行退出。" />
                   <span className="text-[11px] text-[var(--text-muted)]">可选 · 收盘价执行</span>
                   <span className="text-[11px] font-mono text-[var(--text-muted)]">{exitGroups.length} 组</span>
                 </div>
                 {exitGroups.length > 1 && <LogicControl value={exitLogic} onChange={setExitLogic} />}
               </div>
-              <ConditionGroupEditor groups={exitGroups} indicators={indicators} onChange={setExitGroups} allowEmpty />
+              <ConditionGroupEditor groups={exitGroups} indicators={indicators} onChange={setExitGroups} allowEmpty primaryTimeframeId={primaryTimeframeId} secondaryTimeframeIds={secondaryTimeframeIds} />
             </div>
           </section>
         </div>

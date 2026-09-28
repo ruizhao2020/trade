@@ -1,14 +1,17 @@
 import type { LayerConfig, Timeframe } from './types.ts'
 import { PeriodType } from './types.ts'
 
-export type SupportedTimeframeId = '5m' | '30m' | '1d'
-export const SUPPORTED_TIMEFRAME_IDS: SupportedTimeframeId[] = ['5m', '30m', '1d']
+/** 周期统一按「由粗到细」排列：日线 → 60分钟 → 30分钟 → 15分钟 → 5分钟 */
+export type SupportedTimeframeId = '1d' | '60m' | '30m' | '15m' | '5m'
+export const SUPPORTED_TIMEFRAME_IDS: SupportedTimeframeId[] = ['1d', '60m', '30m', '15m', '5m']
 
-/** 默认支持的时间周期列表 */
+/** 默认支持的时间周期列表（顺序即选择器中的展示顺序） */
 export const DEFAULT_TIMEFRAMES: Timeframe[] = [
-  { id: '5m', label: '5分钟', type: PeriodType.Intraday, intervalMinutes: 5, layerIndex: 0, expanded: true },
-  { id: '30m', label: '30分钟', type: PeriodType.Intraday, intervalMinutes: 30, layerIndex: 1, expanded: true },
-  { id: '1d', label: '日线', type: PeriodType.Calendar, intervalMinutes: null, layerIndex: 2, expanded: true },
+  { id: '1d', label: '日线', type: PeriodType.Calendar, intervalMinutes: null, layerIndex: 0, expanded: true },
+  { id: '60m', label: '60分钟', type: PeriodType.Intraday, intervalMinutes: 60, layerIndex: 1, expanded: true },
+  { id: '30m', label: '30分钟', type: PeriodType.Intraday, intervalMinutes: 30, layerIndex: 2, expanded: true },
+  { id: '15m', label: '15分钟', type: PeriodType.Intraday, intervalMinutes: 15, layerIndex: 3, expanded: true },
+  { id: '5m', label: '5分钟', type: PeriodType.Intraday, intervalMinutes: 5, layerIndex: 4, expanded: true },
 ]
 
 export function timeframeLabel(timeframeId: string): string {
@@ -17,6 +20,32 @@ export function timeframeLabel(timeframeId: string): string {
 
 export function isSupportedTimeframeId(value: string): value is SupportedTimeframeId {
   return SUPPORTED_TIMEFRAME_IDS.includes(value as SupportedTimeframeId)
+}
+
+/** 判断 timeframeId 是否比 thanTimeframeId 更细（列表由粗到细排列，索引更大即更细） */
+export function isFinerTimeframe(timeframeId: string, thanTimeframeId: string): boolean {
+  const index = SUPPORTED_TIMEFRAME_IDS.indexOf(timeframeId as SupportedTimeframeId)
+  const thanIndex = SUPPORTED_TIMEFRAME_IDS.indexOf(thanTimeframeId as SupportedTimeframeId)
+  return index >= 0 && thanIndex >= 0 && index > thanIndex
+}
+
+/** 条件级别的哨兵值：按策略声明的次级周期集合判定，集合内满足任一即成立（或的关系） */
+export const SECONDARY_TIMEFRAME = 'secondary'
+
+/** 把条件的级别解析成需要判定的具体级别列表（与后端 resolve_condition_timeframes 对应） */
+export function resolveConditionTimeframes(
+  timeframeId: string | undefined,
+  primaryTimeframeId: string,
+  secondaryTimeframeIds: string[] | undefined,
+): string[] {
+  if (timeframeId === SECONDARY_TIMEFRAME) return [...(secondaryTimeframeIds ?? [])]
+  return [timeframeId || primaryTimeframeId]
+}
+
+/** 条件级别的展示文案：哨兵值显示为「次级周期」 */
+export function conditionTimeframeLabel(timeframeId: string | undefined, primaryTimeframeId: string): string {
+  if (timeframeId === SECONDARY_TIMEFRAME) return '次级周期'
+  return timeframeLabel(timeframeId || primaryTimeframeId)
 }
 
 export const DEFAULT_LAYER_CONFIGS: LayerConfig[] = [

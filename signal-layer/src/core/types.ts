@@ -329,6 +329,8 @@ export interface ConditionEvaluation {
   leftValue: number | null
   rightValue: number | null
   diffPercent: number
+  /** 级别为「次级周期」时，实际命中的级别（如 "60m"） */
+  matchedTimeframe?: string | null
 }
 
 export interface GroupEvaluation {

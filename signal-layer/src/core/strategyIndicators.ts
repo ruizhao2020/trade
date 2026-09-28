@@ -1,4 +1,5 @@
 import type { ChanAnalysis, ChanRenderOptions, ConditionTemplate, ConditionValue } from './types.ts'
+import { SECONDARY_TIMEFRAME, resolveConditionTimeframes } from './constants.ts'
 
 export interface StrategyIndicatorRequest {
   type: string
@@ -12,7 +13,9 @@ function visitValue(
 ) {
   if (!value) return
   if (value.source === 'timeframe') {
-    visitValue(value.inner, value.timeframeId, visit)
+    // 跨周期操作数：暂不支持嵌套「次级周期」，遇到时退回条件自身的级别
+    const nested = value.timeframeId === SECONDARY_TIMEFRAME ? defaultTimeframe : value.timeframeId
+    visitValue(value.inner, nested, visit)
     return
   }
   visit(value, defaultTimeframe)
@@ -25,10 +28,17 @@ function visitTemplateValues(
   const groups = [...template.conditionGroups, ...(template.tradeParams?.exitConditions ?? [])]
   groups.forEach((group) => group.conditions.forEach((condition) => {
     if (!condition.enabled) return
-    const conditionTimeframe = condition.timeframeId || template.primaryTimeframeId
-    visitValue(condition.left, conditionTimeframe, visit)
-    visitValue(condition.right, conditionTimeframe, visit)
-    visitValue(condition.right2, conditionTimeframe, visit)
+    // 级别为「次级周期」时，条件在每个次级级别上都要检查一遍
+    const conditionTimeframes = resolveConditionTimeframes(
+      condition.timeframeId,
+      template.primaryTimeframeId,
+      template.secondaryTimeframeIds,
+    )
+    conditionTimeframes.forEach((conditionTimeframe) => {
+      visitValue(condition.left, conditionTimeframe, visit)
+      visitValue(condition.right, conditionTimeframe, visit)
+      visitValue(condition.right2, conditionTimeframe, visit)
+    })
   }))
 }
 

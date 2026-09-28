@@ -168,3 +168,58 @@ describe('ConditionGroupEditor condition isolation', () => {
     expect(updated[0]!.conditions[0]!.left).toMatchObject({ field: 'golden_confirmed' })
   })
 })
+
+describe('ConditionGroupEditor 条件级别', () => {
+  it('提供「主周期」与「次级周期」两个抽象级别，并标注具体级别归属', () => {
+    render(
+      <ConditionGroupEditor
+        groups={[maGroup('短期均线', 5)]}
+        indicators={[maInfo]}
+        onChange={vi.fn()}
+        primaryTimeframeId="1d"
+        secondaryTimeframeIds={['60m', '30m']}
+      />,
+    )
+
+    expect(screen.getByRole('option', { name: '主周期（日线）' })).toBeInTheDocument()
+    // 次级周期选项把集合内的级别列出来
+    expect(screen.getByRole('option', { name: '次级周期（60分钟 或 30分钟）' })).toBeEnabled()
+    // 具体级别分别标注归属
+    expect(screen.getByRole('option', { name: '日线（主周期）' })).toBeInTheDocument()
+    expect(screen.getByRole('option', { name: '60分钟（次级周期）' })).toBeInTheDocument()
+    expect(screen.getByRole('option', { name: '30分钟（次级周期）' })).toBeInTheDocument()
+    expect(screen.getByRole('option', { name: '15分钟' })).toBeInTheDocument()
+  })
+
+  it('没有声明次级周期时「次级周期」不可选', () => {
+    render(
+      <ConditionGroupEditor
+        groups={[maGroup('短期均线', 5)]}
+        indicators={[maInfo]}
+        onChange={vi.fn()}
+        primaryTimeframeId="1d"
+        secondaryTimeframeIds={[]}
+      />,
+    )
+
+    expect(screen.getByRole('option', { name: '次级周期（未设置）' })).toBeDisabled()
+  })
+
+  it('选择「次级周期」会把条件级别写成哨兵值', () => {
+    const onChange = vi.fn()
+    render(
+      <ConditionGroupEditor
+        groups={[maGroup('短期均线', 5)]}
+        indicators={[maInfo]}
+        onChange={onChange}
+        primaryTimeframeId="1d"
+        secondaryTimeframeIds={['30m']}
+      />,
+    )
+
+    fireEvent.change(screen.getByLabelText('条件 1 级别'), { target: { value: 'secondary' } })
+
+    const updated = onChange.mock.calls[0]?.[0]
+    expect(updated?.[0]?.conditions[0]?.timeframeId).toBe('secondary')
+  })
+})

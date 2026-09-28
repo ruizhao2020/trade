@@ -13,6 +13,7 @@ from app.schemas.signal import (
 )
 from app.services.chan_service import ChanService
 from app.services.condition_service import ConditionService
+from app.services.condition_timeframes import resolve_condition_timeframes
 from app.services.data_service import DataService
 from app.services.indicator_service import IndicatorService
 
@@ -46,13 +47,16 @@ def _collect_requirements(
     groups: list[ConditionGroupSchema],
 ) -> tuple[list[str], dict[str, dict[str, IndicatorValue]]]:
     primary_tf = template.primary_tf or "1d"
-    timeframes = {primary_tf, *template.secondary_tfs}
+    secondary_tfs = list(template.secondary_tfs or [])
+    timeframes = {primary_tf, *secondary_tfs}
     indicators: dict[str, dict[str, IndicatorValue]] = defaultdict(dict)
 
     def inspect(value, timeframe: str):
         if isinstance(value, TimeframeValue):
-            timeframes.add(value.timeframe_id)
-            inspect(value.inner, value.timeframe_id)
+            # 跨周期操作数：同样支持次级周期哨兵值
+            for inner_tf in resolve_condition_timeframes(value.timeframe_id, primary_tf, secondary_tfs):
+                timeframes.add(inner_tf)
+                inspect(value.inner, inner_tf)
         elif isinstance(value, IndicatorValue):
             timeframes.add(timeframe)
             indicators[timeframe][indicator_data_key(value.indicator_type, value.params)] = value
@@ -61,11 +65,12 @@ def _collect_requirements(
         for condition in group.conditions:
             if not condition.enabled:
                 continue
-            timeframe = condition.timeframe_id or primary_tf
-            timeframes.add(timeframe)
-            inspect(condition.left, timeframe)
-            inspect(condition.right, timeframe)
-            inspect(condition.right2, timeframe)
+            # 「次级周期」条件需要其集合内每个级别的数据都可用
+            for timeframe in resolve_condition_timeframes(condition.timeframe_id, primary_tf, secondary_tfs):
+                timeframes.add(timeframe)
+                inspect(condition.left, timeframe)
+                inspect(condition.right, timeframe)
+                inspect(condition.right2, timeframe)
 
     return sorted(timeframes), indicators
 
@@ -79,12 +84,18 @@ async def load_template_context(
     *,
     groups: list[ConditionGroupSchema] | None = None,
     kline_limit: int = 200,
+    closed_bars_only: bool = False,
 ) -> tuple[
     dict[str, list[dict]],
     dict[str, ChanResult],
     dict[str, dict[str, list[dict]]],
 ]:
-    """加载一次策略评估所需的全部周期、缠论和参数化指标数据。"""
+    """加载一次策略评估所需的全部周期、缠论和参数化指标数据。
+
+    closed_bars_only=True 时每个周期只保留已走完的 K 线，且缠论、指标都基于
+    这份数据计算，保证按 idx=-1 取值读到的是「最后一根已收盘 K 线」。
+    推送告警走这条路径；选股/实时信号保持 False，以当前正在走的 K 线为准。
+    """
     requested_groups = groups if groups is not None else list(template.condition_groups)
     timeframes, indicator_requirements = _collect_requirements(template, requested_groups)
     kline_data: dict[str, list[dict]] = {}
@@ -103,6 +114,12 @@ async def load_template_context(
             limit=timeframe_limit,
         )
         klines = kline_result["data"]
+        if closed_bars_only:
+            closed_klines = [bar for bar in klines if bar.get("is_closed", True)]
+            # 若整段都还没走完（例如刚上市只有一个未完成周期），保持原样，
+            # 由调用方判断「最新一根未收盘就不推送」。
+            if closed_klines:
+                klines = closed_klines
         kline_data[timeframe] = klines
         chan_data[timeframe] = await chan_service.analyze(symbol, timeframe, klines)
         indicator_data[timeframe] = {}

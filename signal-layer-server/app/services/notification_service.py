@@ -223,13 +223,17 @@ class NotificationService:
             groups.extend(strategy.trade_params.exit_conditions)
         kline_data, chan_data, indicator_data = await load_template_context(
             monitor.symbol, strategy, self._data, self._chan, self._indicator,
-            groups=groups, kline_limit=500,
+            groups=groups, kline_limit=500, closed_bars_only=True,
         )
         timeframe = strategy.primary_tf or "1d"
         klines = kline_data.get(timeframe, [])
         if not klines:
             return False
         latest = klines[-1]
+        # 节流粒度＝主周期，判定就必须发生在主周期 K 线走完之后：否则会在新
+        # K 线刚出现时用残缺数据推一次，然后一整天不再重推。
+        if not latest.get("is_closed", True):
+            return False
         bar_time = int(latest["open_time"])
         monitor.last_checked_at = _beijing_now()
         signal = await self._condition.evaluate(strategy, kline_data, chan_data, indicator_data)

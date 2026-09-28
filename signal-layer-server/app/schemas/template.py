@@ -9,7 +9,8 @@ class TemplateCreate(BaseModel):
     name: str
     logic: Literal["AND", "OR"] = "AND"
     condition_groups: list
-    primary_tf: str = "15m"
+    # 与 models/template.py 及 database/*/001_app_schema.sql 的默认值保持一致
+    primary_tf: str = "1d"
     secondary_tfs: Optional[list[str]] = None
     enabled: bool = True
     trade_params: Optional[TradeParams] = None

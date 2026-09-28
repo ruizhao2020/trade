@@ -13,7 +13,7 @@ import { evaluateSignal, runBacktest } from '../api/signal.ts'
 import type { BacktestResult } from '../api/signal.ts'
 import { LayerControls } from './LayerControls.tsx'
 import { TemplateEditor } from './TemplateEditor.tsx'
-import { timeframeLabel } from '../core/constants.ts'
+import { SECONDARY_TIMEFRAME, conditionTimeframeLabel, timeframeLabel } from '../core/constants.ts'
 
 const STATE_LABEL: Record<string, string> = {
   idle: '尚未评估',
@@ -67,6 +67,22 @@ function conditionValueLabel(value: Condition['left']) {
   if (value.source === 'constant') return String(value.value)
   if (value.source === 'timeframe') return conditionValueLabel(value.inner)
   return '策略条件'
+}
+
+/**
+ * 条件级别的展示文案。
+ * 级别为「次级周期」时显示为「次级周期」，并在已知命中级别时补上具体级别。
+ */
+function conditionLevelText(
+  timeframeId: string | undefined,
+  primaryTimeframeId: string,
+  matchedTimeframe?: string | null,
+): string {
+  const base = conditionTimeframeLabel(timeframeId, primaryTimeframeId)
+  if (timeframeId === SECONDARY_TIMEFRAME && matchedTimeframe) {
+    return `${base} · ${timeframeLabel(matchedTimeframe)}`
+  }
+  return base
 }
 
 function conditionLabel(condition: Condition) {
@@ -307,7 +323,7 @@ export function SignalPanel({ symbol = '', embedded = false, showLayers = true, 
               return (
                 <div key={`${activeTemplate.id}:entry:${groupIndex}:${condition.id}:${conditionIndex}`} className="min-h-10 px-2 py-1.5 mb-1 rounded-md bg-[var(--bg-tertiary)]/55 flex items-center gap-2">
                   <span className={`w-1.5 h-1.5 rounded-full shrink-0 ${evaluation?.satisfied ? 'bg-[var(--accent-green)]' : 'bg-[var(--text-muted)]'}`} />
-                  <span className="flex-1 min-w-0"><span className="block truncate text-[11px] text-[var(--text-secondary)]">{conditionLabel(condition)}</span><span className="block text-[11px] font-mono text-[var(--text-muted)]">{timeframeLabel(condition.timeframeId ?? activeTemplate.primaryTimeframeId)}</span></span>
+                  <span className="flex-1 min-w-0"><span className="block truncate text-[11px] text-[var(--text-secondary)]">{conditionLabel(condition)}</span><span className="block text-[11px] text-[var(--text-muted)]">{conditionLevelText(condition.timeframeId, activeTemplate.primaryTimeframeId, evaluation?.matchedTimeframe)}</span></span>
                   {evaluation && <span className={`text-[11px] font-mono ${evaluation.satisfied ? 'text-[var(--accent-green)]' : 'text-[var(--text-muted)]'}`} title={evaluation.leftValue === null ? '该周期样本不足，暂无数值' : undefined}>{evaluation.leftValue === null ? '—' : evaluation.leftValue.toFixed(2)}</span>}
                 </div>
               )
@@ -343,7 +359,7 @@ export function SignalPanel({ symbol = '', embedded = false, showLayers = true, 
                       <div key={`${condition.id}:${conditionIndex}`} className="flex items-center gap-2 text-[11px] text-[var(--text-secondary)]">
                         <span className="w-1.5 h-1.5 rounded-full bg-[var(--accent-orange)] shrink-0" />
                         <span className="truncate">{conditionLabel(condition)}</span>
-                        <span className="ml-auto text-[11px] font-mono text-[var(--text-muted)] shrink-0">{timeframeLabel(condition.timeframeId ?? activeTemplate.primaryTimeframeId)}</span>
+                        <span className="ml-auto text-[11px] text-[var(--text-muted)] shrink-0">{conditionLevelText(condition.timeframeId, activeTemplate.primaryTimeframeId)}</span>
                       </div>
                     ))}
                   </div>
