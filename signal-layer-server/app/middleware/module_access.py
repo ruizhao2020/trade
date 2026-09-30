@@ -19,38 +19,44 @@ class ModuleAccessMiddleware(BaseHTTPMiddleware):
         if request.method == "OPTIONS" or public_path or request.url.path.startswith("/api/v1/auth/"):
             return await call_next(request)
 
-        async for session in get_session():
-            matched = next(
-                (
-                    rule for rule in await module_rules(session)
-                    if request.url.path == rule[0].rstrip("/")
-                    or request.url.path.startswith(rule[0].rstrip("/") + "/")
-                ),
-                None,
-            )
-            if not matched:
-                return await call_next(request)
+        # 显式 aclose() 结束生成器：`async for ... break` 不会关闭它，只能等 GC 回收，
+        # 会造成连接未归还连接池而被强制断开（每请求丢一个池连接）。
+        sessions = get_session()
+        try:
+            async for session in sessions:
+                matched = next(
+                    (
+                        rule for rule in await module_rules(session)
+                        if request.url.path == rule[0].rstrip("/")
+                        or request.url.path.startswith(rule[0].rstrip("/") + "/")
+                    ),
+                    None,
+                )
+                if not matched:
+                    return await call_next(request)
 
-            _, required_permission, module_enabled, public_access = matched
-            if not module_enabled:
-                return JSONResponse({"detail": "模块已停用"}, status_code=403)
-            if public_access:
-                return await call_next(request)
-            authorization = request.headers.get("Authorization", "")
-            if not authorization.lower().startswith("bearer "):
-                return JSONResponse({"detail": "请先登录"}, status_code=401)
-            try:
-                user_id = decode_access_token(authorization.split(" ", 1)[1])
-            except ValueError as error:
-                return JSONResponse({"detail": str(error)}, status_code=401)
-            user = (await session.execute(select(User).where(User.id == user_id))).scalar_one_or_none()
-            if not user or not user.enabled:
-                return JSONResponse({"detail": "用户不存在或已停用"}, status_code=401)
-            user_permissions = permission_codes(user)
-            if "private.access" not in user_permissions:
-                return JSONResponse({"detail": "私有研究工作区权限未开通"}, status_code=403)
-            if required_permission not in user_permissions:
-                return JSONResponse({"detail": f"缺少模块权限：{required_permission}"}, status_code=403)
-            request.state.current_user = user
-            break
+                _, required_permission, module_enabled, public_access = matched
+                if not module_enabled:
+                    return JSONResponse({"detail": "模块已停用"}, status_code=403)
+                if public_access:
+                    return await call_next(request)
+                authorization = request.headers.get("Authorization", "")
+                if not authorization.lower().startswith("bearer "):
+                    return JSONResponse({"detail": "请先登录"}, status_code=401)
+                try:
+                    user_id = decode_access_token(authorization.split(" ", 1)[1])
+                except ValueError as error:
+                    return JSONResponse({"detail": str(error)}, status_code=401)
+                user = (await session.execute(select(User).where(User.id == user_id))).scalar_one_or_none()
+                if not user or not user.enabled:
+                    return JSONResponse({"detail": "用户不存在或已停用"}, status_code=401)
+                user_permissions = permission_codes(user)
+                if "private.access" not in user_permissions:
+                    return JSONResponse({"detail": "私有研究工作区权限未开通"}, status_code=403)
+                if required_permission not in user_permissions:
+                    return JSONResponse({"detail": f"缺少模块权限：{required_permission}"}, status_code=403)
+                request.state.current_user = user
+                break
+        finally:
+            await sessions.aclose()
         return await call_next(request)
