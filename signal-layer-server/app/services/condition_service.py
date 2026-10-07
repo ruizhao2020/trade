@@ -369,4 +369,9 @@ class ConditionService:
             return prev_left < prev_prev_left and left > prev_left
         if operator in {"support", "resistance"}:
             return left > 0
+        if operator == "nonzero":
+            # 事件型条件：「成立」＝取值非零。
+            # 不能用 left > 0：带符号的事件字段（bear_signal = -1、zone_departure_signal = ±1、
+            # key_line_break = -1）成立时是负数，> 0 永远判不出来。
+            return abs(left) > 1e-8
         return False

@@ -1,3 +1,5 @@
+from __future__ import annotations
+
 import asyncio
 from types import SimpleNamespace
 
@@ -395,3 +397,128 @@ def test_primary_condition_uses_primary_timeframe_only():
 
     assert evaluation.satisfied is True
     assert evaluation.matched_timeframe == "1d"
+
+
+class TestEventOperator:
+    """事件型条件的判定：「成立」＝取值非零，而不是大于零。
+
+    形态类字段（看涨信号、态势成熟、一买…）取值是标志位，其中一部分是**带符号**的：
+    bear_signal = -1、zone_departure_signal = ±1、key_line_break = -1。
+    如果用 `> 0` 判"成立"，这些字段永远判不出来——这正是新增 nonzero 运算符的原因。
+    """
+
+    def test_nonzero_accepts_both_signs(self):
+        from app.services.condition_service import ConditionService
+
+        service = ConditionService.__new__(ConditionService)
+        assert service._compare(1.0, "nonzero", 0.0) is True
+        assert service._compare(-1.0, "nonzero", 0.0) is True
+        assert service._compare(0.0, "nonzero", 0.0) is False
+
+    def test_greater_than_would_miss_negative_flags(self):
+        """对照：负号事件用 > 0 判不出来（记录我们为什么不用它）。"""
+        from app.services.condition_service import ConditionService
+
+        service = ConditionService.__new__(ConditionService)
+        assert service._compare(-1.0, "gt", 0.0) is False
+        assert service._compare(-1.0, "nonzero", 0.0) is True
+
+    def test_event_outputs_expose_the_event_kind(self):
+        """编辑器靠 outputs 里的 kind 决定要不要显示运算符，接口必须带出来。"""
+        from app.api.indicator import INDICATOR_META
+
+        marked = {
+            output["field"]
+            for indicator in INDICATOR_META.values()
+            for output in (indicator.get("outputs") or [])
+            if output.get("kind") == "event"
+        }
+        # 用户点名的三个例子必须在其中
+        assert "bull_signal" in marked
+        assert "zone_mature" in marked
+        assert "support_broken" in marked
+        assert "is_double_volume" in marked
+
+
+class TestBollingerSqueeze:
+    """布林带开口/收口：带宽字段 + 向上/向下 操作符。
+
+    开口＝带宽走阔、收口＝带宽收窄。这里走真实的条件求值路径，
+    确认策略里写「带宽 向下」真的能判出收口（而不只是字段存在）。
+    """
+
+    @staticmethod
+    def _make_data() -> tuple[list[dict], list[dict], list[float | None]]:
+        from app.engine.indicator.bollinger import BollingerCalculator
+
+        rows = []
+        for index in range(120):
+            amplitude = 0.2 if 40 <= index < 80 else 1.5
+            close = 10.0 + (amplitude if index % 2 == 0 else -amplitude)
+            rows.append({
+                "open_time": index, "open": close, "high": close + amplitude,
+                "low": close - amplitude, "close": close, "volume": 100,
+            })
+        values = BollingerCalculator().calculate(rows, {"period": 20}).values
+        return rows, values, [row["bandwidth"] for row in values]
+
+    @staticmethod
+    def _condition():
+        from app.schemas.signal import ConditionSchema
+
+        return ConditionSchema(
+            id="c1", name="",
+            left={"source": "indicator", "indicator_type": "bollinger",
+                  "params": {"period": 20, "std": 2}, "field": "bandwidth"},
+            operator="falling",
+            right={"source": "constant", "value": 0},
+        )
+
+    def test_bandwidth_falling_means_closing(self):
+        from app.services.condition_service import ConditionService
+
+        rows, _values, bandwidth = self._make_data()
+        condition = self._condition()
+        service = ConditionService.__new__(ConditionService)
+
+        closing = [
+            index for index in range(1, len(bandwidth))
+            if bandwidth[index] is not None and bandwidth[index - 1] is not None
+            and bandwidth[index] < bandwidth[index - 1]
+        ]
+        assert closing, "样本里应存在收口段"
+
+        # 逐个抽几根收口段里的 bar：截断到该根后判定，必须成立
+        for bar in closing[::max(1, len(closing) // 5)][:5]:
+            evaluation = service._evaluate_on(
+                condition,
+                {"1d": rows[:bar + 1]}, {},
+                {"1d": {indicator_data_key("bollinger", condition.left.params):
+                        [{"bandwidth": v} for v in bandwidth[:bar + 1]]}},
+                "1d",
+            )
+            assert evaluation.satisfied is True, f"第 {bar} 根带宽在收窄，应判成立"
+
+    def test_bandwidth_rising_means_opening(self):
+        """开口＝带宽走阔：同一个字段换成「向上」即可。"""
+        from app.services.condition_service import ConditionService
+
+        rows, _values, bandwidth = self._make_data()
+        condition = self._condition().model_copy(update={"operator": "rising"})
+        service = ConditionService.__new__(ConditionService)
+
+        opening = [
+            index for index in range(1, len(bandwidth))
+            if bandwidth[index] is not None and bandwidth[index - 1] is not None
+            and bandwidth[index] > bandwidth[index - 1]
+        ]
+        assert opening, "样本里应存在开口段"
+        bar = opening[len(opening) // 2]
+        evaluation = service._evaluate_on(
+            condition,
+            {"1d": rows[:bar + 1]}, {},
+            {"1d": {indicator_data_key("bollinger", condition.left.params):
+                    [{"bandwidth": v} for v in bandwidth[:bar + 1]]}},
+            "1d",
+        )
+        assert evaluation.satisfied is True, f"第 {bar} 根带宽在走阔，应判成立"

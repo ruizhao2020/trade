@@ -22,8 +22,11 @@ function indicatorParams(type: string): string[] {
   return target ? Object.keys(target.default_params) : []
 }
 
+/** 已经写了参数说明的指标。新增一个就加到这里，孤儿检查随之生效。 */
+const DOCUMENTED = ['bollinger', 'liquidity_zone', 'support_resistance', 'liquidity_sweep']
+
 describe('指标参数说明', () => {
-  for (const type of ['liquidity_zone', 'support_resistance']) {
+  for (const type of DOCUMENTED) {
     it(`${type} 的每个参数都有说明`, () => {
       const params = indicatorParams(type)
       expect(params.length).toBeGreaterThan(0)
@@ -39,10 +42,7 @@ describe('指标参数说明', () => {
   })
 
   it('没有多余的孤儿说明（参数改名后留下的说明会被这条抓出来）', () => {
-    const known = new Set([
-      ...indicatorParams('liquidity_zone'),
-      ...indicatorParams('support_resistance'),
-    ])
+    const known = new Set(DOCUMENTED.flatMap((type) => indicatorParams(type)))
     const orphans = Object.keys(PARAM_HINTS).filter((key) => !known.has(key))
     expect(orphans).toEqual([])
   })

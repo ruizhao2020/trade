@@ -277,3 +277,109 @@ def test_non_numeric_params_raise_value_error(indicator_type):
         pytest.skip(f"{indicator_type} 无数值参数")
     with pytest.raises(ValueError):
         compute(indicator_type, make_klines(), **{numeric[0]: "abc"})
+
+
+# ── 主图叠加线的量级契约 ────────────────────────────────────────────────
+
+@pytest.mark.parametrize("indicator_type", ALL_INDICATORS)
+def test_main_pane_series_carry_price_magnitudes(indicator_type):
+    """主图上的折线/柱状叠加，y 值必须是价格量级。
+
+    为什么这是一条契约而不是审美问题：前端给主图叠加线时用的是默认价格轴
+    （全仓库没有任何 `priceScaleId` 设置），所有主图 series 共用一根轴并取数据
+    范围并集。一旦某个指标往主图塞 0/1 这类事件标记值，价格轴被迫容纳 0 和
+    报价两端，**K 线被压扁到顶部一小条**。
+
+    非价格的序列（振荡指标、成交量）应当声明 `window="sub"` 走自己的副图。
+    liquidity_sweep 原先就是两条 `bull_signal ∈ {0,1}` / `bear_signal ∈ {-1,0}`
+    的折线，正是这个错误。
+
+    marker / zone / profile 不参与价格轴缩放，因此不在检查范围内。
+    """
+    klines = make_klines(200)
+    result = compute(indicator_type, klines)
+    render = result.render
+    if render is None or render.window != "main":
+        pytest.skip(f"{indicator_type} 不在主图叠加")
+
+    closes = [float(row["close"]) for row in klines]
+    price_low, price_high = min(closes) * 0.5, max(closes) * 2.0
+
+    for plot in render.plots:
+        if plot.type not in ("line", "histogram"):
+            continue
+        values = [
+            row.get(plot.field) for row in result.values
+            if isinstance(row.get(plot.field), (int, float))
+        ]
+        if not values:
+            continue
+        outside = [v for v in values if not price_low <= v <= price_high]
+        assert outside == [], (
+            f"{indicator_type} 的主图叠加线 {plot.field} 有 {len(outside)} 个值不在价格量级"
+            f"（首个越界值 {outside[0]}，价格区间约 {price_low:.2f}~{price_high:.2f}）。"
+            "非价格序列应改为 window='sub'，事件标记应改用 markers。"
+        )
+
+
+# ── 事件型字段（形态类）标记契约 ────────────────────────────────────────
+
+def real_values(indicator_type: str, field: str) -> list[float]:
+    klines = make_klines(240)
+    result = compute(indicator_type, klines)
+    return [
+        row[field] for row in result.values
+        if isinstance(row.get(field), (int, float))
+    ]
+
+
+@pytest.mark.parametrize("indicator_type", ALL_INDICATORS)
+def test_event_outputs_only_hold_flags(indicator_type):
+    """标了 kind=event 的字段，取值只能落在 {-1,0,1}。
+
+    事件型字段在条件编辑器里被渲染成"出现即成立"（不带 >= 之类的比较），
+    所以一旦把一个连续量误标成事件，用户就再也没法给它设阈值了——
+    这就是这条测试要挡的事。
+    """
+    outputs = INDICATOR_META.get(indicator_type, {}).get("outputs") or []
+    for output in outputs:
+        if output.get("kind") != "event":
+            continue
+        values = real_values(indicator_type, output["field"])
+        if not values:
+            continue
+        outside = sorted({round(v, 6) for v in values if v not in (-1.0, 0.0, 1.0)})
+        assert outside == [], (
+            f"{indicator_type}.{output['field']} 标成了事件型，却有非标志取值 {outside[:5]}"
+        )
+
+
+# 名字一看就是事件/形态的字段：新增时不能忘记标 kind=event
+EVENT_NAME_PATTERNS = (
+    lambda name: name.startswith("is_"),
+    lambda name: name.endswith("_signal"),
+    lambda name: name.endswith("_confirmed"),
+    lambda name: name.endswith("_broken"),
+    lambda name: name.endswith("_formed"),
+)
+
+
+@pytest.mark.parametrize("indicator_type", ALL_INDICATORS)
+def test_event_shaped_fields_are_marked(indicator_type):
+    """名字就是事件语义、取值也只有标志位的字段，必须标成事件型。
+
+    这条防的是"加了一个 is_xxx / xxx_signal 却忘了打标记"——
+    表现是条件编辑器里给它挂了 >= 1 这种无意义的比较。
+    """
+    outputs = INDICATOR_META.get(indicator_type, {}).get("outputs") or []
+    unmarked: list[str] = []
+    for output in outputs:
+        field = output["field"]
+        if not any(pattern(field) for pattern in EVENT_NAME_PATTERNS):
+            continue
+        values = real_values(indicator_type, field)
+        if not values:
+            continue
+        if set(round(v, 6) for v in values) <= {-1.0, 0.0, 1.0} and output.get("kind") != "event":
+            unmarked.append(field)
+    assert unmarked == [], f"{indicator_type} 这些字段是事件语义却没标 kind=event：{unmarked}"

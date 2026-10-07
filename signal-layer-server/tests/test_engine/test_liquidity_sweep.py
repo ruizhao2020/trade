@@ -10,6 +10,7 @@ import math
 
 import pytest
 
+from app.api.indicator import INDICATOR_META
 from app.engine.indicator.liquidity_sweep import LiquiditySweepCalculator
 
 
@@ -96,3 +97,77 @@ def test_invalid_params_raise_value_error(params):
     """越界参数必须报错，不能变成 min([]) 崩溃或随机的 ATR 门限。"""
     with pytest.raises(ValueError):
         LiquiditySweepCalculator().calculate(make_klines(), params)
+
+
+# ── 展示：信号用标记而不是折线 ──────────────────────────────────────────
+
+def test_signals_are_rendered_as_markers_on_the_swept_level():
+    """信号必须走 markers，并挂在被扫的那个价位上。
+
+    原来这里是两条 `line` plot，字段值是 0/1——把"事件标记"当成连续序列画进主图。
+    前端给主图叠加线用的是默认价格轴，于是价格轴要容纳 -1 和报价两端，K 线被压扁。
+    改成 marker 后既不参与价格轴缩放，又能标出"扫荡发生在哪个价位"。
+    """
+    result = LiquiditySweepCalculator().calculate(make_klines(), {})
+
+    assert result.render.window == "main"
+    assert result.render.plots == [], "信号不该再以折线形式叠加到主图"
+    fields = [marker.field for marker in result.render.markers]
+    assert fields == ["bull_signal", "bear_signal"]
+    # 标记要挂在被扫的价位上，而不是固定在 K 线上下方
+    by_field = {marker.field: marker for marker in result.render.markers}
+    assert by_field["bull_signal"].price_field == "bull_level"
+    assert by_field["bear_signal"].price_field == "bear_level"
+    assert by_field["bull_signal"].buy_label == "SSL SWEEP"
+    assert by_field["bear_signal"].sell_label == "BSL SWEEP"
+
+
+def test_marker_price_fields_actually_hold_prices():
+    """price_field 必须真的能取到价格，否则标记会掉回 K 线上下方。"""
+    rows = make_klines()
+    result = LiquiditySweepCalculator().calculate(rows, {})
+    closes = [row["close"] for row in rows]
+    low, high = min(closes), max(closes)
+
+    marked = 0
+    for row in result.values:
+        for field in ("bull_level", "bear_level"):
+            value = row[field]
+            if value:
+                assert low * 0.9 <= value <= high * 1.1, f"{field}={value} 不像真实价位"
+                marked += 1
+    assert marked > 0, "样本里应当出现过扫荡信号，否则这条测试没意义"
+
+
+def test_signal_fields_are_exposed_as_decision_outputs():
+    """显式声明 outputs：不声明的话条件编辑器会回退到 render.plots，
+    而信号现在走 markers、plots 为空 → 界面上一个可选字段都没有。"""
+    outputs = {item["field"] for item in INDICATOR_META["liquidity_sweep"]["outputs"]}
+    assert {"bull_signal", "bear_signal", "bull_level", "bear_level", "atr"} <= outputs
+
+
+def test_description_says_the_trade_model_is_out_of_scope():
+    """参考脚本的 SL/TP 线默认是开的，迁移过来的用户会预期看到——
+    描述里必须说明本指标不含交易模型，避免预期错位。"""
+    description = INDICATOR_META["liquidity_sweep"]["description"]
+    assert "交易模型" in description
+
+
+def test_marker_colours_follow_the_apps_up_down_convention():
+    """看涨用红族、看跌用绿族——与本应用 K 线/量柱的涨跌配色一致。
+
+    参考脚本用的是西方约定（青＝涨、品红＝跌），照搬会让这张图上的颜色
+    与页面其它地方的涨跌含义正好相反，因此这里刻意与原版不同。
+    前端图例与释义图的颜色由接口的 render.markers 带出，改这里三处一起变。
+    """
+    import app.engine.indicator.liquidity_sweep as module
+
+    result = LiquiditySweepCalculator().calculate(make_klines(), {})
+    bull = next(marker for marker in result.render.markers if marker.field == "bull_signal")
+    bear = next(marker for marker in result.render.markers if marker.field == "bear_signal")
+
+    assert bull.buy_color == module.BULL_COLOR
+    assert bear.sell_color == module.BEAR_COLOR
+    # 红涨绿跌：看涨不该是绿族，看跌不该是红族
+    assert module.BULL_COLOR != "#00E5C0", "看涨不能用原版的青色（那是西方约定的跌色）"
+    assert module.BEAR_COLOR != "#FF2E93"

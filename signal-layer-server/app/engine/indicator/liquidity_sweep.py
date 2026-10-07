@@ -26,8 +26,14 @@ K 线，无法自己取更高周期数据。原先保留了 use_htf / htf_ema_le
 
 DIR_MODES = ("Both", "Long Only", "Short Only")
 
+# 涨跌配色：跟随本应用的约定（红涨绿跌）。
+# 前端图例与释义图直接取这两个值（由接口的 render.markers 带出），
+# 因此图上标记、图例、图示三处颜色只有一个来源。
+BULL_COLOR = "#FF2E93"   # 看涨（SSL SWEEP）
+BEAR_COLOR = "#00E5C0"   # 看跌（BSL SWEEP）
+
 from app.engine.indicator.base import (
-    IndicatorCalculator, IndicatorResult, RenderSpec, PlotSpec,
+    IndicatorCalculator, IndicatorResult, MarkerSpec, RenderSpec,
     _get_closes, _get_highs, _get_lows, _get_times, _atr, _param_float, _param_int, _sma,
     register_indicator,
 )
@@ -90,11 +96,7 @@ class LiquiditySweepCalculator(IndicatorCalculator):
         n = len(klines)
         if n == 0:
             return IndicatorResult(
-                type=self.type, params=params, values=[],
-                render=RenderSpec(window="main", plots=[
-                    PlotSpec(field="bull_signal", type="line", color="#00E5C0", label="BUY"),
-                    PlotSpec(field="bear_signal", type="line", color="#FF2E93", label="SELL"),
-                ]),
+                type=self.type, params=params, values=[], render=self._render(),
             )
 
         closes = _get_closes(klines)
@@ -359,11 +361,40 @@ class LiquiditySweepCalculator(IndicatorCalculator):
                 "block_dual": block_dual, "cooldown_bars": cooldown_bars,
             },
             values=values,
-            render=RenderSpec(
-                window="main",
-                plots=[
-                    PlotSpec(field="bull_signal", type="line", color="#00E5C0", label="BUY"),
-                    PlotSpec(field="bear_signal", type="line", color="#FF2E93", label="SELL"),
-                ],
-            ),
+            render=self._render(),
         )
+
+    @staticmethod
+    def _render() -> RenderSpec:
+        """信号用**标记**呈现，不画成线。
+
+        这里原来是两条 `line` plot，字段值是 `bull_signal ∈ {0,1}` /
+        `bear_signal ∈ {-1,0}`——也就是把"事件标记"当成了连续序列画进主图。
+        两个后果：
+
+        1. 前端给主图叠加线时没有设 `priceScaleId`，所有主图 series 共用右侧
+           价格轴并取数据范围并集，于是价格轴要同时容纳 -1 和 12 附近的报价，
+           **K 线被压扁到顶部一小条**（本仓库其余指标的主图叠加线都是价格量级，
+           非价格序列一律走副图）。
+        2. 即使不压扁，0/1 在 0 和 1 之间来回跳也读不出任何信息。
+
+        改用 marker，并把标记**挂在被扫的那个价位上**（`price_field`），
+        复刻参考脚本"被扫流动性水平线 + SSL/BSL SWEEP 标签"传达的信息：
+        SSL＝卖方流动性（低点下方）被扫 → 看涨；BSL＝买方流动性（高点上方）被扫 → 看跌。
+        MarkerSpec 会挂到 K 线 series 上，不参与价格轴缩放。
+        """
+        # 配色跟随本应用的涨跌约定（红涨绿跌，与 K 线 upColor/downColor 同族），
+        # 而不是参考脚本的西方约定（青＝涨、品红＝跌）——否则这张图上的颜色
+        # 与页面其它地方的涨跌含义正好相反。
+        return RenderSpec(window="main", markers=[
+            MarkerSpec(
+                field="bull_signal", price_field="bull_level",
+                buy_color=BULL_COLOR, sell_color=BULL_COLOR, buy_label="SSL SWEEP",
+                size=1,
+            ),
+            MarkerSpec(
+                field="bear_signal", price_field="bear_level",
+                buy_color=BEAR_COLOR, sell_color=BEAR_COLOR, sell_label="BSL SWEEP",
+                size=1,
+            ),
+        ])

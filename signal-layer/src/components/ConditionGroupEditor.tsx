@@ -9,7 +9,7 @@
  * 每个条件 = 左值(价格/指标/缠论/常量) + 操作符 + 右值。
  */
 
-import type { ConditionGroup, Condition, ConditionValue, IndicatorInfo } from '../core/types.ts'
+import type { ConditionGroup, Condition, ConditionValue, IndicatorInfo, IndicatorOutput } from '../core/types.ts'
 import { ConditionOperator } from '../core/types.ts'
 import { SECONDARY_TIMEFRAME, SUPPORTED_TIMEFRAME_IDS, isFinerTimeframe, timeframeLabel } from '../core/constants.ts'
 import type { SupportedTimeframeId } from '../core/constants.ts'
@@ -40,6 +40,8 @@ const OPERATOR_LABELS: Record<string, string> = {
   gt: '>', gte: '>=', lt: '<', lte: '<=', eq: '=',
   crossAbove: '上穿', crossBelow: '下穿', rising: '向上', falling: '向下',
   turnDown: '上转下', turnUp: '下转上', support: '支撑', resistance: '压制',
+  // 事件型条件专用：不带数量含义，只问"出现了没有"
+  nonzero: '成立',
 }
 
 const PRICE_OPTIONS = [
@@ -123,6 +125,7 @@ type IndicatorValue = Extract<ConditionValue, { source: 'indicator' }>
 
 const PARAM_LABELS: Record<string, string> = {
   period: '周期', touch_tolerance_pct: '触碰容差', fast: '快线', slow: '慢线', signal: '信号线',
+  squeeze_lookback: '对比回看', squeeze_threshold_pct: '幅度阈值',
   n: '计算周期', m1: 'K值平滑', m2: 'D值平滑', std: '标准差倍数',
   bins: '价格档位', lookback: '回看天数', min_turnover_days: '最少有效天数',
   piv_len: '枢轴长度', atr_len: '波幅周期',
@@ -201,11 +204,29 @@ function IndicatorParamsEditor({
   )
 }
 
-function indicatorOutputs(info: IndicatorInfo | null | undefined) {
+function indicatorOutputs(info: IndicatorInfo | null | undefined): IndicatorOutput[] {
   if (!info) return []
+  // 回退到 plots 时没有 kind：那种字段都是折线，按"连续量"处理（显示运算符与右值）
   return info.outputs?.length
     ? info.outputs
     : info.render.plots.map((plot) => ({ field: plot.field, label: plot.label || plot.field }))
+}
+
+/** 字段是"A 形态/事件型"时，条件不带数量比较：自动用「成立」并把右值归零。 */
+function eventOperatorUpdate(isEvent: boolean, currentOperator: ConditionOperator) {
+  if (isEvent) {
+    return { operator: ConditionOperator.NonZero, right: { source: 'constant', value: 0 } as ConditionValue }
+  }
+  // 从事件字段切回连续量：把自动加上的「成立」还原成比较运算，
+  // 否则会留下一个"非零"条件，含义与用户预期不符
+  if (currentOperator === ConditionOperator.NonZero) {
+    return { operator: ConditionOperator.GreaterThan, right: { source: 'constant', value: 0 } as ConditionValue }
+  }
+  return {}
+}
+
+function isEventOutput(info: IndicatorInfo | null | undefined, field: string | undefined): boolean {
+  return indicatorOutputs(info).find((output) => output.field === field)?.kind === 'event'
 }
 
 /** 创建一个默认的空条件 */
@@ -321,16 +342,28 @@ export function ConditionGroupEditor({ groups, indicators, onChange, allowEmpty 
               const rightOutputs = indicatorOutputs(rightInfo)
               // 缠论背驰和买卖点是独立事件条件，不需要操作符和右值
               const isChanSignal = leftSrc === 'chan' && ['divergence', 'buySellPoint'].includes((cond.left as {element?: string}).element ?? '')
+              // 指标里的形态/事件型字段同理：看涨信号、态势成熟、一买这类字段本身
+              // 就是"出现即成立"，再挂 >= 1 这样的数学比较没有意义，还会让用户去猜该填几。
+              const leftFieldKind = leftOutputs.find((output) => output.field === (cond.left as { field?: string }).field)?.kind
+              const isEventField = leftSrc === 'indicator' && leftFieldKind === 'event'
+              const isStandaloneCondition = isChanSignal || isEventField
               const isMaLeft = leftSrc === 'indicator' && (cond.left as IndicatorValue).indicatorType === 'ma'
               const isChipLeft = leftSrc === 'indicator' && (cond.left as IndicatorValue).indicatorType === 'chip_distribution'
-              const unaryOperators: ConditionOperator[] = [
+              // 支撑/压制是均线专属语义：后端会把它们映射到 MA 的 support / resistance
+              // 输出字段（K线触及均线后收在哪一侧），对别的指标没有意义。
+              const maOnlyOperators: ConditionOperator[] = [
+                ConditionOperator.Support,
+                ConditionOperator.Resistance,
+              ]
+              // 向上/向下/上转下/下转上则是通用的：判定就是"本根比上一根高/低"，
+              // 任何连续量都适用——布林带的开口（带宽走阔）与收口（带宽收窄）就靠它表达。
+              const genericUnaryOperators: ConditionOperator[] = [
                 ConditionOperator.Rising,
                 ConditionOperator.Falling,
                 ConditionOperator.TurnDown,
                 ConditionOperator.TurnUp,
-                ConditionOperator.Support,
-                ConditionOperator.Resistance,
               ]
+              const unaryOperators = [...maOnlyOperators, ...genericUnaryOperators]
               const isUnaryOperator = unaryOperators.includes(cond.operator)
 
               const srcValue = (c: ConditionValue) =>
@@ -341,14 +374,18 @@ export function ConditionGroupEditor({ groups, indicators, onChange, allowEmpty 
 
               const onSrcChange = (side: 'left' | 'right') => (e: React.ChangeEvent<HTMLSelectElement>) => {
                 const [src, val] = e.target.value.split(':')
-                const resetDirection = side === 'left' && isUnaryOperator && !(src === 'indicator' && val === 'ma')
+                // 离开 MA 时要把「支撑/压制」还原成比较运算；向上/向下是通用的，不用动
+                const usingMaOnly = cond.operator === ConditionOperator.Support || cond.operator === ConditionOperator.Resistance
+                const resetDirection = side === 'left' && usingMaOnly && !(src === 'indicator' && val === 'ma')
                 const operatorUpdate = resetDirection ? { operator: ConditionOperator.GreaterThan } : {}
                 if (src === 'price') {
                   updateCondition(gi, conditionIndex, { [side]: { source: 'price', field: val as 'open'|'high'|'low'|'close'|'volume' }, ...operatorUpdate })
                 } else if (src === 'indicator') {
                   const ind = indicators.find(i => i.type === val)
                   const field = val === 'chip_distribution' ? CHIP_FIELD_OPTIONS[0]!.field : indicatorOutputs(ind)[0]?.field ?? 'value'
-                  updateCondition(gi, conditionIndex, { [side]: { source: 'indicator', indicatorType: val, params: { ...(ind?.default_params ?? {}) }, field }, ...operatorUpdate })
+                  // 该字段本身是事件型时，运算符要跟着切成「成立」
+                  const kindUpdate = side === 'left' ? eventOperatorUpdate(isEventOutput(ind, field), cond.operator) : {}
+                  updateCondition(gi, conditionIndex, { [side]: { source: 'indicator', indicatorType: val, params: { ...(ind?.default_params ?? {}) }, field }, ...operatorUpdate, ...kindUpdate })
                 } else if (src === 'chan') {
                   const opt = [...CHAN_OPTIONS, ...CHAN_SHAPE_OPTIONS].find(o => o.value === e.target.value)
                   const element = opt?.element ?? 'bi'
@@ -419,14 +456,20 @@ export function ConditionGroupEditor({ groups, indicators, onChange, allowEmpty 
                   {leftSrc === 'indicator' && leftInfo && !isChipLeft && leftOutputs.length > 1 && (
                     <select value={(cond.left as {field?: string}).field ?? 'value'}
                       aria-label={`${leftInfo.name} 输出线`}
-                      onChange={e => updateCondition(gi, conditionIndex, { left: { ...cond.left, field: e.target.value } as ConditionValue })}
+                      onChange={e => updateCondition(gi, conditionIndex, {
+                        left: { ...cond.left, field: e.target.value } as ConditionValue,
+                        ...eventOperatorUpdate(isEventOutput(leftInfo, e.target.value), cond.operator),
+                      })}
                       className={`${selClass} w-[90px] font-mono text-[12px]`} style={{ ...selStyle, paddingRight: '24px' }}>
                       {leftOutputs.map(output => <option key={output.field} value={output.field} className="bg-[var(--bg-secondary)] text-[var(--text-primary)]">{output.label}</option>)}
                     </select>
                   )}
 
                   {isChipLeft && (
-                    <select value={(cond.left as IndicatorValue).field} aria-label="筹码分布字段" onChange={e => updateCondition(gi, conditionIndex, { left: { ...cond.left, field: e.target.value } as ConditionValue })} className={`${selClass} w-[120px]`} style={selStyle}>
+                    <select value={(cond.left as IndicatorValue).field} aria-label="筹码分布字段" onChange={e => updateCondition(gi, conditionIndex, {
+                        left: { ...cond.left, field: e.target.value } as ConditionValue,
+                        ...eventOperatorUpdate(isEventOutput(leftInfo, e.target.value), cond.operator),
+                      })} className={`${selClass} w-[120px]`} style={selStyle}>
                       {CHIP_FIELD_OPTIONS.map(option => <option key={option.field} value={option.field}>{option.label}</option>)}
                     </select>
                   )}
@@ -445,14 +488,23 @@ export function ConditionGroupEditor({ groups, indicators, onChange, allowEmpty 
                       className="w-[90px] bg-[var(--bg-tertiary)] text-[13px] text-[var(--text-primary)] px-3 py-2 rounded-lg border border-[var(--border-primary)] outline-none focus:border-[var(--accent)] transition-colors duration-150 text-right font-mono" placeholder="数值" />
                   )}
 
-                  {/* 缠论背驰/买卖点：独立条件，不显示操作符和右值 */}
-                  {!isChanSignal && (
+                  {/* 缠论背驰/买卖点、指标事件型字段：独立条件，不显示操作符和右值 */}
+                  {isStandaloneCondition && (
+                    <span className="shrink-0 text-[11px] text-[var(--text-muted)]" title="事件型条件：该形态出现的那根 K 线即成立，按主周期的已收盘 K 线判定">
+                      出现即成立
+                    </span>
+                  )}
+                  {!isStandaloneCondition && (
                     <>
                       <select value={cond.operator} aria-label={`条件 ${conditionIndex + 1} 运算符`} onChange={(e) => {
                         updateCondition(gi, conditionIndex, { operator: e.target.value as ConditionOperator })
                       }}
                         className={`${selClass} w-[104px] font-mono`} style={selStyle}>
-                        {Object.entries(OPERATOR_LABELS).filter(([key]) => isMaLeft || !unaryOperators.includes(key as ConditionOperator)).map(([key, label]) => (
+                        {Object.entries(OPERATOR_LABELS).filter(([key]) => {
+                          if (key === 'nonzero') return false            // 只由事件型字段自动使用
+                          if (key === 'support' || key === 'resistance') return isMaLeft  // 均线专属
+                          return true                                    // 其余对任何字段都可用
+                        }).map(([key, label]) => (
                           <option key={key} value={key} className="bg-[var(--bg-secondary)] text-[var(--text-primary)]">{label}</option>
                         ))}
                       </select>

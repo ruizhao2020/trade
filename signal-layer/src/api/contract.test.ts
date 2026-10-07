@@ -223,6 +223,60 @@ describe('指标计算映射', () => {
     expect(mapped!.render.window).toBe('main')
   })
 
+  it('流动性扫荡：信号走 markers 并带出被扫价位（后端改名会立刻失败）', async () => {
+    stubResponse(calculateFixture)
+    const response = await calculateIndicatorsDetailed('V0', '1d', [
+      { type: 'liquidity_sweep', params: {} },
+    ], 60)
+
+    const mapped = response.results.find((row) => row.type === 'liquidity_sweep')
+    expect(mapped).toBeTruthy()
+    expect(mapped!.values).toHaveLength(60)
+
+    // 信号不能再以折线叠加到主图：那些值是 0/1，会把主图的价格轴压扁
+    expect(mapped!.render.window).toBe('main')
+    expect(mapped!.render.plots).toEqual([])
+
+    // marker 的字段名是前后端约定：后端改了 snake_case 名字这里会立刻失败，
+    // 否则标记会静默掉回 K 线上下方（挂不到被扫的价位上）
+    const markers = mapped!.render.markers ?? []
+    expect(markers.map((marker) => marker.field)).toEqual(['bull_signal', 'bear_signal'])
+    expect(markers[0]!.priceField).toBe('bull_level')
+    expect(markers[1]!.priceField).toBe('bear_level')
+    expect(markers[0]!.buyLabel).toBe('SSL SWEEP')
+    expect(markers[1]!.sellLabel).toBe('BSL SWEEP')
+    // 配色约定：看涨红族、看跌绿族（与本应用 K 线涨跌一致，刻意不同于参考脚本）。
+    // 前端图例/释义图就是取这两个值，所以这里锁住等于锁住了三处一致。
+    expect(markers[0]!.buyColor).toBe('#FF2E93')
+    expect(markers[1]!.sellColor).toBe('#00E5C0')
+
+    // 被扫价位的字段必须在值里，否则 priceField 取不到数
+    const withLevel = mapped!.values.filter((row) => 'bull_level' in row || 'bear_level' in row)
+    expect(withLevel.length).toBeGreaterThan(0)
+  })
+
+  it('形态类字段带出 kind=event（编辑器据此决定不显示运算符）', async () => {
+    stubResponse(indicatorListFixture)
+    const indicators = await fetchIndicatorList()
+
+    const sweep = indicators.find((item) => item.type === 'liquidity_sweep')!
+    const byField = new Map((sweep.outputs ?? []).map((output) => [output.field, output]))
+    // 事件型：看涨/看跌扫荡信号 —— 取值 0/1 与 -1/0，不该让用户填阈值
+    expect(byField.get('bull_signal')!.kind).toBe('event')
+    expect(byField.get('bear_signal')!.kind).toBe('event')
+    // 连续量：被扫的价位 —— 必须保留比较运算
+    expect(byField.get('bull_level')!.kind).toBeUndefined()
+
+    // 至少覆盖到几个"用户会点名"的形态字段
+    const kinds = new Map<string, string | undefined>()
+    for (const item of indicators) {
+      for (const output of item.outputs ?? []) kinds.set(`${item.type}.${output.field}`, output.kind)
+    }
+    for (const key of ['dilun_structure.zone_mature', 'support_resistance.support_broken', 'volume.is_double_volume']) {
+      expect(kinds.get(key), `${key} 应标为事件型`).toBe('event')
+    }
+  })
+
   it('指标列表带出默认参数与渲染描述', async () => {
     stubResponse(indicatorListFixture)
     const indicators = await fetchIndicatorList()

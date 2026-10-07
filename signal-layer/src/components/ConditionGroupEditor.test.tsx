@@ -223,3 +223,191 @@ describe('ConditionGroupEditor 条件级别', () => {
     expect(updated?.[0]?.conditions[0]?.timeframeId).toBe('secondary')
   })
 })
+
+// ── 形态/事件型字段：不带数学比较 ────────────────────────────────────────
+
+const sweepInfo: IndicatorInfo = {
+  type: 'liquidity_sweep',
+  name: '流动性扫荡反转',
+  description: '扫荡信号',
+  default_params: { piv_len: 8, atr_len: 14 },
+  outputs: [
+    { field: 'bull_signal', label: '看涨扫荡信号', kind: 'event' },
+    { field: 'bear_signal', label: '看跌扫荡信号', kind: 'event' },
+    { field: 'bull_level', label: '被扫的支撑水平' },
+  ],
+  render: { window: 'main', plots: [], markers: [] },
+}
+
+const maturityInfo: IndicatorInfo = {
+  type: 'dilun_structure',
+  name: '帝论·合理价格',
+  description: '形态',
+  default_params: { maturity_bars: 8 },
+  outputs: [
+    { field: 'zone_mature', label: '态势成熟', kind: 'event' },
+    { field: 'zone_low', label: '合理价格下沿' },
+  ],
+  render: { window: 'main', plots: [], markers: [] },
+}
+
+function eventGroup(indicatorType: string, field: string): ConditionGroup {
+  return {
+    id: 'g-event',
+    name: '事件条件',
+    conditions: [{
+      id: 'c-event',
+      name: '',
+      left: { source: 'indicator', indicatorType, params: {}, field },
+      operator: ConditionOperator.NonZero,
+      right: { source: 'constant', value: 0 },
+      enabled: true,
+    }],
+  }
+}
+
+describe('形态/事件型字段的条件编辑', () => {
+  it('事件型字段不显示运算符与右值，只提示「出现即成立」', () => {
+    render(
+      <ConditionGroupEditor
+        groups={[eventGroup('liquidity_sweep', 'bull_signal')]}
+        onChange={vi.fn()}
+        indicators={[sweepInfo]}
+      />,
+    )
+
+    expect(screen.getByText('出现即成立')).toBeInTheDocument()
+    expect(screen.queryByLabelText(/运算符/)).not.toBeInTheDocument()
+    // 右值输入框（固定值）也不该出现
+    expect(screen.queryByPlaceholderText('数值')).not.toBeInTheDocument()
+  })
+
+  it('把字段切成事件型时，自动改为「成立」并归零右值', () => {
+    const onChange = vi.fn()
+    const group: ConditionGroup = {
+      id: 'g-switch',
+      name: '',
+      conditions: [{
+        id: 'c-switch', name: '',
+        left: { source: 'indicator', indicatorType: 'liquidity_sweep', params: {}, field: 'bull_level' },
+        operator: ConditionOperator.GreaterThan,
+        right: { source: 'constant', value: 11 },
+        enabled: true,
+      }],
+    }
+    render(
+      <ConditionGroupEditor groups={[group]} onChange={onChange} indicators={[sweepInfo]} />,
+    )
+
+    fireEvent.change(screen.getByLabelText('流动性扫荡反转 输出线'), { target: { value: 'bull_signal' } })
+
+    const updated = onChange.mock.calls.at(-1)![0][0] as ConditionGroup
+    expect(updated.conditions[0]!.operator).toBe(ConditionOperator.NonZero)
+    expect(updated.conditions[0]!.right).toEqual({ source: 'constant', value: 0 })
+  })
+
+  it('从事件型切回连续量时，还原成比较运算而不是留下「成立」', () => {
+    const onChange = vi.fn()
+    const { rerender } = render(
+      <ConditionGroupEditor
+        groups={[eventGroup('liquidity_sweep', 'bull_signal')]}
+        onChange={onChange}
+        indicators={[sweepInfo]}
+      />,
+    )
+
+    fireEvent.change(screen.getByLabelText('流动性扫荡反转 输出线'), { target: { value: 'bull_level' } })
+
+    const updated = onChange.mock.calls.at(-1)![0][0] as ConditionGroup
+    expect(updated.conditions[0]!.operator).toBe(ConditionOperator.GreaterThan)
+
+    // onChange 是受控回调，界面要等父组件把新值传回来才会变——这里手动回灌验证往返
+    rerender(
+      <ConditionGroupEditor groups={[updated]} onChange={onChange} indicators={[sweepInfo]} />,
+    )
+    expect(screen.getByLabelText(/运算符/)).toBeInTheDocument()
+    expect(screen.queryByText('出现即成立')).not.toBeInTheDocument()
+  })
+
+  it('态势成熟这类事件字段同样不显示运算符', () => {
+    render(
+      <ConditionGroupEditor
+        groups={[eventGroup('dilun_structure', 'zone_mature')]}
+        onChange={vi.fn()}
+        indicators={[maturityInfo]}
+      />,
+    )
+
+    expect(screen.getByText('出现即成立')).toBeInTheDocument()
+    expect(screen.queryByLabelText(/运算符/)).not.toBeInTheDocument()
+  })
+})
+
+// ── 布林带开口 / 收口 ───────────────────────────────────────────────────
+
+const bollingerInfo: IndicatorInfo = {
+  type: 'bollinger',
+  name: '布林带',
+  description: '通道指标',
+  default_params: { period: 20, std: 2 },
+  outputs: [
+    { field: 'upper', label: '上轨' },
+    { field: 'middle', label: '中轨' },
+    { field: 'lower', label: '下轨' },
+    { field: 'bandwidth', label: '带宽%' },
+  ],
+  render: { window: 'main', plots: [], markers: [] },
+}
+
+function bollingerGroup(operator: ConditionOperator): ConditionGroup {
+  return {
+    id: 'g-boll',
+    name: '布林带',
+    conditions: [{
+      id: 'c-boll', name: '',
+      left: { source: 'indicator', indicatorType: 'bollinger', params: {}, field: 'bandwidth' },
+      operator,
+      right: { source: 'constant', value: 0 },
+      enabled: true,
+    }],
+  }
+}
+
+describe('布林带开口与收口', () => {
+  it('带宽是可选字段，且能选到「向下」（收口）', () => {
+    render(
+      <ConditionGroupEditor groups={[bollingerGroup(ConditionOperator.Falling)]} onChange={vi.fn()} indicators={[bollingerInfo]} />,
+    )
+
+    const field = screen.getByLabelText('布林带 输出线') as HTMLSelectElement
+    expect(Array.from(field.options).map((o) => o.textContent.trim())).toEqual(['上轨', '中轨', '下轨', '带宽%'])
+
+    const operator = screen.getByLabelText('条件 1 运算符') as HTMLSelectElement
+    expect(operator.value).toBe(ConditionOperator.Falling)
+    // 收口＝带宽向下；开口＝带宽向上，两者都必须在可选运算符里
+    const labels = Array.from(operator.options).map((o) => o.textContent.trim())
+    expect(labels).toContain('向下')
+    expect(labels).toContain('向上')
+  })
+
+  it('「向上」对非均线指标也可选（这是开口的表达方式）', () => {
+    render(
+      <ConditionGroupEditor groups={[bollingerGroup(ConditionOperator.Rising)]} onChange={vi.fn()} indicators={[bollingerInfo]} />,
+    )
+
+    const operator = screen.getByLabelText('条件 1 运算符') as HTMLSelectElement
+    expect(operator.value).toBe(ConditionOperator.Rising)
+    expect(Array.from(operator.options).map((o) => o.textContent.trim())).toContain('向上')
+  })
+
+  it('「支撑 / 压制」仍然只属于均线', () => {
+    render(
+      <ConditionGroupEditor groups={[bollingerGroup(ConditionOperator.GreaterThan)]} onChange={vi.fn()} indicators={[bollingerInfo]} />,
+    )
+
+    const labels = Array.from((screen.getByLabelText('条件 1 运算符') as HTMLSelectElement).options)
+      .map((o) => o.textContent.trim())
+    expect(labels).not.toContain('支撑')
+    expect(labels).not.toContain('压制')
+  })
+})

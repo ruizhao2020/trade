@@ -1,5 +1,6 @@
 import { api } from './client'
-import type { IndicatorResult, IndicatorInfo } from '../core/types.ts'
+import type {
+  IndicatorOutput, IndicatorResult, IndicatorInfo } from '../core/types.ts'
 import { applyIndicatorPeriodColor } from '../core/indicatorColors.ts'
 
 /** 后端返回的原始结构(snake_case) */
@@ -46,7 +47,7 @@ interface ApiInfo {
   name: string
   description: string
   default_params: Record<string, number>
-  outputs?: { field: string; label: string }[]
+  outputs?: IndicatorOutput[]
   render: {
     window: string
     plots: { field: string; type: string; color: string; label: string }[]

@@ -74,6 +74,35 @@ describe('流动性聚集区的参数面板', () => {
     expect(screen.getByRole('tooltip')).toHaveTextContent(/精确相等几乎不出现/)
   })
 
+  it('流动性扫荡反转：显示 SSL/BSL 图例，点开是含义解释', async () => {
+    vi.mocked(fetchIndicatorList).mockResolvedValue([
+      { ...ZONE, type: 'liquidity_sweep', name: '流动性扫荡反转', default_params: { piv_len: 8, atr_len: 14 } },
+    ])
+    render(
+      <IndicatorWorkbenchToolbar
+        selectedIndicators={[{ type: 'liquidity_sweep', params: { piv_len: 8, atr_len: 14 }, window: 'main' }]}
+        onIndicatorChange={vi.fn()}
+        chanOptions={CHAN_OPTIONS}
+        onChanChange={vi.fn()}
+        visibleChanFeatures={[]}
+        chanFeatureLabels={{}}
+      />,
+    )
+
+    fireEvent.click(await screen.findByRole('button', { name: '流动性扫荡反转' }))
+    // 图上标记写着英文缩写，参数行里要能直接读到它们的含义
+    expect(await screen.findByRole('img', { name: 'SSL SWEEP：卖方流动性被扫，看涨' })).toBeInTheDocument()
+    expect(screen.getByRole('img', { name: 'BSL SWEEP：买方流动性被扫，看跌' })).toBeInTheDocument()
+
+    expect(screen.queryByRole('tooltip')).not.toBeInTheDocument()
+    fireEvent.click(screen.getByRole('button', { name: 'SSL / BSL 含义说明' }))
+    const tooltip = screen.getByRole('tooltip')
+    expect(tooltip).toHaveTextContent('卖方流动性')
+    expect(tooltip).toHaveTextContent('买方流动性')
+    expect(tooltip).toHaveTextContent('看涨反转')
+    expect(tooltip).toHaveTextContent('看跌反转')
+  })
+
   it('其他指标不显示聚集区图例', async () => {
     vi.mocked(fetchIndicatorList).mockResolvedValue([
       { ...ZONE, type: 'macd', name: 'MACD', default_params: { fast: 12, slow: 26, signal: 9 } },

@@ -244,10 +244,18 @@ export interface IndicatorInfo {
   description: string
   default_params: Record<string, number>
   render: RenderSpec
-  outputs?: { field: string; label: string }[]
+  outputs?: IndicatorOutput[]
 }
 
 /* ========== 条件引擎 ========== */
+
+/** 指标输出字段。`kind: 'event'` 表示"形态/事件型"（取值只有 -1/0/1 这类标志或枚举），
+ *  条件编辑器据此把它渲染成独立条件——不加 >= 之类的数学比较。 */
+export interface IndicatorOutput {
+  field: string
+  label: string
+  kind?: 'event' | 'level'
+}
 
 export const ConditionOperator = {
   GreaterThan: 'gt',
@@ -263,6 +271,7 @@ export const ConditionOperator = {
   TurnUp: 'turnUp',
   Support: 'support',
   Resistance: 'resistance',
+  NonZero: 'nonzero',
 } as const
 export type ConditionOperator = (typeof ConditionOperator)[keyof typeof ConditionOperator]
 

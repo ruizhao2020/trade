@@ -5,6 +5,7 @@ import { getMaPeriodColor, MA_PERIODS } from '../core/indicatorColors.ts'
 import { PARAM_HINTS } from '../core/indicatorHints.ts'
 import { ParameterHint } from './ParameterHint.tsx'
 import { ZoneStateDiagram, ZoneStateSwatch } from './ZoneStateDiagram.tsx'
+import { SweepGlossary, SweepSwatch } from './SweepLegend.tsx'
 import { VOLUME_DOWN_COLOR, VOLUME_UP_COLOR } from '../core/volumeIndicator.ts'
 
 interface Props {
@@ -60,6 +61,11 @@ const PARAM_LABELS: Record<string, string> = {
   bins: '价格档位',
   lookback: '回看天数',
   min_turnover_days: '最少有效天数',
+  // 布林带 开口/收口
+  squeeze_lookback: '对比回看',
+  squeeze_threshold_pct: '幅度阈值',
+  // 流动性扫荡反转（面板只渲染 default_params 里的项，其余参数目前改不到）
+  piv_len: '摆动点窗口',
   // 压力位支撑位 / 流动性聚集区
   span: '摆动窗口',
   atr_len: 'ATR周期',
@@ -86,7 +92,15 @@ function Toggle({ enabled, label, onClick }: { enabled: boolean; label: string; 
       onClick={onClick}
       className={`relative w-9 h-5 rounded-full transition-colors duration-150 ${enabled ? 'bg-[var(--accent)]' : 'bg-[var(--border-accent)]'}`}
     >
-      <span className={`absolute top-0.5 w-4 h-4 rounded-full bg-white transition-transform duration-150 ${enabled ? 'translate-x-[18px]' : 'translate-x-0.5'}`} />
+      {/*
+        圆点必须显式锚定 left：只写 absolute 不写 left 时会按"静态位置"落位，
+        实测关闭态会贴到右边，行程也无从计算。
+        行程用 rem 而不是 px：尺寸全是 rem（按钮 w-9=2.25rem、圆点 w-4=1rem、
+        左侧内缩 0.5=0.125rem），行程 = 2.25 − 0.125×2 − 1 = 1rem（translate-x-4），
+        这样根字号变化时（本页实际是 13px 而非默认 16px）圆点仍精确落在框内。
+        原来写死的 translate-x-[18px] 在 13px 字号下会跑到框外 16px。
+      */}
+      <span className={`absolute left-0.5 top-0.5 w-4 h-4 rounded-full bg-white transition-transform duration-150 ${enabled ? 'translate-x-4' : ''}`} />
     </button>
   )
 }
@@ -144,6 +158,14 @@ export function IndicatorWorkbenchToolbar({
   )
   const activeIndicator = selectedIndicators.find((item) => item.type === activeType)
   const activeInfo = available.find((item) => item.type === activeType)
+  // 涨跌配色只从接口的 render.markers 取，图例与释义图共用这一份，
+  // 避免"图上标记换了颜色、图例没跟着换"。兜底值仅在指标列表尚未返回时用到。
+  const sweepColors = useMemo(() => {
+    const markers = activeInfo?.render?.markers ?? []
+    const bull = markers.find((marker) => marker.field === 'bull_signal')?.buyColor
+    const bear = markers.find((marker) => marker.field === 'bear_signal')?.sellColor
+    return { bull: bull ?? '#FF2E93', bear: bear ?? '#00E5C0' }
+  }, [activeInfo])
   const maCount = selectedIndicators.filter((item) => item.type === 'ma').length
   const chanFeatureCode: Record<ChanToggleKey, string> = {
     showFenxing: 'fenxing', showBi: 'bi', showDuan: 'duan', showZhongshu: 'zhongshu',
@@ -358,6 +380,19 @@ export function IndicatorWorkbenchToolbar({
                   <ZoneStateSwatch state="gone" />消失
                 </span>
                 <ParameterHint ariaLabel="聚集区状态图示" width={268}><ZoneStateDiagram /></ParameterHint>
+              </div>
+            )}
+            {activeType === 'liquidity_sweep' && (
+              <div className="flex items-center gap-1.5 mr-2 pr-2 border-r border-[var(--border-primary)]">
+                <span className="h-6 px-1.5 rounded border border-[var(--border-primary)] flex items-center gap-1 text-[11px] text-[var(--text-muted)] whitespace-nowrap">
+                  <SweepSwatch side="ssl" color={sweepColors.bull} />SSL SWEEP 看涨
+                </span>
+                <span className="h-6 px-1.5 rounded border border-[var(--border-primary)] flex items-center gap-1 text-[11px] text-[var(--text-muted)] whitespace-nowrap">
+                  <SweepSwatch side="bsl" color={sweepColors.bear} />BSL SWEEP 看跌
+                </span>
+                <ParameterHint ariaLabel="SSL / BSL 含义说明" width={272}>
+                  <SweepGlossary bullColor={sweepColors.bull} bearColor={sweepColors.bear} />
+                </ParameterHint>
               </div>
             )}
             {Object.entries(activeIndicator?.params ?? activeInfo.default_params).map(([key, value]) => (

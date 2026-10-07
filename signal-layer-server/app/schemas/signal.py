@@ -62,7 +62,7 @@ class ConditionSchema(BaseModel):
     left: ConditionValueUnion = Field(discriminator="source")
     operator: Literal[
         "gt", "gte", "lt", "lte", "eq", "crossAbove", "crossBelow",
-        "rising", "falling", "turnDown", "turnUp", "support", "resistance"
+        "rising", "falling", "turnDown", "turnUp", "support", "resistance", "nonzero"
     ]
     right: ConditionValueUnion = Field(discriminator="source")
     right2: Optional[ConditionValueUnion] = Field(
