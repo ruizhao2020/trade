@@ -9,6 +9,8 @@ from app.engine.indicator.base import (
     MarkerSpec,
     RenderSpec,
     _get_times,
+    _param_float,
+    _param_int,
     register_indicator,
 )
 
@@ -70,13 +72,13 @@ class DilunStructureCalculator(IndicatorCalculator):
         return "dilun_structure"
 
     def calculate(self, klines: list[dict], params: dict[str, Any]) -> IndicatorResult:
-        departure_confirm_bars = int(params.get("departure_confirm_bars", 2))
-        true_departure_bars = int(params.get("true_departure_bars", 3))
-        false_departure_max_bars = int(params.get("false_departure_max_bars", 5))
-        retest_window = int(params.get("retest_window", 10))
-        maturity_bars = int(params.get("maturity_bars", 8))
-        maturity_folds = int(params.get("maturity_folds", 4))
-        breakout_buffer_pct = float(params.get("breakout_buffer_pct", 0.0))
+        departure_confirm_bars = _param_int(params, "departure_confirm_bars", 2)
+        true_departure_bars = _param_int(params, "true_departure_bars", 3)
+        false_departure_max_bars = _param_int(params, "false_departure_max_bars", 5)
+        retest_window = _param_int(params, "retest_window", 10)
+        maturity_bars = _param_int(params, "maturity_bars", 8)
+        maturity_folds = _param_int(params, "maturity_folds", 4)
+        breakout_buffer_pct = _param_float(params, "breakout_buffer_pct", 0.0)
         if not 1 <= departure_confirm_bars <= 10:
             raise ValueError("脱离确认根数应在1到10之间")
         if true_departure_bars < departure_confirm_bars or true_departure_bars > 20:

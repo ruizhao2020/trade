@@ -1,0 +1,1 @@
+{"markets":[{"id":"stock","name":"股票","description":"沪深 A 股与指数","default_symbol":"000001_sz","default_symbol_name":"平安银行","enabled":true,"sort_order":10},{"id":"futures","name":"期货","description":"国内期货主力连续","default_symbol":"RB0","default_symbol_name":"螺纹钢连续","enabled":true,"sort_order":20}]}

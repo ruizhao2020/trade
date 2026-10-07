@@ -13,12 +13,22 @@ Skipped (Phase 2+):
   - Trade model (entry/SL/TP tracking, R-multiple stats)
   - Dashboard table / VWAP overlay / candle coloring
   - Line/box/label drawing objects
-  - HTF cross-timeframe lookup (use_htf treated as always True)
+  - HTF cross-timeframe lookup
+
+HTF 趋势对齐尚未实现：原版用 60 分钟 EMA50 过滤多空，本指标只拿到单一周期的
+K 线，无法自己取更高周期数据。原先保留了 use_htf / htf_ema_len 两个"读了不用"的
+参数，并对外描述成"HTF趋势对齐"——使用者会以为过滤在生效。现已删除这两个参数；
+真正接入需要服务层把高周期 K 线通过 context 传进来，属于 Phase 2 的工作。
+
+与原版有意为之的差异：use_vol 开启且成交量均线不可用时，本实现**拒绝**信号
+（原版放行）。保守方向更安全，但会让无成交量字段的品种整体不出信号。
 """
+
+DIR_MODES = ("Both", "Long Only", "Short Only")
 
 from app.engine.indicator.base import (
     IndicatorCalculator, IndicatorResult, RenderSpec, PlotSpec,
-    _get_closes, _get_highs, _get_lows, _get_times, _ema, _sma,
+    _get_closes, _get_highs, _get_lows, _get_times, _param_float, _param_int, _rma, _sma,
     register_indicator,
 )
 from typing import Any
@@ -34,23 +44,47 @@ class LiquiditySweepCalculator(IndicatorCalculator):
 
     def calculate(self, klines: list[dict], params: dict[str, Any]) -> IndicatorResult:
         # ── 01 · ENGINE Params ──────────────────────────────────────────
-        piv_len = int(params.get("piv_len", 8))
-        reclaim_win = int(params.get("reclaim_win", 1))
-        atr_len = int(params.get("atr_len", 14))
-        max_levels = int(params.get("max_levels", 12))
-        max_level_age = int(params.get("max_level_age", 600))
+        piv_len = _param_int(params, "piv_len", 8)
+        reclaim_win = _param_int(params, "reclaim_win", 1)
+        atr_len = _param_int(params, "atr_len", 14)
+        max_levels = _param_int(params, "max_levels", 12)
+        max_level_age = _param_int(params, "max_level_age", 600)
         dir_mode = str(params.get("dir_mode", "Both"))  # "Both" | "Long Only" | "Short Only"
 
         # ── 02 · FILTER Params ──────────────────────────────────────────
-        min_wick_atr = float(params.get("min_wick_atr", 0.15))
-        max_wick_atr = float(params.get("max_wick_atr", 2.5))
+        min_wick_atr = _param_float(params, "min_wick_atr", 0.15)
+        max_wick_atr = _param_float(params, "max_wick_atr", 2.5)
         use_vol = bool(params.get("use_vol", False))
-        vol_len = int(params.get("vol_len", 20))
-        vol_mult = float(params.get("vol_mult", 1.5))
-        use_htf = bool(params.get("use_htf", True))      # accepted but not used (Phase 2)
-        htf_ema_len = int(params.get("htf_ema_len", 50))  # accepted but not used (Phase 2)
+        vol_len = _param_int(params, "vol_len", 20)
+        vol_mult = _param_float(params, "vol_mult", 1.5)
         block_dual = bool(params.get("block_dual", True))
-        cooldown_bars = int(params.get("cooldown_bars", 3))
+        cooldown_bars = _param_int(params, "cooldown_bars", 3)
+
+        # 参数校验：原版 Pine 有 minval/maxval，缺了会让 piv_len=0 直接
+        # 在 min([]) 上抛异常、或让门限变成无意义的数值。
+        if not 2 <= piv_len <= 60:
+            raise ValueError("摆动点窗口 piv_len 应在 2 到 60 之间")
+        if not 1 <= reclaim_win <= 100:
+            raise ValueError("回收窗口 reclaim_win 应在 1 到 100 之间")
+        if not 2 <= atr_len <= 200:
+            raise ValueError("ATR 周期应在 2 到 200 之间")
+        if not 1 <= max_levels <= 100:
+            raise ValueError("保留的流动性水平数应在 1 到 100 之间")
+        if not 10 <= max_level_age <= 10000:
+            raise ValueError("流动性水平最长存活根数应在 10 到 10000 之间")
+        if not 0 <= min_wick_atr <= 100 or not 0 < max_wick_atr <= 100:
+            raise ValueError("影线过滤倍数应在 0 到 100 之间，且上限必须大于 0")
+        if min_wick_atr >= max_wick_atr:
+            raise ValueError("影线下限必须小于上限")
+        if not 1 <= vol_len <= 500:
+            raise ValueError("成交量均线周期应在 1 到 500 之间")
+        if not 0 <= vol_mult <= 100:
+            raise ValueError("放量倍数应在 0 到 100 之间")
+        if not 0 <= cooldown_bars <= 100:
+            raise ValueError("信号冷却根数应在 0 到 100 之间")
+        if dir_mode not in DIR_MODES:
+            # 拼错时静默退化成双向，会让用户以为在做单边
+            raise ValueError(f"方向模式只能是 {' / '.join(DIR_MODES)} 之一，当前为 {dir_mode!r}")
 
         # ── Extract price series ───────────────────────────────────────
         n = len(klines)
@@ -69,7 +103,9 @@ class LiquiditySweepCalculator(IndicatorCalculator):
         times = _get_times(klines)
         vols = [float(k.get("volume") or 0) for k in klines]
 
-        # ── ATR: True Range → EMA ──────────────────────────────────────
+        # ── ATR: True Range → Wilder 平滑(RMA) ─────────────────────────
+        # 用 RMA 而不是 EMA：两者 alpha 不同(1/n vs 2/(n+1))，EMA 口径下
+        # ATR 的反应速度约为标准的 1.87 倍，会连带改变"刺穿过深/过浅"的两道门限。
         tr: list[float] = []
         for i in range(n):
             if i == 0:
@@ -80,7 +116,7 @@ class LiquiditySweepCalculator(IndicatorCalculator):
                     abs(highs[i] - closes[i - 1]),
                     abs(lows[i] - closes[i - 1]),
                 ))
-        atr = _ema(tr, atr_len)
+        atr = _rma(tr, atr_len)
 
         # ── Volume average ─────────────────────────────────────────────
         vol_avg = _sma(vols, vol_len)
@@ -110,8 +146,10 @@ class LiquiditySweepCalculator(IndicatorCalculator):
         bear_levels: list[float] = [0.0] * n
 
         # ── Helper: depth gate ─────────────────────────────────────────
-        def depth_ok(depth: float, bar_atr: float) -> bool:
-            if bar_atr <= 0:
+        def depth_ok(depth: float, bar_atr: float | None) -> bool:
+            # ATR 未定义（预热期）时不发信号：原版 Pine 是 `not na(atr)`，
+            # 拿 0 顶上会让整段预热期照常出信号，而参考脚本一根都不出。
+            if bar_atr is None or bar_atr <= 0:
                 return False
             if depth < min_wick_atr * bar_atr:
                 return False
@@ -180,7 +218,7 @@ class LiquiditySweepCalculator(IndicatorCalculator):
             bear_ext: float | None = None
             bear_lvl_bar: int | None = None
 
-            bar_atr = atr[i] if i < len(atr) else 0.0
+            bar_atr = atr[i] if i < len(atr) else None
 
             # ── BULL sweep: pending completion ─────────────────────────
             if p_low_lvl is not None:
@@ -272,10 +310,6 @@ class LiquiditySweepCalculator(IndicatorCalculator):
                 # Dual-side block
                 dual_blocked = block_dual and bull_sweep and bear_sweep
 
-                # HTF trend: skip cross-timeframe lookup per Phase 1 spec
-                htf_bull = True
-                htf_bear = True
-
                 # Direction mode
                 dir_bull = dir_mode != "Short Only"
                 dir_bear = dir_mode != "Long Only"
@@ -283,16 +317,16 @@ class LiquiditySweepCalculator(IndicatorCalculator):
                 # Cooldown
                 cooldown_ok = last_sig_bar is None or (i - last_sig_bar) >= cooldown_bars
 
-                # ATR valid
-                atr_ok = bar_atr > 0
+                # ATR valid（预热期为 None → 不发信号）
+                atr_ok = bar_atr is not None and bar_atr > 0
 
                 final_bull = (
                     bull_sweep and not dual_blocked and vol_ok
-                    and htf_bull and dir_bull and atr_ok and cooldown_ok
+                    and dir_bull and atr_ok and cooldown_ok
                 )
                 final_bear = (
                     bear_sweep and not dual_blocked and vol_ok
-                    and htf_bear and dir_bear and atr_ok and cooldown_ok
+                    and dir_bear and atr_ok and cooldown_ok
                 )
 
                 # Same-bar dual signal → discard both
@@ -313,11 +347,11 @@ class LiquiditySweepCalculator(IndicatorCalculator):
         # ═══════════════════════════════════════════════════════════════
         # BUILD OUTPUT VALUES
         # ═══════════════════════════════════════════════════════════════
-        values: list[dict[str, float]] = []
+        values: list[dict[str, Any]] = []
         for i in range(n):
             values.append({
                 "time": float(times[i]),
-                "atr": round(atr[i], 8) if i < len(atr) else 0.0,
+                "atr": None if atr[i] is None else round(atr[i], 8),
                 "bull_signal": bull_signals[i],
                 "bear_signal": bear_signals[i],
                 "bull_level": round(bull_levels[i], 8),
@@ -332,7 +366,6 @@ class LiquiditySweepCalculator(IndicatorCalculator):
                 "max_level_age": max_level_age, "dir_mode": dir_mode,
                 "min_wick_atr": min_wick_atr, "max_wick_atr": max_wick_atr,
                 "use_vol": use_vol, "vol_len": vol_len, "vol_mult": vol_mult,
-                "use_htf": use_htf, "htf_ema_len": htf_ema_len,
                 "block_dual": block_dual, "cooldown_bars": cooldown_bars,
             },
             values=values,

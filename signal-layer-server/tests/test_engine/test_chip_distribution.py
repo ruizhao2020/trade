@@ -23,6 +23,41 @@ def bar(index: int, close: float, turnover_rate: float | None = 5.0) -> dict:
     }
 
 
+def test_values_align_with_klines_when_lookback_is_shorter():
+    """输出必须与 K 线等长，不能用 lookback 决定行数。
+
+    修复前 values 的行数 = lookback（默认 500，advisor 网格里是 60），
+    而 advisor 是按行序拼序列、times 取自全部 K 线——筹码族的信号因此
+    整体错位（500 根里错 440 根），且在正确位置一个信号都不发。
+    """
+    rows = [bar(index, 10 + (index % 40) * 0.05) for index in range(300)]
+    result = ChipDistributionCalculator().calculate(rows, {"lookback": 60})
+
+    assert len(result.values) == len(rows), "行数必须等于 K 线数，而不是 lookback"
+    assert [int(row["time"]) for row in result.values] == [row["open_time"] for row in rows]
+    # 没有快照的前段（300-60 根）按契约填 None，而不是消失
+    assert all(row["average_cost"] is None for row in result.values[:240])
+    assert result.values[240]["average_cost"] is not None
+    assert result.values[-1]["average_cost"] is not None
+
+
+def test_advisor_style_positional_alignment_is_correct_now():
+    """复现 advisor 的对齐方式：按下标取第 i 行必须等于第 i 根 K 线的快照。
+
+    这是"长度契约"的实际用途——两种消费口径（回测按 time、advisor 按行序）
+    只有在等长时才等价。
+    """
+    rows = [bar(index, 10 + (index % 40) * 0.05) for index in range(300)]
+    result = ChipDistributionCalculator().calculate(rows, {"lookback": 60})
+
+    # 按行序取（advisor 的做法）与按时间取（回测的做法）必须指向同一根
+    for index in (250, 299):
+        by_position = result.values[index]
+        by_time = next(row for row in result.values if int(row["time"]) == rows[index]["open_time"])
+        assert by_position == by_time
+        assert by_position["current_price"] == pytest.approx(rows[index]["close"])
+
+
 def test_chip_distribution_produces_normalized_profile_and_metrics():
     rows = [bar(index, 10 + index * 0.05) for index in range(60)]
     result = ChipDistributionCalculator().calculate(rows, {"bins": 80, "lookback": 60})

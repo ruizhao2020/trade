@@ -1,0 +1,1 @@
+{"template_id":"advisor_volume:relative_period20:comparebelow:relative_volume:60","state":"ready","groups":[{"group_id":"advisor-entry","evaluations":[{"condition_id":"advisor-condition","satisfied":true,"left_value":0.0458,"right_value":0.7,"diff_percent":93.46,"matched_timeframe":"60m"}],"satisfied":true}],"is_ready":true,"progress_percent":100}

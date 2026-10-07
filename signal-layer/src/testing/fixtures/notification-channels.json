@@ -1,0 +1,1 @@
+[{"id":2,"name":"交易提醒群","channel_type":"browser","webhook_url_masked":null,"enabled":true,"is_shared":true,"can_manage":false},{"id":3,"name":"浏览器通知","channel_type":"browser","webhook_url_masked":null,"enabled":true,"is_shared":false,"can_manage":false}]

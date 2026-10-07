@@ -357,7 +357,7 @@ class ChipDistributionCalculator(IndicatorCalculator):
                 float(params["peak_prominence"]), int(params["min_peak_distance"]),
             )
             snapshots.append(self._snapshot(bar, profile, metrics))
-        return self._result(params, prices, snapshots)
+        return self._result(params, prices, snapshots, [int(bar["open_time"]) for bar in klines])
 
     def _calculate_intraday(
         self, intraday_klines: list[dict], daily_klines: list[dict], params: dict[str, int | float],
@@ -422,7 +422,7 @@ class ChipDistributionCalculator(IndicatorCalculator):
                 float(params["peak_prominence"]), int(params["min_peak_distance"]),
             )
             snapshots.append(self._snapshot(bar, profile, metrics))
-        return self._result(params, prices, snapshots)
+        return self._result(params, prices, snapshots, [int(bar["open_time"]) for bar in minute_bars])
 
     @staticmethod
     def _snapshot(bar: dict, profile: list[float], metrics: dict[str, float]) -> ProfileSnapshot:
@@ -434,10 +434,24 @@ class ChipDistributionCalculator(IndicatorCalculator):
         )
 
     def _result(
-        self, params: dict[str, int | float], prices: list[float], snapshots: list[ProfileSnapshot],
+        self, params: dict[str, int | float], prices: list[float],
+        snapshots: list[ProfileSnapshot], all_times: list[int],
     ) -> IndicatorResult:
+        """把快照铺回**全部** K 线，输出与 klines 等长。
+
+        以前只输出有快照的那几根（长度 = lookback），而 advisor 是按下标拼
+        序列的、times 取自全部 K 线，于是筹码族的信号整体错位
+        (500 根里错 440 根)，且在正确位置一个信号都不发。
+        契约要求逐根对齐，这里用 None 行补齐没有快照的区间。
+        """
         _enrich_snapshot_metrics(snapshots, params)
-        values = [{"time": float(snapshot.time), **snapshot.metrics} for snapshot in snapshots]
+        fields = sorted({key for snapshot in snapshots for key in snapshot.metrics})
+        blank = {field: None for field in fields}
+        by_time = {snapshot.time: snapshot.metrics for snapshot in snapshots}
+        values: list[dict[str, Any]] = [
+            {"time": float(timestamp), **by_time.get(int(timestamp), blank)}
+            for timestamp in all_times
+        ]
         return IndicatorResult(
             type=self.type, params=params, values=values, render=self._render(),
             profile_data=ProfileData(

@@ -8,6 +8,8 @@ from app.engine.indicator.base import (
     PlotSpec,
     RenderSpec,
     _get_times,
+    _param_float,
+    _param_int,
     register_indicator,
 )
 
@@ -21,14 +23,18 @@ class VolumeStructureCalculator(IndicatorCalculator):
         return "volume_structure"
 
     def calculate(self, klines: list[dict], params: dict[str, Any]) -> IndicatorResult:
-        lookback = int(params.get("lookback", 20))
-        key_ratio_min = float(params.get("key_ratio_min", 1.8))
-        confirm_bars = int(params.get("confirm_bars", 3))
-        break_tolerance = float(params.get("break_tolerance", 0.0))
-        if lookback < 3 or not 2 <= confirm_bars <= 10:
-            raise ValueError("关键量柱窗口至少为3，确认根数应在2到10之间")
-        if key_ratio_min <= 1 or not 0 <= break_tolerance < 0.2:
-            raise ValueError("关键量柱倍率应大于1，破位容差应在0到0.2之间")
+        lookback = _param_int(params, "lookback", 20)
+        key_ratio_min = _param_float(params, "key_ratio_min", 1.8)
+        confirm_bars = _param_int(params, "confirm_bars", 3)
+        break_tolerance = _param_float(params, "break_tolerance", 0.0)
+        if not 3 <= lookback <= 500:
+            raise ValueError("关键量柱窗口应在 3 到 500 之间")
+        if not 2 <= confirm_bars <= 10:
+            raise ValueError("确认根数应在2到10之间")
+        if key_ratio_min <= 1:
+            raise ValueError("关键量柱倍率应大于1")
+        if not 0 <= break_tolerance < 0.2:
+            raise ValueError("破位容差应在0到0.2之间")
 
         times = _get_times(klines)
         volumes = [max(float(item.get("volume") or 0), 0.0) for item in klines]
@@ -95,10 +101,15 @@ class VolumeStructureCalculator(IndicatorCalculator):
             )
             if not is_general:
                 continue
-            values[base_index]["general_pillar"] = 1.0
-            values[base_index]["pillar_kind"] = 2.0
+            # 决策字段只在确认根写：确认需要基柱之后 confirm_bars 根数据，
+            # 写到基柱上等于让当根就能读到未来信息（回测是"全量算一次 + 按 time
+            # 截断 + 取最后一根"，会直接读到 → 开仓提前 confirm_bars 根）。
             values[confirm_index]["general_confirmed"] = 1.0
             values[confirm_index]["general_source_time"] = float(times[base_index])
+            # pillar_kind 是纯渲染字段（不在 indicator outputs 白名单里，
+            # 只被前端 VolumeBoxPrimitive 用来给柱子套方框），所以允许回填到
+            # 基柱下标，让方框画在它描述的那根量柱上。
+            values[base_index]["pillar_kind"] = 2.0
 
             is_golden = (
                 min(follower_closes) >= body_top
@@ -108,10 +119,9 @@ class VolumeStructureCalculator(IndicatorCalculator):
             )
             if not is_golden:
                 continue
-            values[base_index]["golden_pillar"] = 1.0
-            values[base_index]["pillar_kind"] = 3.0
             values[confirm_index]["golden_confirmed"] = 1.0
             values[confirm_index]["golden_source_time"] = float(times[base_index])
+            values[base_index]["pillar_kind"] = 3.0
             golden_confirmations.setdefault(confirm_index, []).append(base_index)
 
         active_golden_line: float | None = None
@@ -138,8 +148,8 @@ class VolumeStructureCalculator(IndicatorCalculator):
                 active_golden_line = max(opens[base_index], closes[base_index])
                 active_golden_stop = lows[base_index]
                 active_golden_volume_line = volumes[base_index]
-                # 黄金柱要在原始量柱位置显示黄金线；该线只在确认后才产生，
-                # 但静态图会回填基柱到确认柱之间的可视区间。
+                # 黄金线同样属于渲染字段（在 render.plots 里，不在 outputs 白名单），
+                # 回填基柱到确认柱之间让线从基柱起画；决策侧看 golden_confirmed。
                 for fill_index in range(base_index, index + 1):
                     values[fill_index]["golden_volume_line"] = active_golden_volume_line
                 values[index]["golden_line"] = active_golden_line

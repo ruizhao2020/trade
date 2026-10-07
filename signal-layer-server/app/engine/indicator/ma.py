@@ -1,6 +1,6 @@
 from app.engine.indicator.base import (
     IndicatorCalculator, IndicatorResult, RenderSpec, PlotSpec,
-    _get_closes, _get_times, _sma, register_indicator,
+    _get_closes, _get_times, _param_float, _param_int, _sma, register_indicator,
 )
 from typing import Any
 
@@ -12,10 +12,12 @@ class MACalculator(IndicatorCalculator):
         return "ma"
 
     def calculate(self, klines: list[dict], params: dict[str, Any]) -> IndicatorResult:
-        period = int(params.get("period", 5))
-        touch_tolerance_pct = float(params.get("touch_tolerance_pct", 0.5))
-        if period < 1 or not 0 <= touch_tolerance_pct <= 10:
-            raise ValueError("均线周期必须大于0，支撑压制容差应在0到10之间")
+        period = _param_int(params, "period", 5)
+        touch_tolerance_pct = _param_float(params, "touch_tolerance_pct", 0.5)
+        if not 1 <= period <= 1000:
+            raise ValueError("均线周期应在 1 到 1000 之间")
+        if not 0 <= touch_tolerance_pct <= 10:
+            raise ValueError("支撑压制容差应在0到10之间")
         closes = _get_closes(klines)
         times = _get_times(klines)
         sma = _sma(closes, period)

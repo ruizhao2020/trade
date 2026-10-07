@@ -52,6 +52,25 @@ class IndicatorService:
         logger.info(f"IndicatorService initialized with {len(self._registry)} indicators: "
                     f"{sorted(self._registry.keys())}")
 
+    @staticmethod
+    def _assert_aligned(indicator_type: str, result: IndicatorResult, klines: list[dict]) -> None:
+        """强制输出契约：values 必须与 klines 逐根等长。
+
+        为什么在这里拦：下游有两种消费口径——回测按 time 截断取值，
+        策略搜索(advisor)按行序拼序列。长度不齐时前者侥幸正确、后者整体错位，
+        而且不会有任何报错，只是信号落在错误的位置。筹码分布就因此错位过 440 根。
+
+        空 K 线不检查（无数据可对齐）。
+        """
+        if not klines:
+            return
+        if len(result.values) != len(klines):
+            raise ValueError(
+                f"指标 {indicator_type} 输出与 K 线不齐："
+                f"values={len(result.values)} 而 klines={len(klines)}。"
+                "所有指标必须逐根输出，样本不足的字段填 None。"
+            )
+
     async def calculate(
         self,
         symbol: str,
@@ -134,6 +153,7 @@ class IndicatorService:
         )
 
         logger.info(f"Indicator {indicator_type} {symbol} {timeframe} -> {len(result.values)} values")
+        self._assert_aligned(indicator_type, result, klines)
         cache_data = {
             "type": result.type,
             "params": result.params,

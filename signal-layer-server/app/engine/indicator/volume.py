@@ -9,6 +9,8 @@ from app.engine.indicator.base import (
     PlotSpec,
     RenderSpec,
     _get_times,
+    _param_float,
+    _param_int,
     register_indicator,
 )
 
@@ -22,19 +24,21 @@ class VolumeCalculator(IndicatorCalculator):
         return "volume"
 
     def calculate(self, klines: list[dict], params: dict[str, Any]) -> IndicatorResult:
-        shrink_max = float(params.get("shrink_max", 0.8))
-        increase_min = float(params.get("increase_min", 1.2))
-        double_min = float(params.get("double_min", 2.0))
-        triple_min = float(params.get("triple_min", 3.0))
-        multiple_min = float(params.get("multiple_min", 4.0))
-        lookback = int(params.get("lookback", 20))
-        flat_tolerance = float(params.get("flat_tolerance", 0.08))
-        sequence_length = int(params.get("sequence_length", 3))
-        relative_period = int(params.get("relative_period", 20))
+        shrink_max = _param_float(params, "shrink_max", 0.8)
+        increase_min = _param_float(params, "increase_min", 1.2)
+        double_min = _param_float(params, "double_min", 2.0)
+        triple_min = _param_float(params, "triple_min", 3.0)
+        multiple_min = _param_float(params, "multiple_min", 4.0)
+        lookback = _param_int(params, "lookback", 20)
+        flat_tolerance = _param_float(params, "flat_tolerance", 0.08)
+        sequence_length = _param_int(params, "sequence_length", 3)
+        relative_period = _param_int(params, "relative_period", 20)
         if not 0 < shrink_max < increase_min < double_min < triple_min < multiple_min:
             raise ValueError("成交量阈值必须满足：0 < 缩量 < 增量 < 倍量 < 三倍量 < 多倍量")
-        if lookback < 3 or relative_period < 2 or not 2 <= sequence_length <= 10:
-            raise ValueError("量柱窗口至少为3，相对量能周期至少为2，连续根数应在2到10之间")
+        if not 3 <= lookback <= 1000 or not 2 <= relative_period <= 1000:
+            raise ValueError("量柱窗口至少为3，相对量能周期至少为2")
+        if not 2 <= sequence_length <= 10:
+            raise ValueError("连续根数应在2到10之间")
         if not 0 <= flat_tolerance < 0.5:
             raise ValueError("平量容差必须在0到0.5之间")
 

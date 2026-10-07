@@ -1,7 +1,7 @@
 from math import sqrt
 from app.engine.indicator.base import (
     IndicatorCalculator, IndicatorResult, RenderSpec, PlotSpec,
-    _get_closes, _get_times, _sma, register_indicator,
+    _get_closes, _get_times, _param_float, _param_int, _sma, register_indicator,
 )
 from typing import Any
 
@@ -13,8 +13,12 @@ class BollingerCalculator(IndicatorCalculator):
         return "bollinger"
 
     def calculate(self, klines: list[dict], params: dict[str, Any]) -> IndicatorResult:
-        period = int(params.get("period", 20))
-        std_dev = float(params.get("std", 2.0))
+        period = _param_int(params, "period", 20)
+        std_dev = _param_float(params, "std", 2.0)
+        if not 2 <= period <= 500:
+            raise ValueError("布林带周期应在 2 到 500 之间")
+        if not 0 < std_dev <= 10:
+            raise ValueError("布林带标准差倍数应大于0且不超过10")
 
         closes = _get_closes(klines)
         times = _get_times(klines)

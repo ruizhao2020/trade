@@ -27,7 +27,7 @@ INDICATOR_META: dict[str, dict] = {
     "kdj": {"name": "KDJ", "description": "随机指标", "default_params": {"n": 9, "m1": 3, "m2": 3}},
     "rsi": {"name": "RSI", "description": "相对强弱指标", "default_params": {"period": 14}},
     "bollinger": {"name": "布林带", "description": "Bollinger Bands 通道指标", "default_params": {"period": 20, "std": 2.0}},
-    "liquidity_sweep": {"name": "流动性扫荡反转", "description": "基于流动性扫荡+回收的买卖信号指标。识别摆动高低点的止损猎杀,ATR过滤,HTF趋势对齐。", "default_params": {"piv_len": 8, "atr_len": 14}},
+    "liquidity_sweep": {"name": "流动性扫荡反转", "description": "基于流动性扫荡+回收的买卖信号指标。识别摆动高低点的止损猎杀，并用 ATR 过滤刺穿深度。", "default_params": {"piv_len": 8, "atr_len": 14}},
     "volume": {
         "name": "成交量",
         "description": "识别倍率、高低量、平量、梯量、连续缩量，并计算相对量能与连续次数。",
