@@ -28,6 +28,35 @@ INDICATOR_META: dict[str, dict] = {
     "rsi": {"name": "RSI", "description": "相对强弱指标", "default_params": {"period": 14}},
     "bollinger": {"name": "布林带", "description": "Bollinger Bands 通道指标", "default_params": {"period": 20, "std": 2.0}},
     "liquidity_sweep": {"name": "流动性扫荡反转", "description": "基于流动性扫荡+回收的买卖信号指标。识别摆动高低点的止损猎杀，并用 ATR 过滤刺穿深度。", "default_params": {"piv_len": 8, "atr_len": 14}},
+    "support_resistance": {
+        "name": "压力位支撑位",
+        "description": "用摆动高低点聚类出压力位与支撑位：容差按 ATR 缩放，按触碰次数与时间衰减排重要性。图上把仍有效的位画成水平线段，破位后角色互换（压力变支撑）。",
+        "default_params": {
+            "span": 5,
+            "atr_len": 14,
+            "tolerance_atr": 0.5,
+            "min_touches": 2,
+            "touch_separation": 3,
+            "max_levels": 6,
+            "max_age_bars": 250,
+            "recency_half_life": 120,
+        },
+        # 只列因果的决策字段。level_1..N 是渲染用途（把当前有效位回填到首次触碰处），
+        # 不在白名单里因此在条件编辑器中不可选——它依赖未来是否被破，不是因果序列。
+        "outputs": [
+            {"field": "nearest_support", "label": "最近支撑位"},
+            {"field": "nearest_resistance", "label": "最近压力位"},
+            {"field": "nearest_support_touches", "label": "支撑位触碰次数"},
+            {"field": "nearest_resistance_touches", "label": "压力位触碰次数"},
+            {"field": "distance_to_support_pct", "label": "距支撑位百分比"},
+            {"field": "distance_to_resistance_pct", "label": "距压力位百分比"},
+            {"field": "at_support", "label": "正在测试支撑位"},
+            {"field": "at_resistance", "label": "正在测试压力位"},
+            {"field": "support_broken", "label": "支撑位跌破"},
+            {"field": "resistance_broken", "label": "压力位突破"},
+            {"field": "level_count", "label": "有效位数量"},
+        ],
+    },
     "volume": {
         "name": "成交量",
         "description": "识别倍率、高低量、平量、梯量、连续缩量，并计算相对量能与连续次数。",

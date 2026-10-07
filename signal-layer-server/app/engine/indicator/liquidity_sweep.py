@@ -28,7 +28,7 @@ DIR_MODES = ("Both", "Long Only", "Short Only")
 
 from app.engine.indicator.base import (
     IndicatorCalculator, IndicatorResult, RenderSpec, PlotSpec,
-    _get_closes, _get_highs, _get_lows, _get_times, _param_float, _param_int, _rma, _sma,
+    _get_closes, _get_highs, _get_lows, _get_times, _atr, _param_float, _param_int, _sma,
     register_indicator,
 )
 from typing import Any
@@ -103,20 +103,10 @@ class LiquiditySweepCalculator(IndicatorCalculator):
         times = _get_times(klines)
         vols = [float(k.get("volume") or 0) for k in klines]
 
-        # ── ATR: True Range → Wilder 平滑(RMA) ─────────────────────────
+        # ── ATR: 真实波幅 → Wilder 平滑(RMA) ───────────────────────────
         # 用 RMA 而不是 EMA：两者 alpha 不同(1/n vs 2/(n+1))，EMA 口径下
         # ATR 的反应速度约为标准的 1.87 倍，会连带改变"刺穿过深/过浅"的两道门限。
-        tr: list[float] = []
-        for i in range(n):
-            if i == 0:
-                tr.append(highs[i] - lows[i])
-            else:
-                tr.append(max(
-                    highs[i] - lows[i],
-                    abs(highs[i] - closes[i - 1]),
-                    abs(lows[i] - closes[i - 1]),
-                ))
-        atr = _rma(tr, atr_len)
+        atr = _atr(highs, lows, closes, atr_len)
 
         # ── Volume average ─────────────────────────────────────────────
         vol_avg = _sma(vols, vol_len)

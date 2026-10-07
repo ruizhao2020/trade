@@ -278,6 +278,33 @@ def _rma(values: list[Optional[float]], period: int) -> list[Optional[float]]:
     return _smooth(values, period, 1.0 / period)
 
 
+def _true_range(highs: list[float], lows: list[float], closes: list[float]) -> list[float]:
+    """真实波幅。首根无前收，取 high-low；其后取三者最大。"""
+    ranges: list[float] = []
+    for index in range(len(highs)):
+        if index == 0:
+            ranges.append(highs[index] - lows[index])
+            continue
+        previous_close = closes[index - 1]
+        ranges.append(max(
+            highs[index] - lows[index],
+            abs(highs[index] - previous_close),
+            abs(lows[index] - previous_close),
+        ))
+    return ranges
+
+
+def _atr(
+    highs: list[float], lows: list[float], closes: list[float], period: int,
+) -> list[Optional[float]]:
+    """ATR = Wilder 平滑后的真实波幅，预热期 None。
+
+    单点定义在这里：ATR 是波动率尺度，同时被流动性扫荡的刺穿门限和
+    支撑压力位的聚类容差使用，两处口径必须一致。
+    """
+    return _rma(_true_range(highs, lows, closes), period)
+
+
 def _param_int(params: dict[str, Any], key: str, default: int) -> int:
     """读整数参数。不可转换时抛 ValueError（避免 TypeError 变成 500）。"""
     raw = params.get(key, default)

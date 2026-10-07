@@ -165,6 +165,34 @@ describe('指标计算映射', () => {
     }
   })
 
+  it('支撑压力位：决策字段与渲染线字段都能映射', async () => {
+    stubResponse(calculateFixture)
+    const response = await calculateIndicatorsDetailed('V0', '1d', [
+      { type: 'support_resistance', params: {} },
+    ], 60)
+
+    const mapped = response.results.find((row) => row.type === 'support_resistance')
+    expect(mapped).toBeTruthy()
+    expect(mapped!.values).toHaveLength(60)
+
+    // 决策字段：有位成立的那些行必须带出数字
+    const withSupport = mapped!.values.filter((row) => 'nearest_support' in row)
+    expect(withSupport.length).toBeGreaterThan(0)
+    expect(typeof withSupport[0]!.nearest_support).toBe('number')
+
+    // 渲染线字段必须一路透传到前端，否则画不出水平线段
+    const lastRow = mapped!.values.at(-1)!
+    expect(Object.keys(lastRow)).toEqual(expect.arrayContaining(['level_1', 'level_count']))
+
+    // 渲染规格：max_levels 条线，前端按 plot.type === 'line' 直接画
+    expect(mapped!.render.plots.map((plot) => plot.field)).toEqual([
+      'level_1', 'level_2', 'level_3', 'level_4', 'level_5', 'level_6',
+    ])
+    expect(mapped!.render.plots.every((plot) => plot.type === 'line')).toBe(true)
+    // 水平线要叠在主图上，落到副图就不是"标在走势上"了
+    expect(mapped!.render.window).toBe('main')
+  })
+
   it('指标列表带出默认参数与渲染描述', async () => {
     stubResponse(indicatorListFixture)
     const indicators = await fetchIndicatorList()

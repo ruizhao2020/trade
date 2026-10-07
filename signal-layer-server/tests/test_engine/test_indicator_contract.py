@@ -112,19 +112,30 @@ def test_decision_fields_are_prefix_causal(indicator_type):
 
 
 def _param_key(call: ast.Call) -> str | None:
-    """从 `_param_int(params, "key", d)` / `int(params.get("key", d))` 里取参数名。"""
+    """从参数读取调用里取出参数名。
+
+    覆盖三种写法：
+    - `_param_int(params, "key", d)`
+    - `int(params.get("key", d))`
+    - `int(归一化字典["key"])`（先 _params() 归一化的指标用这种）
+    """
     func = call.func
     if isinstance(func, ast.Name) and func.id in {"_param_int", "_param_float"}:
         if len(call.args) >= 2 and isinstance(call.args[1], ast.Constant) and isinstance(call.args[1].value, str):
             return call.args[1].value
         return None
     if isinstance(func, ast.Name) and func.id in {"int", "float", "str", "bool"}:
-        if call.args and isinstance(call.args[0], ast.Call):
-            inner = call.args[0]
+        if not call.args:
+            return None
+        inner = call.args[0]
+        if isinstance(inner, ast.Call):
             if isinstance(inner.func, ast.Attribute) and inner.func.attr == "get" and inner.args:
                 first = inner.args[0]
                 if isinstance(first, ast.Constant) and isinstance(first.value, str):
                     return first.value
+        if isinstance(inner, ast.Subscript) and isinstance(inner.slice, ast.Constant):
+            if isinstance(inner.slice.value, str):
+                return inner.slice.value
     return None
 
 
@@ -187,22 +198,25 @@ def test_read_params_are_used_not_just_echoed(indicator_type):
 
     只用 AST 判断，不依赖数据——"改这个参数输出会变吗"这种动态检查在
     阈值类参数上会假阳性（宽阈值在小幅数据上本来就不影响结果）。
+
+    按**整个类**扫描：参数可能在 calculate 里读（局部变量），也可能在
+    归一化方法里读（字典下标），两种写法都要覆盖。
     """
-    node = calculate_ast(indicator_type)
-    if node is None:
-        pytest.skip(f"{indicator_type} 无 calculate 方法")
+    clazz = indicator_class_ast(indicator_type)
+    if clazz is None:
+        pytest.skip(f"{indicator_type} 无法解析类定义")
 
     # 参数名 -> 承接它的局部变量名
     locals_by_key = {
         key: item.targets[0].id
-        for item in ast.walk(node)
+        for item in ast.walk(clazz)
         if isinstance(item, ast.Assign) and len(item.targets) == 1
         and isinstance(item.targets[0], ast.Name) and isinstance(item.value, ast.Call)
         for key in [_param_key(item.value)] if key
     }
     # 返回的 params 字典里的引用不算"使用"（那只是回显）
     echoed: set[int] = set()
-    for item in ast.walk(node):
+    for item in ast.walk(clazz):
         if isinstance(item, ast.Call) and getattr(item.func, "id", None) == "IndicatorResult":
             for keyword in item.keywords:
                 if keyword.arg == "params":
@@ -214,7 +228,7 @@ def test_read_params_are_used_not_just_echoed(indicator_type):
         if key not in declared:
             continue
         loads = [
-            name for name in ast.walk(node)
+            name for name in ast.walk(clazz)
             if isinstance(name, ast.Name) and name.id == local and isinstance(name.ctx, ast.Load)
         ]
         if not [name for name in loads if id(name) not in echoed]:
@@ -231,6 +245,10 @@ INVALID_PARAMS: dict[str, list[dict]] = {
     "volume": [{"lookback": 1}, {"shrink_max": 2.0}],
     "volume_structure": [{"lookback": 1}, {"confirm_bars": 1}],
     "liquidity_sweep": [{"piv_len": 0}, {"piv_len": 1}, {"atr_len": 0}, {"dir_mode": "short only"}],
+    "support_resistance": [
+        {"span": 0}, {"span": 101}, {"atr_len": 1}, {"tolerance_atr": 0},
+        {"min_touches": 0}, {"max_levels": 0}, {"max_age_bars": 5}, {"recency_half_life": 1},
+    ],
     "chip_distribution": [{"bins": 0}, {"lookback": 0}],
     "dilun_structure": [{"departure_confirm_bars": 0}],
 }
