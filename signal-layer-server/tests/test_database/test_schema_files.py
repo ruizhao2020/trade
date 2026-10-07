@@ -46,6 +46,52 @@ def test_sqlite_initialization_script_creates_fixed_tables():
     assert "public_access" in module_columns
 
 
+def test_both_dialect_schemas_carry_the_audit_status_column():
+    """users.status 必须同时出现在 mysql 与 sqlite 建表脚本里。
+
+    schema 不由 Alembic 管理，新列要手工落到两处 SQL 加 `_ensure_compat_columns`。
+    漏掉任何一处：全新安装缺列（接口 500），或老库升级缺列（同样 500）。
+    """
+    for dialect in ("mysql", "sqlite"):
+        sql = (ROOT / f"database/{dialect}/001_app_schema.sql").read_text(encoding="utf-8")
+        connection = sqlite3.connect(":memory:")
+        try:
+            if dialect == "sqlite":
+                connection.executescript(sql)
+                columns = {row[1]: row for row in connection.execute("PRAGMA table_info(users)")}
+                assert "status" in columns, "sqlite 建表脚本缺 users.status"
+                # NOT NULL + DEFAULT 'active'：历史/存量行必须自动成为已通过
+                assert columns["status"][3] == 1 and "active" in columns["status"][4].lower()
+            else:
+                assert "status" in sql and "VARCHAR(20)" in sql
+        finally:
+            connection.close()
+
+
+def test_migration_promotes_existing_users_to_active():
+    """老库升级：补列后历史账号必须是 active，否则升级会把所有人锁在门外。"""
+    from sqlalchemy import create_engine, inspect, text
+
+    from app.db import _ensure_compat_columns
+
+    engine = create_engine("sqlite://")
+    with engine.begin() as connection:
+        # 模拟升级前的 users 表：只有旧列，没有 status
+        connection.execute(text(
+            "CREATE TABLE users (id INTEGER PRIMARY KEY, username VARCHAR(50) NOT NULL UNIQUE, "
+            "password_hash VARCHAR(255) NOT NULL, display_name VARCHAR(80) NOT NULL DEFAULT '', "
+            "enabled BOOLEAN NOT NULL DEFAULT 1)"
+        ))
+        connection.execute(text(
+            "INSERT INTO users (id, username, password_hash, display_name, enabled) "
+            "VALUES (1, 'admin', 'x', '系统管理员', 1)"
+        ))
+        _ensure_compat_columns(connection)
+
+        assert "status" in {column["name"] for column in inspect(connection).get_columns("users")}
+        assert connection.execute(text("SELECT status FROM users WHERE username='admin'")).scalar() == "active"
+
+
 def test_sqlite_seed_creates_default_admin_roles_and_modules():
     connection = sqlite3.connect(":memory:")
     try:

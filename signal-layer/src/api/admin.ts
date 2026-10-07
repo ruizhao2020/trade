@@ -28,6 +28,15 @@ export const fetchPermissions = () => api.get<PermissionItem[]>('/admin/permissi
 export const updateUserRoles = (userId: number, roleCodes: string[], enabled: boolean) =>
   api.put<AuthUser>(`/admin/users/${userId}/roles`, { role_codes: roleCodes, enabled })
 
+/** 审核通过。roleCodes 省略则保留注册时分配的默认角色。 */
+export const approveUser = (userId: number, roleCodes?: string[]) =>
+  api.post<AuthUser>(`/admin/users/${userId}/approve`, roleCodes ? { role_codes: roleCodes } : {})
+
+export const rejectUser = (userId: number) => api.post<AuthUser>(`/admin/users/${userId}/reject`, {})
+
+/** 删除账号：不可撤销，服务端会一并清掉该用户的策略/监控/草稿等私有数据。 */
+export const deleteUser = (userId: number) => api.delete(`/admin/users/${userId}`)
+
 export const updateRole = (roleId: number, values: Partial<RoleItem>) =>
   api.put<RoleItem>(`/admin/roles/${roleId}`, values)
 

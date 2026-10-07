@@ -1,8 +1,9 @@
 import { useCallback, useEffect, useState } from 'react'
+import { USER_STATUS_LABEL } from '../api/auth.ts'
 import type { AuthModule, AuthUser } from '../api/auth.ts'
 import {
-  createModule, createRole, fetchModules, fetchPermissions, fetchRoles, fetchUsers,
-  updateModule, updateRole, updateUserRoles, fetchNotificationChannelsForAdmin,
+  approveUser, createModule, createRole, deleteUser, fetchModules, fetchPermissions, fetchRoles, fetchUsers,
+  rejectUser, updateModule, updateRole, updateUserRoles, fetchNotificationChannelsForAdmin,
   fetchNotificationTemplatesForAdmin, createNotificationChannelForAdmin,
   updateNotificationChannelForAdmin, deleteNotificationChannelForAdmin,
   updateNotificationTemplateForAdmin,
@@ -197,12 +198,45 @@ export function AdminWorkspace({ currentUser, onModulesChanged }: { currentUser:
     void Promise.resolve().then(load)
   }, [load])
 
+  // 待审核的排在最前面：需要管理员处理的事情不该藏在列表中间。
+  const sortedUsers = [...users].sort((left, right) => Number(right.status === 'pending') - Number(left.status === 'pending'))
+  const pendingCount = users.filter((user) => user.status === 'pending').length
+
   async function toggleUserRole(user: AuthUser, roleCode: string) {
     const next = user.role_codes.includes(roleCode)
       ? user.role_codes.filter((code) => code !== roleCode)
       : [...user.role_codes, roleCode]
     const updated = await updateUserRoles(user.id, next, user.enabled)
     setUsers((items) => items.map((item) => item.id === user.id ? updated : item))
+  }
+
+  async function reviewUser(user: AuthUser, action: 'approve' | 'reject') {
+    try {
+      const updated = action === 'approve' ? await approveUser(user.id) : await rejectUser(user.id)
+      setUsers((items) => items.map((item) => item.id === user.id ? updated : item))
+      setError('')
+    } catch (reviewError) {
+      setError(reviewError instanceof Error ? reviewError.message : String(reviewError))
+    }
+  }
+
+  async function confirmDeleteUser(user: AuthUser) {
+    // 删除不可撤销且会连带清掉该用户的私有数据，所以确认文案要讲清楚删的是什么、
+    // 以及"只想禁用"应该用哪个开关。
+    const label = user.display_name || user.username
+    const confirmed = window.confirm(
+      `删除账号「${label}」（@${user.username}）？\n\n` +
+      '该账号的策略模板、监控任务、推送渠道、内容草稿和通知记录会一并删除，无法恢复。\n' +
+      '如果只是暂时禁止登录，请改用行尾的启用开关或「拒绝」。',
+    )
+    if (!confirmed) return
+    try {
+      await deleteUser(user.id)
+      setUsers((items) => items.filter((item) => item.id !== user.id))
+      setError('')
+    } catch (deleteError) {
+      setError(deleteError instanceof Error ? deleteError.message : String(deleteError))
+    }
   }
 
   async function toggleRolePermission(role: RoleItem, code: string) {
@@ -217,7 +251,7 @@ export function AdminWorkspace({ currentUser, onModulesChanged }: { currentUser:
     <div className="flex-1 min-h-0 flex flex-col bg-[var(--bg-primary)]">
       <header className="h-16 px-7 flex items-center border-b border-[var(--border-primary)] bg-[var(--bg-secondary)]">
         <div><h1 className="text-[17px] font-semibold tracking-tight">系统管理</h1><p className="mt-0.5 text-[11px] text-[var(--text-muted)]">集中管理账户、角色权限和模块准入</p></div>
-        <div className="ml-auto flex items-center gap-2 text-[11px] text-[var(--text-muted)]"><span className="px-2.5 py-1 rounded-md bg-[var(--bg-tertiary)]">{users.length} 用户</span><span className="px-2.5 py-1 rounded-md bg-[var(--bg-tertiary)]">{roles.length} 角色</span><span className="px-2.5 py-1 rounded-md bg-[var(--bg-tertiary)]">{modules.length} 模块</span></div>
+        <div className="ml-auto flex items-center gap-2 text-[11px] text-[var(--text-muted)]">{pendingCount > 0 && <span className="px-2.5 py-1 rounded-md bg-[rgba(240,163,90,.12)] text-[var(--accent-orange)] font-medium">{pendingCount} 待审核</span>}<span className="px-2.5 py-1 rounded-md bg-[var(--bg-tertiary)]">{users.length} 用户</span><span className="px-2.5 py-1 rounded-md bg-[var(--bg-tertiary)]">{roles.length} 角色</span><span className="px-2.5 py-1 rounded-md bg-[var(--bg-tertiary)]">{modules.length} 模块</span></div>
       </header>
       <div className="h-14 px-7 flex items-center border-b border-[var(--border-primary)] bg-[var(--bg-secondary)]">
         <div className="inline-flex items-center gap-1.5 p-1 rounded-lg border border-[var(--border-primary)] bg-[var(--bg-primary)] shadow-[0_4px_14px_rgba(0,0,0,.08)]" role="tablist" aria-label="系统管理页签">
@@ -226,7 +260,31 @@ export function AdminWorkspace({ currentUser, onModulesChanged }: { currentUser:
       </div>
       <div className="flex-1 overflow-auto p-7">
         {error && <div className="max-w-6xl mx-auto mb-5 px-4 py-3 rounded-lg border border-[rgba(255,107,114,.2)] bg-[rgba(255,107,114,.06)] text-[11px] text-[var(--accent-red)]">{error}</div>}
-        {tab === 'users' && <div className="max-w-6xl mx-auto space-y-3">{users.map((user) => <div key={user.id} className="grid grid-cols-[220px_1fr_100px] gap-5 items-center p-5 rounded-xl border border-[var(--border-primary)] bg-[var(--bg-secondary)] shadow-[0_8px_24px_rgba(0,0,0,.08)]"><div><div className="text-[13px] font-semibold">{user.display_name || user.username}{user.id === currentUser.id && <span className="ml-2 px-1.5 py-0.5 rounded bg-[rgba(108,140,255,.1)] text-[11px] font-medium text-[var(--accent)]">当前用户</span>}</div><div className="mt-1 text-[11px] text-[var(--text-muted)]">@{user.username}</div></div><div className="flex flex-wrap gap-2">{roles.map((role) => <button key={role.code} disabled={user.id === currentUser.id} onClick={() => void toggleUserRole(user, role.code)} className={`px-3 h-8 rounded-md border text-[11px] disabled:opacity-50 disabled:cursor-not-allowed ${user.role_codes.includes(role.code) ? 'border-[var(--accent)] text-[#b9c9ff] bg-[rgba(108,140,255,.1)]' : 'border-[var(--border-primary)] text-[var(--text-muted)] hover:border-[var(--border-accent)]'}`}>{role.name}</button>)}</div><div className="flex justify-end">{user.id === currentUser.id ? <span className="text-[11px] text-[var(--text-muted)]">已启用</span> : <Toggle value={user.enabled} onChange={(enabled) => void updateUserRoles(user.id, user.role_codes, enabled).then(load)} />}</div></div>)}</div>}
+        {tab === 'users' && <div className="max-w-6xl mx-auto space-y-3">{sortedUsers.map((user) => {
+          const pending = user.status === 'pending'
+          const self = user.id === currentUser.id
+          return (
+            <div key={user.id} className={`grid grid-cols-[240px_1fr_auto] gap-5 items-center p-5 rounded-xl border bg-[var(--bg-secondary)] shadow-[0_8px_24px_rgba(0,0,0,.08)] ${pending ? 'border-[var(--accent-orange)]' : 'border-[var(--border-primary)]'}`}>
+              <div>
+                <div className="flex items-center gap-2 text-[13px] font-semibold">{user.display_name || user.username}{self && <span className="px-1.5 py-0.5 rounded bg-[rgba(108,140,255,.1)] text-[11px] font-medium text-[var(--accent)]">当前用户</span>}<span className={`px-1.5 py-0.5 rounded text-[11px] font-medium ${pending ? 'bg-[rgba(240,163,90,.12)] text-[var(--accent-orange)]' : user.status === 'rejected' ? 'bg-[rgba(255,107,114,.1)] text-[var(--accent-red)]' : 'bg-[var(--bg-tertiary)] text-[var(--text-muted)]'}`}>{USER_STATUS_LABEL[user.status]}</span></div>
+                <div className="mt-1 text-[11px] text-[var(--text-muted)]">@{user.username}{user.created_at && ` · 注册于 ${user.created_at.slice(0, 10)}`}</div>
+              </div>
+              <div>
+                <div className="flex flex-wrap gap-2">{roles.map((role) => <button key={role.code} disabled={self} onClick={() => void toggleUserRole(user, role.code)} className={`px-3 h-8 rounded-md border text-[11px] disabled:opacity-50 disabled:cursor-not-allowed ${user.role_codes.includes(role.code) ? 'border-[var(--accent)] text-[#b9c9ff] bg-[rgba(108,140,255,.1)]' : 'border-[var(--border-primary)] text-[var(--text-muted)] hover:border-[var(--border-accent)]'}`}>{role.name}</button>)}</div>
+                {pending && <p className="mt-2 text-[11px] leading-5 text-[var(--accent-orange)]">通过后还需勾选含「访问私有研究工作区」的角色（如「研究用户」），否则登录后只能看到公开的指标页。</p>}
+              </div>
+              <div className="flex items-center justify-end gap-3">
+                {self ? <span className="text-[11px] text-[var(--text-muted)]">{user.enabled ? '已启用' : '已停用'}</span> : <>
+                  {user.status === 'active' ? <Toggle value={user.enabled} onChange={(enabled) => void updateUserRoles(user.id, user.role_codes, enabled).then(load)} /> : <>
+                    <button type="button" onClick={() => void reviewUser(user, 'approve')} className="h-8 px-3 rounded-md bg-[var(--accent)] text-white text-[11px] font-medium hover:bg-[var(--accent-hover)]">通过</button>
+                    {user.status === 'pending' && <button type="button" onClick={() => void reviewUser(user, 'reject')} className="h-8 px-3 rounded-md border border-[var(--border-primary)] text-[11px] text-[var(--text-muted)] hover:border-[var(--accent-red)] hover:text-[var(--accent-red)]">拒绝</button>}
+                  </>}
+                  <button type="button" onClick={() => void confirmDeleteUser(user)} aria-label={`删除用户 ${user.username}`} className="text-[11px] text-[var(--text-muted)] hover:text-[var(--accent-red)]">删除</button>
+                </>}
+              </div>
+            </div>
+          )
+        })}</div>}
 
         {tab === 'roles' && <div className="max-w-6xl mx-auto space-y-4"><button onClick={() => { const code = window.prompt('角色编码（英文）'); const name = code && window.prompt('角色名称'); if (code && name) void createRole({ code, name, description: '' }).then(load) }} className="h-9 px-4 mb-1 rounded-lg bg-[var(--accent)] text-white text-[12px] font-medium hover:bg-[var(--accent-hover)]">新建角色</button>{roles.map((role) => <section key={role.id} className="p-5 rounded-xl border border-[var(--border-primary)] bg-[var(--bg-secondary)] shadow-[0_8px_24px_rgba(0,0,0,.08)]"><div className="flex items-center gap-3"><div className="text-[13px] font-semibold">{role.name}</div><code className="text-[11px] text-[var(--text-muted)]">{role.code}</code>{role.built_in && <span className="px-1.5 py-0.5 rounded bg-[rgba(240,163,90,.08)] text-[11px] text-[var(--accent-orange)]">内置</span>}<div className="flex-1"/>{role.code === 'admin' ? <span className="text-[11px] text-[var(--text-muted)]">始终启用</span> : <Toggle value={role.enabled} onChange={(enabled) => void updateRole(role.id, { enabled }).then(load)} />}</div><label className="mt-3 flex items-center gap-2 text-[11px] text-[var(--text-secondary)]"><input type="checkbox" checked={role.registration_default} onChange={() => void updateRole(role.id, { registration_default: !role.registration_default }).then(load)} className="accent-[var(--accent)]" />设为新用户注册默认角色{role.registration_default && <span className="text-[11px] text-[var(--accent)]">（当前默认）</span>}</label><div className="mt-5 grid grid-cols-2 xl:grid-cols-3 gap-2.5">{permissions.map((permission) => <label key={permission.code} className={`min-h-10 flex items-center gap-2.5 px-3 py-2 rounded-lg border border-transparent bg-[var(--bg-tertiary)] text-[11px] ${role.code === 'admin' ? 'opacity-55' : 'hover:border-[var(--border-accent)]'}`}><input type="checkbox" disabled={role.code === 'admin'} checked={role.permission_codes.includes(permission.code)} onChange={() => void toggleRolePermission(role, permission.code)} className="accent-[var(--accent)]" /><span>{permission.name}</span><code className="ml-auto text-[11px] text-[var(--text-muted)]">{permission.code}</code></label>)}</div></section>)}</div>}
 

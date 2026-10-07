@@ -7,7 +7,7 @@ from sqlalchemy import select
 
 from app.db import get_session
 from app.models.auth import User
-from app.services.auth_service import decode_access_token, permission_codes
+from app.services.auth_service import decode_access_token, permission_codes, status_rejection_message
 from app.services.module_access_service import module_rules
 
 
@@ -50,6 +50,10 @@ class ModuleAccessMiddleware(BaseHTTPMiddleware):
                 user = (await session.execute(select(User).where(User.id == user_id))).scalar_one_or_none()
                 if not user or not user.enabled:
                     return JSONResponse({"detail": "用户不存在或已停用"}, status_code=401)
+                # 未通过审核的账号即便持有令牌也一律挡在私有模块之外。
+                status_message = status_rejection_message(user.status)
+                if status_message:
+                    return JSONResponse({"detail": status_message}, status_code=401)
                 user_permissions = permission_codes(user)
                 if "private.access" not in user_permissions:
                     return JSONResponse({"detail": "私有研究工作区权限未开通"}, status_code=403)

@@ -29,6 +29,7 @@ CREATE TABLE IF NOT EXISTS users (
     password_hash VARCHAR(255) NOT NULL,
     display_name  VARCHAR(80)  NOT NULL DEFAULT '',
     enabled       TINYINT(1)   NOT NULL DEFAULT 1,
+    status        VARCHAR(20)  NOT NULL DEFAULT 'active',
     last_login_at DATETIME,
     created_at    DATETIME     NOT NULL DEFAULT CURRENT_TIMESTAMP,
     updated_at    DATETIME     NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP

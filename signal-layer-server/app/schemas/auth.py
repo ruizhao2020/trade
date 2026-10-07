@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+from datetime import datetime
 from typing import Optional
 
 from pydantic import BaseModel, Field
@@ -43,6 +44,8 @@ class UserResponse(BaseModel):
     email: Optional[str]
     display_name: str
     enabled: bool
+    status: str
+    created_at: Optional[datetime] = None
     role_codes: list[str]
     permission_codes: list[str]
     modules: list[ModuleResponse] = Field(default_factory=list)
@@ -53,6 +56,15 @@ class TokenResponse(BaseModel):
     token_type: str = "bearer"
     expires_at: int
     user: UserResponse
+
+
+class RegisterResponse(BaseModel):
+    """注册不再直接下发令牌：账号需管理员审核通过后才能登录。"""
+
+    status: str
+    message: str
+    username: str
+    display_name: str
 
 
 class PermissionResponse(BaseModel):
@@ -94,6 +106,12 @@ class RoleUpdate(BaseModel):
 class UserRoleUpdate(BaseModel):
     role_codes: list[str]
     enabled: Optional[bool] = None
+
+
+class UserApprovalRequest(BaseModel):
+    """审核通过时可顺带指定角色；不传则保留注册时分配的默认角色。"""
+
+    role_codes: Optional[list[str]] = None
 
 
 class ModuleCreate(BaseModel):

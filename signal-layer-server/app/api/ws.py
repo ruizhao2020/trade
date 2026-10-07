@@ -1,3 +1,5 @@
+from __future__ import annotations
+
 import json
 import asyncio
 import time
@@ -7,7 +9,7 @@ from sqlalchemy import select
 from app.api.deps import get_data_service
 from app.db import get_session
 from app.models.auth import User
-from app.services.auth_service import decode_access_token, permission_codes
+from app.services.auth_service import decode_access_token, permission_codes, status_rejection_message
 
 logger = logging.getLogger(__name__)
 
@@ -106,6 +108,27 @@ class ConnectionManager:
         logger.info(f"WebSocket disconnected: {client_id} (remaining: {len(self._connections)})")
 
 
+# 订阅频道 -> 所需权限。
+#
+# 必须在此登记：模块准入中间件是 BaseHTTPMiddleware，而它对非 http scope
+# （也就是 WebSocket）直接放行，所以 ws 的授权只能在路由这一层做。
+# 这里做成"查表 + 未登记即拒绝"，让"新增频道忘了加权限检查"在结构上不可能发生。
+CHANNEL_PERMISSIONS: dict[str, str] = {
+    "kline": "market.read",
+    "signal": "strategy.evaluate",
+}
+
+
+def authorize_channel(channel: str, permissions: set[str]) -> str | None:
+    """返回 None 表示放行，否则返回拒绝原因。未知频道一律拒绝（fail-closed）。"""
+    required = CHANNEL_PERMISSIONS.get(channel)
+    if required is None:
+        return f"未知订阅频道：{channel}"
+    if required not in permissions:
+        return f"缺少权限：{required}"
+    return None
+
+
 manager = ConnectionManager()
 
 
@@ -115,14 +138,27 @@ async def websocket_endpoint(ws: WebSocket):
     try:
         user_id = decode_access_token(token)
         user = None
-        async for session in get_session():
-            user = (await session.execute(select(User).where(User.id == user_id))).scalar_one_or_none()
-            break
+        # 显式 aclose()：`async for ... break` 不会关闭生成器，只能等 GC，
+        # 会导致连接未归还连接池（每个 ws 连接漏一个）。
+        sessions = get_session()
+        try:
+            async for session in sessions:
+                user = (await session.execute(select(User).where(User.id == user_id))).scalar_one_or_none()
+                break
+        finally:
+            await sessions.aclose()
         if not user or not user.enabled:
             raise ValueError("用户不可用")
+        if status_rejection_message(user.status):
+            raise ValueError("账号未通过审核")
         permissions = permission_codes(user)
     except ValueError:
         await ws.close(code=4401, reason="请先登录")
+        return
+    except Exception:
+        # 鉴权阶段的服务端异常也必须关闭连接（fail-closed），不能放行
+        logger.exception("WebSocket 鉴权阶段失败")
+        await ws.close(code=1011, reason="服务暂时不可用")
         return
 
     client_id = await manager.connect(ws)
@@ -143,10 +179,13 @@ async def websocket_endpoint(ws: WebSocket):
 
             if msg_type == "subscribe":
                 channel = msg.get("channel", "")
+                # 统一的授权入口：未登记的频道直接拒绝，不再逐个频道手写权限判断
+                denied = authorize_channel(channel, permissions)
+                if denied:
+                    logger.warning(f"WebSocket {client_id} subscribe 被拒: {denied}")
+                    await ws.send_json({"type": "error", "message": denied})
+                    continue
                 if channel == "kline":
-                    if "market.read" not in permissions:
-                        await ws.send_json({"type": "error", "message": "缺少行情权限"})
-                        continue
                     symbol = msg.get("symbol", "")
                     timeframe = msg.get("timeframe", "")
                     channel_key = f"{symbol}:{timeframe}"
@@ -157,9 +196,6 @@ async def websocket_endpoint(ws: WebSocket):
                         "key": channel_key,
                     })
                 elif channel == "signal":
-                    if "strategy.evaluate" not in permissions:
-                        await ws.send_json({"type": "error", "message": "缺少策略评估权限"})
-                        continue
                     template_id = msg.get("template_id", "")
                     manager.subscribe(client_id, "signal", template_id)
                     await ws.send_json({

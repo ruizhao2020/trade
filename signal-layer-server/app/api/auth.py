@@ -6,9 +6,13 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.api.security import current_user
 from app.db import get_session
-from app.models.auth import Module, Role, User
-from app.schemas.auth import ChangePasswordRequest, LoginRequest, RegisterRequest, TokenResponse, UserResponse, ModuleResponse
-from app.services.auth_service import authenticate, create_access_token, hash_password, permission_codes, verify_password
+from app.models.auth import USER_STATUS_ACTIVE, USER_STATUS_PENDING, Module, Role, User
+from app.schemas.auth import (
+    ChangePasswordRequest, LoginRequest, RegisterRequest, RegisterResponse, TokenResponse, UserResponse, ModuleResponse,
+)
+from app.services.auth_service import (
+    authenticate, create_access_token, hash_password, permission_codes, verify_password,
+)
 
 router = APIRouter(prefix="/api/v1/auth", tags=["auth"])
 
@@ -22,6 +26,9 @@ def user_response(user: User, modules: list[Module] | None = None) -> UserRespon
         email=user.email,
         display_name=user.display_name,
         enabled=user.enabled,
+        # 未落库的对象 status 还是 None（列默认值只在 flush 时生效），按列默认视为已通过。
+        status=user.status or USER_STATUS_ACTIVE,
+        created_at=user.created_at,
         role_codes=[role.code for role in user.roles if role.enabled],
         permission_codes=sorted(codes),
         modules=[
@@ -34,7 +41,12 @@ def user_response(user: User, modules: list[Module] | None = None) -> UserRespon
                 public_access=bool(getattr(module, "public_access", False)),
             )
             for module in allowed_modules
-            if module.enabled and module.visible and f"{module.code}.view" in codes
+            if module.enabled
+            and module.visible
+            and f"{module.code}.view" in codes
+            # 与模块准入中间件保持一致：非公开模块还要求 private.access。
+            # 否则左导航会列出用户实际打不开的入口（点进去每个接口都是 403）。
+            and (bool(getattr(module, "public_access", False)) or "private.access" in codes)
         ],
     )
 
@@ -44,7 +56,7 @@ async def response_with_modules(session: AsyncSession, user: User) -> UserRespon
     return user_response(user, list(modules))
 
 
-@router.post("/register", response_model=TokenResponse, status_code=201)
+@router.post("/register", response_model=RegisterResponse, status_code=201)
 async def register(body: RegisterRequest, session: AsyncSession = Depends(get_session)):
     duplicate = (await session.execute(
         select(User).where(or_(User.username == body.username, User.email == body.email if body.email else False))
@@ -62,20 +74,26 @@ async def register(body: RegisterRequest, session: AsyncSession = Depends(get_se
         display_name=body.display_name or body.username,
         password_hash=hash_password(body.password),
         enabled=True,
+        status=USER_STATUS_PENDING,
     )
     user.roles = [registration_role]
     session.add(user)
     await session.commit()
     await session.refresh(user)
-    token, expires_at = create_access_token(user.id)
-    return TokenResponse(access_token=token, expires_at=expires_at, user=await response_with_modules(session, user))
+    # 不签发令牌：审核通过前该账号无法登录，也无法换取任何私有模块的访问权。
+    return RegisterResponse(
+        status=USER_STATUS_PENDING,
+        message="注册已提交，请等待管理员审核通过后登录",
+        username=user.username,
+        display_name=user.display_name,
+    )
 
 
 @router.post("/login", response_model=TokenResponse)
 async def login(body: LoginRequest, session: AsyncSession = Depends(get_session)):
-    user = await authenticate(session, body.username, body.password)
+    user, reason = await authenticate(session, body.username, body.password)
     if not user:
-        raise HTTPException(status_code=401, detail="用户名或密码错误")
+        raise HTTPException(status_code=401, detail=reason or "用户名或密码错误")
     token, expires_at = create_access_token(user.id)
     return TokenResponse(access_token=token, expires_at=expires_at, user=await response_with_modules(session, user))
 

@@ -12,7 +12,11 @@ from sqlalchemy import delete, insert, select, update
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.config import settings
-from app.models.auth import Module, Permission, PublicIndicatorFeaturePolicy, PublicIndicatorPolicy, Role, User, role_permissions, user_roles
+from app.models.auth import (
+    USER_STATUS_ACTIVE, USER_STATUS_PENDING, USER_STATUS_REJECTED, USER_STATUSES,
+    Module, Permission, PublicIndicatorFeaturePolicy, PublicIndicatorPolicy, Role, User,
+    role_permissions, user_roles,
+)
 from app.models.notification import NotificationTemplate
 from app.models.template import Template
 from app.models.content import ContentTemplate
@@ -79,14 +83,35 @@ def permission_codes(user: User) -> set[str]:
     }
 
 
-async def authenticate(session: AsyncSession, username: str, password: str) -> User | None:
+def status_rejection_message(status: str) -> str | None:
+    """非 active 账号的拒绝原因；active 返回 None。"""
+    if status == USER_STATUS_PENDING:
+        return "账号正在审核中，请等待管理员通过后再登录"
+    if status == USER_STATUS_REJECTED:
+        return "账号审核未通过，请联系管理员"
+    return None
+
+
+async def authenticate(
+    session: AsyncSession, username: str, password: str
+) -> tuple[User | None, str | None]:
+    """返回 (用户, 失败原因)。
+
+    原因只在密码正确之后才给出：否则报错文案本身会变成账号状态的探测器。
+    密码错误与账号不存在合并为同一个 None 原因，由调用方给出通用文案。
+    """
     result = await session.execute(select(User).where(User.username == username))
     user = result.scalar_one_or_none()
-    if not user or not user.enabled or not verify_password(password, user.password_hash):
-        return None
+    if not user or not verify_password(password, user.password_hash):
+        return None, None
+    status_message = status_rejection_message(user.status)
+    if status_message:
+        return None, status_message
+    if not user.enabled:
+        return None, "账号已停用，请联系管理员"
     user.last_login_at = datetime.now()
     await session.commit()
-    return user
+    return user, None
 
 
 MODULE_DEFINITIONS = [

@@ -9,8 +9,8 @@ from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.db import get_session
-from app.models.auth import User
-from app.services.auth_service import decode_access_token, permission_codes
+from app.models.auth import USER_STATUS_ACTIVE, User
+from app.services.auth_service import decode_access_token, permission_codes, status_rejection_message
 
 bearer = HTTPBearer(auto_error=False)
 
@@ -32,6 +32,9 @@ async def current_user(
     user = (await session.execute(select(User).where(User.id == user_id))).scalar_one_or_none()
     if not user or not user.enabled:
         raise HTTPException(status_code=401, detail="用户不存在或已停用")
+    status_message = status_rejection_message(user.status)
+    if status_message:
+        raise HTTPException(status_code=401, detail=status_message)
     return user
 
 
@@ -51,7 +54,7 @@ async def optional_user(
     if middleware_user is not None and middleware_user.id == user_id:
         return middleware_user
     user = (await session.execute(select(User).where(User.id == user_id))).scalar_one_or_none()
-    return user if user and user.enabled else None
+    return user if user and user.enabled and user.status == USER_STATUS_ACTIVE else None
 
 
 def require_permission(code: str) -> Callable:

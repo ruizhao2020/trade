@@ -2,17 +2,23 @@ from __future__ import annotations
 
 from fastapi import APIRouter, Depends, HTTPException
 from pydantic import BaseModel, Field
-from sqlalchemy import insert, select, update
+from sqlalchemy import delete, func, insert, select, update
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import selectinload
 
 from app.api.auth import user_response
 from app.api.security import require_permission
 from app.db import get_session
-from app.models.auth import Module, Permission, PublicIndicatorFeaturePolicy, PublicIndicatorPolicy, Role, User, role_permissions
+from app.models.auth import (
+    USER_STATUS_ACTIVE, USER_STATUS_REJECTED,
+    Module, Permission, PublicIndicatorFeaturePolicy, PublicIndicatorPolicy, Role, User, role_permissions, user_roles,
+)
+from app.models.content import ArticleDraft, ContentTemplate
+from app.models.notification import NotificationChannel, NotificationEvent, ScreenerSchedule, StrategyMonitor
+from app.models.template import Template
 from app.schemas.auth import (
     ModuleCreate, ModuleResponse, ModuleUpdate, PermissionCreate, PermissionResponse,
-    RoleCreate, RoleResponse, RoleUpdate, UserResponse, UserRoleUpdate,
+    RoleCreate, RoleResponse, RoleUpdate, UserApprovalRequest, UserResponse, UserRoleUpdate,
 )
 from app.services.module_access_service import invalidate_module_rules
 from app.api.deps import get_chan_service
@@ -69,6 +75,42 @@ async def list_users(session: AsyncSession = Depends(get_session)):
     return [user_response(user) for user in (await session.execute(select(User).order_by(User.id))).scalars()]
 
 
+async def _load_user_or_404(session: AsyncSession, user_id: int) -> User:
+    user = (await session.execute(select(User).where(User.id == user_id))).scalar_one_or_none()
+    if not user:
+        raise HTTPException(status_code=404, detail="用户不存在")
+    return user
+
+
+async def _resolve_roles(session: AsyncSession, role_codes: list[str]) -> list[Role]:
+    roles = (await session.execute(select(Role).where(Role.code.in_(role_codes)))).scalars().all()
+    if len(roles) != len(set(role_codes)):
+        raise HTTPException(status_code=400, detail="包含不存在的角色")
+    return list(roles)
+
+
+def _guard_self_audit(user: User, actor: User) -> None:
+    # 拒绝/待审自己会把自己锁在门外，且审核语义上不该作用于本人。
+    if user.id == actor.id:
+        raise HTTPException(status_code=400, detail="不能审核自己的账号")
+
+
+# 用户删除时需要一并清理的私有数据。
+#
+# 这些表在查询侧一律按 user_id 过滤（模板、监控、渠道、草稿、事件、定时），
+# 账号消失后它们既无人可见也无法被引用，留着只是占表的孤儿行。
+# 显式 DELETE 而不是依赖 ON DELETE CASCADE：SQLite 默认不开启外键约束，
+# 依赖级联会让"测试通过、线上残留"这种偏差藏在方言差异里。
+_USER_OWNED_MODELS = (
+    NotificationChannel,
+    NotificationEvent,
+    ScreenerSchedule,
+    StrategyMonitor,
+    Template,
+    ArticleDraft,
+)
+
+
 @router.put("/users/{user_id}/roles", response_model=UserResponse)
 async def update_user_roles(
     user_id: int,
@@ -76,19 +118,92 @@ async def update_user_roles(
     session: AsyncSession = Depends(get_session),
     actor: User = Depends(require_permission("admin.users")),
 ):
-    user = (await session.execute(select(User).where(User.id == user_id))).scalar_one_or_none()
-    roles = (await session.execute(select(Role).where(Role.code.in_(body.role_codes)))).scalars().all()
-    if not user:
-        raise HTTPException(status_code=404, detail="用户不存在")
-    if len(roles) != len(set(body.role_codes)):
-        raise HTTPException(status_code=400, detail="包含不存在的角色")
+    user = await _load_user_or_404(session, user_id)
+    roles = await _resolve_roles(session, body.role_codes)
     if user.id == actor.id and ("admin" not in body.role_codes or body.enabled is False):
         raise HTTPException(status_code=400, detail="不能停用自己或移除自己的管理员角色")
-    user.roles = list(roles)
+    user.roles = roles
     if body.enabled is not None:
         user.enabled = body.enabled
     await session.commit()
     return user_response(user)
+
+
+@router.post("/users/{user_id}/approve", response_model=UserResponse)
+async def approve_user(
+    user_id: int,
+    body: UserApprovalRequest,
+    session: AsyncSession = Depends(get_session),
+    actor: User = Depends(require_permission("admin.users")),
+):
+    """审核通过。可同时指定要授予的角色——只有含 private.access 的角色才能进入私有工作区。"""
+    user = await _load_user_or_404(session, user_id)
+    _guard_self_audit(user, actor)
+    if body.role_codes is not None:
+        user.roles = await _resolve_roles(session, body.role_codes)
+    user.status = USER_STATUS_ACTIVE
+    await session.commit()
+    return user_response(user)
+
+
+@router.post("/users/{user_id}/reject", response_model=UserResponse)
+async def reject_user(
+    user_id: int,
+    session: AsyncSession = Depends(get_session),
+    actor: User = Depends(require_permission("admin.users")),
+):
+    """审核拒绝：账号被挡在登录与所有私有模块之外，但记录保留可再次通过。"""
+    user = await _load_user_or_404(session, user_id)
+    _guard_self_audit(user, actor)
+    user.status = USER_STATUS_REJECTED
+    await session.commit()
+    return user_response(user)
+
+
+@router.delete("/users/{user_id}", status_code=204)
+async def delete_user(
+    user_id: int,
+    session: AsyncSession = Depends(get_session),
+    actor: User = Depends(require_permission("admin.users")),
+):
+    """删除账号，并清掉其私有数据。
+
+    「停用」保留账号与数据、可随时恢复；「删除」不可撤销。两种能力并存，
+    因为日常运营里禁用一个账号和彻底清掉一个账号是两件事。
+    """
+    user = await _load_user_or_404(session, user_id)
+    if user.id == actor.id:
+        raise HTTPException(status_code=400, detail="不能删除自己的账号")
+    if await _is_last_admin(session, user):
+        raise HTTPException(status_code=400, detail="不能删除最后一个管理员")
+
+    for model in _USER_OWNED_MODELS:
+        await session.execute(delete(model).where(model.user_id == user.id))
+    # 系统内置的内容模板不属于任何个人，只删该用户自建的那些。
+    await session.execute(
+        delete(ContentTemplate).where(ContentTemplate.user_id == user.id, ContentTemplate.built_in.is_(False))
+    )
+    await session.execute(delete(user_roles).where(user_roles.c.user_id == user.id))
+    # 用 Core DELETE 而不是 session.delete()：user.roles 已加载，
+    # ORM 级联会再去删一遍上面已清空的关联行并抛 StaleDataError。
+    await session.execute(delete(User).where(User.id == user.id))
+    await session.commit()
+
+
+async def _is_last_admin(session: AsyncSession, user: User) -> bool:
+    """该用户是否是最后一个管理员——删掉会把系统锁死（无人能再进用户管理）。"""
+    if not any(role.code == "admin" for role in user.roles):
+        return False
+    admin_role_id = await session.scalar(select(Role.id).where(Role.code == "admin"))
+    if admin_role_id is None:
+        return False
+    remaining = await session.scalar(
+        select(func.count(func.distinct(User.id)))
+        .select_from(User)
+        .join(user_roles, user_roles.c.user_id == User.id)
+        .where(user_roles.c.role_id == admin_role_id, User.id != user.id)
+    )
+    return not remaining
 
 
 @router.get("/roles", response_model=list[RoleResponse], dependencies=[Depends(require_permission("admin.roles"))])

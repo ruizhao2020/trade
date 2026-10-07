@@ -60,6 +60,11 @@ def _ensure_compat_columns(connection):
                 "SELECT 'chan', feature_code, display_name, public_visible, show_details, sort_order, created_at, updated_at "
                 "FROM public_chan_feature_policies"
             ))
+    if "users" in table_names:
+        user_columns = {column["name"] for column in inspector.get_columns("users")}
+        if "status" not in user_columns:
+            # 历史账号一律置为 active（已审核通过），否则升级后现有用户会被审核门挡住。
+            connection.execute(text("ALTER TABLE users ADD COLUMN status VARCHAR(20) NOT NULL DEFAULT 'active'"))
     if "templates" not in inspector.get_table_names():
         return
     columns = {column["name"] for column in inspector.get_columns("templates")}

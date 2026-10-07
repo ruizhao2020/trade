@@ -9,6 +9,14 @@ from sqlalchemy.orm import Mapped, mapped_column, relationship
 from app.models.base import Base, TimestampMixin
 
 
+# 用户准入审核状态。与 enabled 正交：enabled 表示管理员是否停用账号，
+# status 表示注册审核结果，两者都通过才能登录。
+USER_STATUS_PENDING = "pending"
+USER_STATUS_ACTIVE = "active"
+USER_STATUS_REJECTED = "rejected"
+USER_STATUSES = (USER_STATUS_PENDING, USER_STATUS_ACTIVE, USER_STATUS_REJECTED)
+
+
 user_roles = Table(
     "user_roles",
     Base.metadata,
@@ -33,6 +41,10 @@ class User(Base, TimestampMixin):
     password_hash: Mapped[str] = mapped_column(String(255), nullable=False)
     display_name: Mapped[str] = mapped_column(String(80), nullable=False, default="")
     enabled: Mapped[bool] = mapped_column(Boolean, nullable=False, default=True)
+    # 默认 active：老库补齐该列时历史用户一律视为已通过，否则升级会把现有账号锁在门外。
+    status: Mapped[str] = mapped_column(
+        String(20), nullable=False, default=USER_STATUS_ACTIVE, server_default=USER_STATUS_ACTIVE
+    )
     last_login_at: Mapped[Optional[datetime]] = mapped_column(DateTime, nullable=True)
     roles: Mapped[list["Role"]] = relationship(secondary=user_roles, lazy="selectin")
 
