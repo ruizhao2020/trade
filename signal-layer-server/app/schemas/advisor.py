@@ -13,6 +13,7 @@ class AdvisorConstraints(BaseModel):
     min_frequency: Optional[float] = Field(default=None, ge=0, le=10)
     max_frequency: Optional[float] = Field(default=None, gt=0, le=10)
     min_out_of_sample_return: Optional[float] = None
+    min_out_of_sample_trades: Optional[int] = Field(default=None, ge=1, le=200)
 
 
 class AdvisorRunCreate(BaseModel):

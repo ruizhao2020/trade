@@ -194,6 +194,7 @@ export function AdvisorWorkspace() {
   const [minTrades, setMinTrades] = useState(20)
   const [minWinRate, setMinWinRate] = useState(40)
   const [maxFrequency, setMaxFrequency] = useState(0.5)
+  const [minHoldoutTrades, setMinHoldoutTrades] = useState(5)
 
   const [runs, setRuns] = useState<AdvisorRunSummary[]>([])
   const [recommendations, setRecommendations] = useState<AdvisorRecommendation[]>([])
@@ -248,6 +249,7 @@ export function AdvisorWorkspace() {
           min_trades: minTrades,
           min_win_rate: minWinRate,
           max_frequency: maxFrequency,
+          min_out_of_sample_trades: minHoldoutTrades,
         },
       })
       setActiveRun(await fetchAdvisorRun(created.id))
@@ -335,6 +337,10 @@ export function AdvisorWorkspace() {
             <label className="block text-[11px] text-[var(--text-muted)]">
               最高频率（次/根）
               <input type="number" min={0.01} step={0.05} value={maxFrequency} onChange={(event) => setMaxFrequency(Number(event.target.value))} className="field mt-1 w-full" />
+            </label>
+            <label className="block text-[11px] text-[var(--text-muted)]">
+              样本外交易数下限
+              <input type="number" min={1} max={200} value={minHoldoutTrades} onChange={(event) => setMinHoldoutTrades(Number(event.target.value))} className="field mt-1 w-full" />
             </label>
             <p className="text-[11px] leading-5 text-[var(--text-muted)]">交易数不足或参数不稳时不会给结论，「无法推荐」是正常结果。</p>
           </div>

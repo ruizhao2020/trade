@@ -24,12 +24,16 @@ class Constraints:
     min_frequency: float = 0.0
     max_frequency: float = 0.5
     min_out_of_sample_return: float = 0.0
+    # 留出期的交易数下限：2 笔交易的"样本外为正"没有意义。
+    # 这是样本量门槛而非绩效门槛，因此不构成对留出期的偷看。
+    min_out_of_sample_trades: int = 5
 
     def describe(self) -> str:
         return (
             f"交易数 ≥ {self.min_trades}、胜率 ≥ {self.min_win_rate:.0f}%、"
             f"频率 {self.min_frequency:.3f}~{self.max_frequency:.3f} 次/根、"
             f"样本外收益 > {self.min_out_of_sample_return:.1f}%"
+            f"、样本外交易数 ≥ {self.min_out_of_sample_trades}"
         )
 
 

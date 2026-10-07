@@ -104,16 +104,19 @@ def evaluate_candidate(
 
     result = CandidateResult(candidate=candidate, windows=windows, in_sample=in_sample, out_of_sample=out_of_sample)
 
+    # 先算分再判约束：被约束淘汰的候选也要有分数，否则参数平台判定看不到它们，
+    # 会把"邻居被约束过滤掉"误判成"邻居表现差"（实测平台通过率因此被压到 2.4%）。
+    breakdown = _score(result, risks, config)
+    result.score = breakdown.score
+    result.notes.append(breakdown.describe())
+
     reason = check_constraints(in_sample, config.constraints)
     if reason:
         result.passed_constraints = False
         result.rejected_reason = reason
         return result
 
-    breakdown = _score(result, risks, config)
-    result.score = breakdown.score
     result.passed_constraints = True
-    result.notes.append(breakdown.describe())
     return result
 
 
@@ -226,9 +229,11 @@ def search(candidates: list[Candidate], levels: dict[str, LevelSeries], config: 
 
     passed.sort(key=lambda item: item.score, reverse=True)
 
-    # 参数平台判定：最优候选的相邻参数也应当站得住
+    # 参数平台判定：相邻参数也应当站得住。
+    # 用"全部已评估候选"的分数（含被约束淘汰者），否则邻居一旦被交易数等条件过滤掉，
+    # 就会因为"找不到邻居"而被判成尖峰。
     scores_by_signature: dict[tuple, dict[str, float]] = {}
-    for result in passed:
+    for result in evaluated:
         signature = _rule_signature(result.candidate)
         scores_by_signature.setdefault(signature, {})[_indicator_key_of(result.candidate) or ""] = result.score
 

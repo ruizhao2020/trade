@@ -75,6 +75,11 @@ def _constraints_of(payload) -> Constraints:
             if payload.min_out_of_sample_return is not None
             else defaults.min_out_of_sample_return
         ),
+        min_out_of_sample_trades=(
+            payload.min_out_of_sample_trades
+            if payload.min_out_of_sample_trades is not None
+            else defaults.min_out_of_sample_trades
+        ),
     )
 
 

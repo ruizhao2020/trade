@@ -15,6 +15,7 @@ export interface AdvisorConstraints {
   min_frequency?: number
   max_frequency?: number
   min_out_of_sample_return?: number
+  min_out_of_sample_trades?: number
 }
 
 export interface AdvisorRunCreate {

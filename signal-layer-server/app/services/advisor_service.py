@@ -69,6 +69,25 @@ def required_indicators(candidates: list[Candidate]) -> dict[str, set[tuple[str,
     return needed
 
 
+def align_values_by_time(times: list[int], values: list[dict]) -> dict[str, list]:
+    """把指标的逐根输出按 time 对齐到给定时间轴。
+
+    为什么按 time 而不是按行序拼接：契约要求 `len(values) == len(klines)`，
+    但缓存命中路径会按请求区间裁剪 values，行数可能与 K 线不等。按下标拼会让
+    整条序列错位（筹码分布曾因此错位 440 根），按时间取则天然对齐，
+    缺失的时间点取 None（条件判断会视为不成立）。
+    """
+    fields: set[str] = set()
+    for row in values:
+        fields.update(row.keys())
+    fields.discard("time")
+    rows_by_time = {int(float(row["time"])): row for row in values if "time" in row}
+    return {
+        field: [(rows_by_time.get(timestamp) or {}).get(field) for timestamp in times]
+        for field in sorted(fields)
+    }
+
+
 class AdvisorService:
     def __init__(
         self,
@@ -128,13 +147,7 @@ class AdvisorService:
                     notes.append(f"{level} {indicator_type} 计算失败：{error}")
                     continue
                 key = indicator_key(indicator_type, params)
-                fields: set[str] = set()
-                for row in result.values:
-                    fields.update(row.keys())
-                fields.discard("time")
-                series.indicators[key] = {
-                    field: [row.get(field) for row in result.values] for field in sorted(fields)
-                }
+                series.indicators[key] = align_values_by_time(series.times, result.values)
 
             if need_chan:
                 try:
@@ -266,6 +279,13 @@ class AdvisorService:
                 },
             }
 
+        if winner.out_of_sample.trades < config.constraints.min_out_of_sample_trades:
+            return profile, winner, "无稳定优势", (
+                f"最优候选（{winner.candidate.describe()}）选定期表现成立，"
+                f"但留出期只有 {winner.out_of_sample.trades} 笔交易"
+                f"（少于 {config.constraints.min_out_of_sample_trades} 笔），"
+                "样本量不足以确认，不给出推荐。"
+            )
         holdout_positive = winner.out_of_sample.total_return > 0
         if not holdout_positive:
             return profile, winner, "无稳定优势", (

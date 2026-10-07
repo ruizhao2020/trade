@@ -337,3 +337,39 @@ def test_budget_is_spread_across_indicator_families():
     # 七个指标族 + 缠论都要有代表
     for expected in ("均线", "MACD", "布林带", "KDJ", "RSI", "成交量", "量柱结构", "筹码分布", "缠论"):
         assert expected in families, f"{expected} 未进入候选空间"
+
+
+# ── 指标序列与 K 线的时间对齐 ──────────────────────────────────────────
+
+def test_align_values_by_time_keeps_position_when_rows_are_truncated():
+    """指标行数少于 K 线时，按时间对齐不能让整条序列平移。
+
+    筹码分布曾经只输出 lookback 行（60）却按行序拼进 500 根的时间轴，
+    导致筹码族信号整体错位 440 根。按 time 取则天然对齐，缺的取 None。
+    """
+    from app.services.advisor_service import align_values_by_time
+
+    times = [100, 200, 300, 400, 500]
+    # 指标只覆盖最后两根（模拟缓存裁剪 / lookback 截断）
+    values = [{"time": 400, "average_cost": 40.0}, {"time": 500, "average_cost": 50.0}]
+
+    aligned = align_values_by_time(times, values)
+
+    assert aligned["average_cost"] == [None, None, None, 40.0, 50.0]
+
+
+def test_align_values_by_time_ignores_extra_rows_and_missing_fields():
+    from app.services.advisor_service import align_values_by_time
+
+    times = [100, 200]
+    values = [
+        {"time": 100, "value": 1.0},
+        {"time": 200, "value": 2.0, "extra": 9.0},
+        {"time": 300, "value": 3.0},  # 不在时间轴上，应被丢弃
+    ]
+
+    aligned = align_values_by_time(times, values)
+
+    assert aligned["value"] == [1.0, 2.0]
+    # 只在部分行出现的字段也要补齐长度
+    assert aligned["extra"] == [None, 9.0]
