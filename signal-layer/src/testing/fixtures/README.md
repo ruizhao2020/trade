@@ -27,7 +27,8 @@
 | `signal-evaluate.json` | `POST /api/v1/signal/evaluate`，template 取 `templates.json` 的第一项 |
 | `advisor-run-detail.json` | `GET /api/v1/advisor/runs/{id}`（**已裁剪**：只保留前 8 个候选，完整报文可达数百 KB） |
 
-`indicator-calculate` 的请求体（刻意同时覆盖"样本不足/预热期"与"有值"两种情况）：
+`indicator-calculate` 的请求体（刻意同时覆盖"样本不足/预热期"与"有值"两种情况，
+以及"决策字段 + 渲染字段"两类输出）：
 
 ```json
 {"symbol": "V0", "timeframe": "1d", "kline_limit": 60,
@@ -36,8 +37,13 @@
                 {"type": "bollinger", "params": {"period": 20, "std": 2}},
                 {"type": "rsi", "params": {"period": 14}},
                 {"type": "macd", "params": {"fast": 12, "slow": 26, "signal": 9}},
-                {"type": "kdj", "params": {"n": 9, "m1": 3, "m2": 3}}]}
+                {"type": "kdj", "params": {"n": 9, "m1": 3, "m2": 3}},
+                {"type": "support_resistance", "params": {}},
+                {"type": "liquidity_zone", "params": {}}]}
 ```
+
+**改动这份请求体时，必须同步更新上面的 README 与 `contract.test.ts` 里的断言。**
+照着过期的文档重抓会让新指标从 fixture 里消失，契约测试随即失败。
 
 指标引擎的输出契约是**逐根等长 + 预热期字段为 null**，这份报文把两边都覆盖住：
 
@@ -49,6 +55,8 @@
 | `rsi period=14` | 前 14 行 `null`，下标 14 起有值 |
 | `macd` | `dif` 自下标 25 起有值，`dea`/`histogram` 自下标 33 起有值 |
 | `kdj` | 前 8 行 `null`，下标 8 起有值 |
+| `support_resistance` | 决策字段（`nearest_support` 等）与渲染线 `level_1..level_6`；后者是"当前有效位"的快照，不在 outputs 白名单里 |
+| `liquidity_zone` | 决策字段（`nearest_zone_*`、`sweep_up/down` 等，只描述仍在聚集阶段的区）与**按槽位的方框字段** `zone_{k}_low/high/consumed/swept/swept_from_top`；`zone_{k}_*` 不在 outputs 白名单里，前端按这套命名约定还原方框 |
 
 前端 `IndicatorRenderer` 对线/柱共用同一个 data 数组并过滤 null，
 所以这些 null 行必须能被解析且不报错。

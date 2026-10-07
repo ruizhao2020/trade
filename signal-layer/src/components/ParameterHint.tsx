@@ -1,15 +1,21 @@
 import { createPortal } from 'react-dom'
 import { useEffect, useRef, useState } from 'react'
+import type { ReactNode } from 'react'
 
 interface Props {
   label?: string
-  text: string
+  /** 纯文字说明；需要放图示等结构化内容时改用 children */
+  text?: string
   /** 只显示按钮、不显示 label 文本时，用它提供无障碍名称 */
   ariaLabel?: string
+  /** 弹层内容。给了它就不再显示 text */
+  children?: ReactNode
+  /** 弹层宽度，默认 280（放图示时需要更宽） */
+  width?: number
 }
 
 /** 参数旁的小信息按钮；点击显示说明，点击外部或再次点击关闭。 */
-export function ParameterHint({ label, text, ariaLabel }: Props) {
+export function ParameterHint({ label, text, ariaLabel, children, width = 280 }: Props) {
   const [open, setOpen] = useState(false)
   const [position, setPosition] = useState<{ left: number; top: number }>({ left: 0, top: 0 })
   const rootRef = useRef<HTMLSpanElement>(null)
@@ -22,8 +28,8 @@ export function ParameterHint({ label, text, ariaLabel }: Props) {
     }
     const rect = buttonRef.current?.getBoundingClientRect()
     if (rect) {
-      const width = 280
-      const estimatedHeight = 90
+      // 高度按内容估算：放图示时给足空间，否则图示会被判成"放不下"而向上弹
+      const estimatedHeight = children ? 190 : 90
       const left = Math.min(Math.max(8, rect.left), Math.max(8, window.innerWidth - width - 8))
       const below = rect.bottom + 8
       const top = below + estimatedHeight <= window.innerHeight - 8
@@ -59,10 +65,10 @@ export function ParameterHint({ label, text, ariaLabel }: Props) {
       {open && typeof document !== 'undefined' && createPortal(
         <span
           role="tooltip"
-          style={{ left: position.left, top: position.top }}
-          className="fixed z-[9999] w-[280px] p-3 rounded-lg border border-[var(--border-accent)] bg-[var(--bg-surface)] text-[12px] leading-5 text-[var(--text-secondary)] shadow-2xl"
+          style={{ left: position.left, top: position.top, width }}
+          className="fixed z-[9999] p-3 rounded-lg border border-[var(--border-accent)] bg-[var(--bg-surface)] text-[12px] leading-5 text-[var(--text-secondary)] shadow-2xl block"
         >
-          {text}
+          {children ?? text}
         </span>,
         document.body,
       )}

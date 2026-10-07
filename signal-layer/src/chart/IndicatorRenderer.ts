@@ -26,6 +26,7 @@ import { findProfileSnapshot } from '../core/profileData.ts'
 import { VolumeBoxPrimitive, type VolumeBoxPoint } from './VolumeBoxPrimitive.ts'
 import { PriceProfilePrimitive, type PriceProfilePoint } from './PriceProfilePrimitive.ts'
 import { DilunZonePrimitive, type DilunZoneRegion } from './DilunZonePrimitive.ts'
+import { buildZoneBoxes, fillHeightRatio } from './zoneBoxes.ts'
 
 interface AttachedPrimitive {
   detach: () => void
@@ -96,6 +97,27 @@ export class IndicatorRenderer {
     const series: Array<ISeriesApi<'Line'> | ISeriesApi<'Histogram'>> = []
     const markerPlugins: ISeriesMarkersPluginApi<Time>[] = []
     const primitives: AttachedPrimitive[] = []
+
+    // 流动性聚集区的方框：每个槽位一个框，实线/虚线、填充比例由后端字段决定。
+    // 框的还原逻辑在 zoneBoxes.ts 的纯函数里（可单测），这里只负责挂 primitive。
+    const zoneBoxes = buildZoneBoxes(result.values, render.plots)
+    if (zoneBoxes.length > 0) {
+      const primitive = new DilunZonePrimitive(this.chart, this.candleSeries, zoneBoxes.map((box) => ({
+        id: box.slot,
+        startTime: box.startTime,
+        endTime: box.endTime,
+        low: box.low,
+        high: box.high,
+        foldCount: 1,
+        mature: box.swept,
+        label: box.label,
+        dashed: box.swept,
+        fillRatio: fillHeightRatio(box),
+        fillFromTop: box.fillFromTop,
+      })))
+      this.candleSeries.attachPrimitive(primitive)
+      primitives.push({ detach: () => this.candleSeries.detachPrimitive(primitive) })
+    }
 
     if (result.type === 'dilun_structure') {
       const zones = new Map<number, DilunZoneRegion>()

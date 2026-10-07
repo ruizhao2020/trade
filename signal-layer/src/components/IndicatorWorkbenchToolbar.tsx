@@ -2,6 +2,9 @@ import { useEffect, useMemo, useRef, useState } from 'react'
 import { fetchIndicatorList } from '../api/indicator.ts'
 import type { ChanAnalysis, ChanRenderOptions, IndicatorDisplay, IndicatorInfo } from '../core/types.ts'
 import { getMaPeriodColor, MA_PERIODS } from '../core/indicatorColors.ts'
+import { PARAM_HINTS } from '../core/indicatorHints.ts'
+import { ParameterHint } from './ParameterHint.tsx'
+import { ZoneStateDiagram, ZoneStateSwatch } from './ZoneStateDiagram.tsx'
 import { VOLUME_DOWN_COLOR, VOLUME_UP_COLOR } from '../core/volumeIndicator.ts'
 
 interface Props {
@@ -57,6 +60,21 @@ const PARAM_LABELS: Record<string, string> = {
   bins: '价格档位',
   lookback: '回看天数',
   min_turnover_days: '最少有效天数',
+  // 压力位支撑位 / 流动性聚集区
+  span: '摆动窗口',
+  atr_len: 'ATR周期',
+  min_touches: '最少触碰',
+  max_age_bars: '最长存活根数',
+  tolerance_atr: '聚类容差',
+  touch_separation: '最小触碰间隔',
+  max_levels: '最大线数',
+  recency_half_life: '衰减半衰期',
+  eq_atr: '等高容差',
+  zone_width_atr: '区带厚度',
+  pierce_atr: '穿透门槛',
+  reclaim_bars: '回收窗口',
+  break_bars: '破位根数',
+  max_zones: '最大方框数',
 }
 
 function Toggle({ enabled, label, onClick }: { enabled: boolean; label: string; onClick: () => void }) {
@@ -328,9 +346,26 @@ export function IndicatorWorkbenchToolbar({
                 </span>
               </div>
             )}
+            {activeType === 'liquidity_zone' && (
+              <div className="flex items-center gap-1.5 mr-2 pr-2 border-r border-[var(--border-primary)]">
+                <span className="h-6 px-1.5 rounded border border-[var(--border-primary)] flex items-center gap-1 text-[11px] text-[var(--text-muted)] whitespace-nowrap">
+                  <ZoneStateSwatch state="accumulating" />聚集
+                </span>
+                <span className="h-6 px-1.5 rounded border border-[var(--border-primary)] flex items-center gap-1 text-[11px] text-[var(--text-muted)] whitespace-nowrap">
+                  <ZoneStateSwatch state="swept" />被扫荡
+                </span>
+                <span className="h-6 px-1.5 rounded border border-[var(--border-primary)] flex items-center gap-1 text-[11px] text-[var(--text-muted)] whitespace-nowrap">
+                  <ZoneStateSwatch state="gone" />消失
+                </span>
+                <ParameterHint ariaLabel="聚集区状态图示" width={268}><ZoneStateDiagram /></ParameterHint>
+              </div>
+            )}
             {Object.entries(activeIndicator?.params ?? activeInfo.default_params).map(([key, value]) => (
               <label key={key} className="flex items-center gap-1.5 text-[11px] text-[var(--text-muted)]">
                 {PARAM_LABELS[key] ?? key}
+                {PARAM_HINTS[key] && (
+                  <ParameterHint ariaLabel={`${PARAM_LABELS[key] ?? key}说明`} text={PARAM_HINTS[key]} />
+                )}
                 <input
                   type="number"
                   value={value}

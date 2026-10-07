@@ -28,6 +28,38 @@ INDICATOR_META: dict[str, dict] = {
     "rsi": {"name": "RSI", "description": "相对强弱指标", "default_params": {"period": 14}},
     "bollinger": {"name": "布林带", "description": "Bollinger Bands 通道指标", "default_params": {"period": 20, "std": 2.0}},
     "liquidity_sweep": {"name": "流动性扫荡反转", "description": "基于流动性扫荡+回收的买卖信号指标。识别摆动高低点的止损猎杀，并用 ATR 过滤刺穿深度。", "default_params": {"piv_len": 8, "atr_len": 14}},
+    "liquidity_zone": {
+        "name": "流动性聚集区",
+        "description": "用等高等低（同向摆动枢轴落在 ATR 缩放的容差内）识别流动性聚集区，并跟踪它生成→聚集→被扫荡→消失的过程。图上按时间段画方框：聚集阶段实线，被扫荡后转虚线并按被拿走的比例填充。",
+        "default_params": {
+            "span": 5,
+            "atr_len": 14,
+            "eq_atr": 0.35,
+            "min_touches": 2,
+            "zone_width_atr": 0.5,
+            "pierce_atr": 0.15,
+            "reclaim_bars": 3,
+            "break_bars": 2,
+            "max_age_bars": 250,
+            "max_zones": 4,
+        },
+        # 只列因果的决策字段，且只描述"仍在聚集阶段"的区。
+        # zone_{k}_low/high/consumed/from_top 供前端画方框，依赖"最后一根时该区
+        # 是否还成立"，不是因果序列，因此不进白名单。
+        "outputs": [
+            {"field": "zone_count", "label": "聚集中的区数量"},
+            {"field": "nearest_zone_low", "label": "最近聚集区下沿"},
+            {"field": "nearest_zone_high", "label": "最近聚集区上沿"},
+            {"field": "nearest_zone_touches", "label": "最近聚集区触碰次数"},
+            {"field": "nearest_zone_consumed_pct", "label": "最近聚集区已被拿走比例"},
+            {"field": "nearest_zone_swept", "label": "最近聚集区已被扫荡"},
+            {"field": "price_in_zone", "label": "价格位于聚集区内"},
+            {"field": "distance_to_zone_pct", "label": "距聚集区百分比"},
+            {"field": "sweep_up", "label": "上沿被扫荡"},
+            {"field": "sweep_down", "label": "下沿被扫荡"},
+            {"field": "zone_broken", "label": "聚集区被破位"},
+        ],
+    },
     "support_resistance": {
         "name": "压力位支撑位",
         "description": "用摆动高低点聚类出压力位与支撑位：容差按 ATR 缩放，按触碰次数与时间衰减排重要性。图上把仍有效的位画成水平线段，破位后角色互换（压力变支撑）。",

@@ -189,7 +189,7 @@ export interface ChanRenderOptions {
 /** 单条线的渲染规格 */
 export interface PlotSpec {
   field: string                // 从 values 里取哪个字段(如 "value" / "dif")
-  type: 'line' | 'histogram' | 'marker' | 'profile'  // 线、柱状图、信号标记或价格分布
+  type: 'line' | 'histogram' | 'marker' | 'profile' | 'zone'  // 线、柱状图、信号标记、价格分布或价格带
   color: string
   label: string
 }

@@ -16,6 +16,13 @@ export interface DilunZoneRegion {
   high: number
   foldCount: number
   mature: boolean
+  /** 带上的文字。不传则用帝论的默认文案（该 primitive 最早为帝论结构而写）。 */
+  label?: string
+  /** 虚线边框：被扫荡/失效的区用它区分于仍在聚集的区 */
+  dashed?: boolean
+  /** 已被拿走的比例 0..1，从 fillFromTop 决定的那一侧往里填 */
+  fillRatio?: number
+  fillFromTop?: boolean
 }
 
 class DilunZoneRenderer implements IPrimitivePaneRenderer {
@@ -50,15 +57,29 @@ class DilunZoneRenderer implements IPrimitivePaneRenderer {
 
         context.fillStyle = zone.mature ? 'rgba(155,140,242,0.10)' : 'rgba(108,140,255,0.08)'
         context.fillRect(x, top, width, height)
+
+        // 已消耗比例：从被扫荡的那一侧往里填，表示这块流动性被拿走了多少。
+        // 未消耗（fillRatio 0/未定义）时不画，帝论那套用法也不受影响。
+        const fillRatio = zone.fillRatio === undefined ? 0 : Math.min(Math.max(zone.fillRatio, 0), 1)
+        if (fillRatio > 0) {
+          const fillHeight = Math.max(height * fillRatio, 1)
+          const fillTop = zone.fillFromTop ? top : top + height - fillHeight
+          context.fillStyle = zone.mature ? 'rgba(155,140,242,0.38)' : 'rgba(108,140,255,0.30)'
+          context.fillRect(x, fillTop, width, fillHeight)
+        }
+
         context.strokeStyle = color
         context.lineWidth = 1
+        // 被扫荡的区用虚线边框：一眼区分"还在聚集"与"已经被拿走"
+        if (zone.dashed) context.setLineDash([4, 3])
         context.strokeRect(x, top, width, height)
+        context.setLineDash([])
 
         context.font = '10px sans-serif'
         context.textAlign = 'left'
         context.textBaseline = 'bottom'
         context.fillStyle = color
-        context.fillText(`合理价格 · ${zone.foldCount}折`, x + 4, Math.max(12, top - 3))
+        context.fillText(zone.label ?? `合理价格 · ${zone.foldCount}折`, x + 4, Math.max(12, top - 3))
       }
     })
   }

@@ -193,6 +193,36 @@ describe('指标计算映射', () => {
     expect(mapped!.render.window).toBe('main')
   })
 
+  it('流动性聚集区：按槽位的方框字段与决策字段都能映射', async () => {
+    stubResponse(calculateFixture)
+    const response = await calculateIndicatorsDetailed('V0', '1d', [
+      { type: 'liquidity_zone', params: {} },
+    ], 60)
+
+    const mapped = response.results.find((row) => row.type === 'liquidity_zone')
+    expect(mapped).toBeTruthy()
+    expect(mapped!.values).toHaveLength(60)
+
+    const withZone = mapped!.values.filter((row) => 'nearest_zone_low' in row)
+    expect(withZone.length).toBeGreaterThan(0)
+    expect(typeof withZone[0]!.nearest_zone_low).toBe('number')
+    // 已被拿走比例是 0..100 的百分比，前端条件编辑器直接读它
+    expect(withZone[0]!.nearest_zone_consumed_pct).toBeGreaterThanOrEqual(0)
+    expect(withZone[0]!.nearest_zone_consumed_pct).toBeLessThanOrEqual(100)
+
+    // 每个槽位一个 zone 规格；方框的上下沿/填充/方向由同前缀的兄弟字段给出，
+    // 缺任何一个前端都画不出框（zoneBoxes.ts 按这套约定还原）
+    const zonePlots = mapped!.render.plots.filter((plot) => plot.type === 'zone')
+    expect(zonePlots.length).toBeGreaterThan(0)
+    expect(zonePlots[0]!.field).toBe('zone_1_low')
+    const painted = mapped!.values.find((row) => typeof row.zone_1_low === 'number')
+    expect(painted).toBeTruthy()
+    for (const suffix of ['low', 'high', 'consumed', 'swept', 'swept_from_top']) {
+      expect(`zone_1_${suffix}` in painted!).toBe(true)
+    }
+    expect(mapped!.render.window).toBe('main')
+  })
+
   it('指标列表带出默认参数与渲染描述', async () => {
     stubResponse(indicatorListFixture)
     const indicators = await fetchIndicatorList()

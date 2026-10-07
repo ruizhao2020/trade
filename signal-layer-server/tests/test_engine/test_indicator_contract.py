@@ -249,6 +249,11 @@ INVALID_PARAMS: dict[str, list[dict]] = {
         {"span": 0}, {"span": 101}, {"atr_len": 1}, {"tolerance_atr": 0},
         {"min_touches": 0}, {"max_levels": 0}, {"max_age_bars": 5}, {"recency_half_life": 1},
     ],
+    "liquidity_zone": [
+        {"span": 0}, {"atr_len": 1}, {"eq_atr": 0}, {"min_touches": 0},
+        {"zone_width_atr": 0}, {"pierce_atr": -1}, {"reclaim_bars": 0},
+        {"break_bars": 0}, {"max_age_bars": 5}, {"max_zones": 0},
+    ],
     "chip_distribution": [{"bins": 0}, {"lookback": 0}],
     "dilun_structure": [{"departure_confirm_bars": 0}],
 }
