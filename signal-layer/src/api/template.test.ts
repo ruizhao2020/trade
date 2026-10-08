@@ -34,6 +34,7 @@ describe('strategy persistence serialization', () => {
       tradeParams: {
         stopLossType: 'atr', stopLossValue: 1.5,
         takeProfitType: 'rr_ratio', takeProfitValue: 2,
+        maxHoldBars: 0,
         exitConditions: [group('exit', '动能衰减离场')],
         exitLogic: 'OR',
       },

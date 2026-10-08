@@ -344,6 +344,59 @@ describe('策略模板映射', () => {
     expect(payload.secondary_tfs).toEqual(['15m'])
     expect(payload).not.toHaveProperty('primaryTimeframeId')
   })
+
+  it('读回时把 max_hold_bars 映射成 maxHoldBars', async () => {
+    stubResponse(templatesFixture)
+    const templates = await fetchTemplates()
+
+    const raw = item(rows(templatesFixture)[0])
+    const rawParams = field(raw, 'trade_params') as Record<string, unknown>
+    // 后端把默认值也序列化出来，这里不能是 undefined（否则 UI 输入框会空白）
+    expect(rawParams.max_hold_bars).toBeTypeOf('number')
+    expect(templates[0]!.tradeParams?.maxHoldBars).toBe(rawParams.max_hold_bars)
+  })
+
+  it('缺失 max_hold_bars 的历史报文回退到 0（不限）', () => {
+    const [raw] = rows(templatesFixture) as Array<Record<string, unknown>>
+    const legacy = {
+      ...(raw as Record<string, unknown>),
+      trade_params: { ...(raw!.trade_params as Record<string, unknown>) },
+    }
+    delete (legacy.trade_params as Record<string, unknown>).max_hold_bars
+
+    stubResponse([legacy])
+    return fetchTemplates().then((templates) => {
+      expect(templates[0]!.tradeParams?.maxHoldBars).toBe(0)
+    })
+  })
+
+  it('写回时带上 max_hold_bars（UI 没设置时写 0，不是 undefined）', () => {
+    const base = {
+      id: 'tpl_hold', name: '持仓上限', logic: 'AND' as const,
+      conditionGroups: [], primaryTimeframeId: '1d', secondaryTimeframeIds: [],
+      createdAt: 1, updatedAt: 2, enabled: true,
+    }
+    const withHold = templateToSnake({
+      ...base,
+      tradeParams: {
+        stopLossType: 'none', stopLossValue: 0,
+        takeProfitType: 'none', takeProfitValue: 0,
+        maxHoldBars: 30, exitConditions: [], exitLogic: 'AND',
+      },
+    } as ConditionTemplate)
+    expect(withHold.trade_params?.max_hold_bars).toBe(30)
+
+    // 老模板（字段缺失）不能写出 undefined：后端会当成缺省而静默重置
+    const legacy = templateToSnake({
+      ...base,
+      tradeParams: {
+        stopLossType: 'none', stopLossValue: 0,
+        takeProfitType: 'none', takeProfitValue: 0,
+        exitConditions: [], exitLogic: 'AND',
+      },
+    } as unknown as ConditionTemplate)
+    expect(legacy.trade_params?.max_hold_bars).toBe(0)
+  })
 })
 
 describe('市场与缠论映射', () => {

@@ -13,6 +13,9 @@ class TradeParams(BaseModel):
     # 止盈
     take_profit_type: Literal["none", "atr", "fixed_pct", "rr_ratio"] = "rr_ratio"
     take_profit_value: float = 2.0
+    # 持仓上限：持有超过这么多根主周期 K 线后按收盘价平仓（到期平仓）
+    # 0 = 不限（只按止损/止盈/出场条件结束），默认不限，避免回测悄悄替用户平仓
+    max_hold_bars: int = Field(default=0, ge=0, le=5000)
     # 条件式出场（复用条件组结构，引用指标/价格/缠论做判断）
     exit_conditions: list["ConditionGroupSchema"] = Field(default_factory=list)
     exit_logic: Literal["AND", "OR"] = "AND"

@@ -18,13 +18,13 @@
 | 文件 | 请求 |
 | --- | --- |
 | `auth-me.json` | `GET /api/v1/auth/me` |
-| `templates.json` | `GET /api/v1/templates` |
+| `templates.json` | `GET /api/v1/templates`。每个 `trade_params` 都带 `max_hold_bars`（后端把默认值也序列化出来），契约测试断言它映射到 `maxHoldBars`；把字段删掉应回退到 0（不限），这点也有用例守着 |
 | `markets.json` | `GET /api/v1/symbols/markets` |
 | `indicator-list.json` | `GET /api/v1/indicator/list` |
 | `klines-v0-1d.json` | `GET /api/v1/klines/V0?timeframe=1d&limit=5` |
 | `chan-v0-1d.json` | `GET /api/v1/chan/V0/1d?limit=10` |
 | `indicator-calculate.json` | `POST /api/v1/indicator/calculate`，body 见下 |
-| `signal-evaluate.json` | `POST /api/v1/signal/evaluate`，template 取 `templates.json` 的第一项 |
+| `signal-evaluate.json` | `POST /api/v1/signal/evaluate`，template 用 `templates.json` 里的建议模板（id 形如 `advisor_volume:*`） |
 | `advisor-run-detail.json` | `GET /api/v1/advisor/runs/{id}`（**已裁剪**：只保留前 8 个候选，完整报文可达数百 KB） |
 
 `indicator-calculate` 的请求体（刻意同时覆盖"样本不足/预热期"与"有值"两种情况，

@@ -14,6 +14,62 @@ import { useAppStore } from '../store/useAppStore.ts'
 import { createTemplate, updateTemplate } from '../api/template.ts'
 import { fetchIndicatorList } from '../api/indicator.ts'
 import type { ConditionTemplate, ConditionGroup, IndicatorInfo, TradeParams } from '../core/types.ts'
+
+type TradeParamType = TradeParams['stopLossType'] | TradeParams['takeProfitType']
+interface TradeParamOption {
+  type: TradeParamType
+  value: number
+  label: string
+  /** 盈亏比止盈依赖已开启的止损 */
+  requiresStopLoss?: boolean
+}
+
+const STOP_LOSS_OPTIONS: TradeParamOption[] = [
+  { type: 'none', value: 0, label: '关闭' },
+  { type: 'atr', value: 2, label: '平均真实波幅 × 2.0' },
+  { type: 'atr', value: 1.5, label: '平均真实波幅 × 1.5' },
+  { type: 'atr', value: 3, label: '平均真实波幅 × 3.0' },
+  { type: 'fixed_pct', value: 5, label: '固定跌幅 5%' },
+  { type: 'fixed_pct', value: 8, label: '固定跌幅 8%' },
+  { type: 'swing_low', value: 0, label: '近期低点' },
+]
+
+const TAKE_PROFIT_OPTIONS: TradeParamOption[] = [
+  { type: 'none', value: 0, label: '关闭' },
+  { type: 'rr_ratio', value: 2, label: '盈亏比 1:2', requiresStopLoss: true },
+  { type: 'rr_ratio', value: 3, label: '盈亏比 1:3', requiresStopLoss: true },
+  { type: 'rr_ratio', value: 1.5, label: '盈亏比 1:1.5', requiresStopLoss: true },
+  { type: 'fixed_pct', value: 10, label: '固定涨幅 10%' },
+  { type: 'fixed_pct', value: 20, label: '固定涨幅 20%' },
+  { type: 'atr', value: 3, label: '平均真实波幅 × 3.0' },
+]
+
+/**
+ * 选项值统一由 type 与数值生成。
+ *
+ * 之前两边各写各的：选中值是 `${type}:${value}`（"atr:2"），选项却写成 value="atr:2.0"，
+ * 于是凡是整数取值（2.0 / 3.0）都匹配不上任何选项，浏览器退回到第一个选项
+ * ——界面上显示成「关闭」，而实际保存的是「平均真实波幅 × 2.0」。用户看到的和存下来的不一致。
+ */
+function tradeOptionKey(type: string, value: number): string {
+  return `${type}:${Number(value)}`
+}
+
+/** 当前取值对应的预设选项；不在预设里时返回 null，由界面补一个如实回显的选项。 */
+function findTradeOption(options: TradeParamOption[], type: string, value: number): TradeParamOption | null {
+  return options.find((option) => option.type === type && Number(option.value) === Number(value)) ?? null
+}
+
+const STOP_LOSS_UNIT: Record<string, string> = { atr: ' 倍平均真实波幅', fixed_pct: '%', swing_low: ' 近期低点' }
+const TAKE_PROFIT_UNIT: Record<string, string> = { rr_ratio: ' 倍盈亏比', fixed_pct: '%', atr: ' 倍平均真实波幅' }
+
+/** 当前取值的可读描述，用于"不在预设中"的回显项。 */
+function describeTradeParam(type: string, value: number, units: Record<string, string>): string {
+  if (type === 'none') return '关闭'
+  const unit = units[type] ?? ''
+  return `${value}${unit}`
+}
+
 import { SUPPORTED_TIMEFRAME_IDS, isFinerTimeframe, isSupportedTimeframeId, timeframeLabel } from '../core/constants.ts'
 import type { SupportedTimeframeId } from '../core/constants.ts'
 import { ConditionGroupEditor } from './ConditionGroupEditor.tsx'
@@ -74,10 +130,18 @@ export function TemplateEditor({ template, onClose }: Props) {
     ))
   }
   // 止损/止盈/仓位（不含条件式出场，后者独立管理）
-  const [tradeParams, setTradeParams] = useState<Omit<TradeParams, 'exitConditions' | 'exitLogic'>>(template?.tradeParams ?? {
-    stopLossType: 'atr', stopLossValue: 2.0,
-    takeProfitType: 'rr_ratio', takeProfitValue: 2.0,
-  })
+  // 老模板可能没有 maxHoldBars 字段，缺省按「不限」处理
+  const initialTradeParams = template?.tradeParams
+  const [tradeParams, setTradeParams] = useState<Omit<TradeParams, 'exitConditions' | 'exitLogic'>>(
+    initialTradeParams
+      ? { ...initialTradeParams, maxHoldBars: initialTradeParams.maxHoldBars ?? 0 }
+      : {
+        stopLossType: 'atr', stopLossValue: 2.0,
+        takeProfitType: 'rr_ratio', takeProfitValue: 2.0,
+        // 持仓上限默认不限：回测不该在用户没设的情况下悄悄替他把仓位平掉
+        maxHoldBars: 0,
+      },
+  )
   // 入场条件
   const [groups, setGroups] = useState<ConditionGroup[]>(template?.conditionGroups ?? [])
   // 条件式出场
@@ -234,7 +298,7 @@ export function TemplateEditor({ template, onClose }: Props) {
             <div className="grid grid-cols-1 md:grid-cols-2 gap-5">
               <div>
                 <label className="text-[11px] text-[var(--text-muted)] block mb-1.5"><ParameterHint label="止损" text="当持仓价格向不利方向达到设定条件时退出。选择关闭表示回测不触发止损。" /></label>
-                <select value={`${tradeParams.stopLossType}:${tradeParams.stopLossValue}`}
+                <select value={tradeOptionKey(tradeParams.stopLossType, tradeParams.stopLossValue)}
                   onChange={e => {
                     const [t, v] = e.target.value.split(':')
                     const stopLossType = t as TradeParams['stopLossType']
@@ -249,32 +313,73 @@ export function TemplateEditor({ template, onClose }: Props) {
                   }}
                   className="w-full h-10 bg-[var(--bg-tertiary)] text-[12px] text-[var(--text-primary)] px-3 rounded-lg border border-[var(--border-primary)] outline-none focus:border-[var(--accent)] appearance-none"
                   style={{ backgroundImage: selectArrow, backgroundRepeat: 'no-repeat', backgroundPosition: 'right 8px center', backgroundSize: '8px 5px', paddingRight: '26px' }}>
-                  <option value="none:0">关闭</option>
-                  <option value="atr:2.0">平均真实波幅 × 2.0</option>
-                  <option value="atr:1.5">平均真实波幅 × 1.5</option>
-                  <option value="atr:3.0">平均真实波幅 × 3.0</option>
-                  <option value="fixed_pct:5">固定跌幅 5%</option>
-                  <option value="fixed_pct:8">固定跌幅 8%</option>
-                  <option value="swing_low:0">近期低点</option>
+                  {STOP_LOSS_OPTIONS.map(option => (
+                    <option key={tradeOptionKey(option.type, option.value)} value={tradeOptionKey(option.type, option.value)}>
+                      {option.label}
+                    </option>
+                  ))}
+                  {/* 取值不在预设里（历史数据/手工改过）：如实回显，不能退回第一个选项显示成"关闭" */}
+                  {!findTradeOption(STOP_LOSS_OPTIONS, tradeParams.stopLossType, tradeParams.stopLossValue) && (
+                    <option value={tradeOptionKey(tradeParams.stopLossType, tradeParams.stopLossValue)}>
+                      当前设置：{describeTradeParam(tradeParams.stopLossType, tradeParams.stopLossValue, STOP_LOSS_UNIT)}
+                    </option>
+                  )}
                 </select>
               </div>
               <div>
                 <label className="text-[11px] text-[var(--text-muted)] block mb-1.5"><ParameterHint label="止盈" text="当持仓价格向有利方向达到设定条件时退出。选择关闭表示回测不触发止盈。盈亏比止盈依赖已开启的止损。" /></label>
-                <select value={`${tradeParams.takeProfitType}:${tradeParams.takeProfitValue}`}
+                <select value={tradeOptionKey(tradeParams.takeProfitType, tradeParams.takeProfitValue)}
                   onChange={e => {
                     const [t, v] = e.target.value.split(':')
                     setTradeParams({ ...tradeParams, takeProfitType: t as TradeParams['takeProfitType'], takeProfitValue: parseFloat(v) })
                   }}
                   className="w-full h-10 bg-[var(--bg-tertiary)] text-[12px] text-[var(--text-primary)] px-3 rounded-lg border border-[var(--border-primary)] outline-none focus:border-[var(--accent)] appearance-none"
                   style={{ backgroundImage: selectArrow, backgroundRepeat: 'no-repeat', backgroundPosition: 'right 8px center', backgroundSize: '8px 5px', paddingRight: '26px' }}>
-                  <option value="none:0">关闭</option>
-                  <option value="rr_ratio:2.0" disabled={tradeParams.stopLossType === 'none'}>盈亏比 1:2</option>
-                  <option value="rr_ratio:3.0" disabled={tradeParams.stopLossType === 'none'}>盈亏比 1:3</option>
-                  <option value="rr_ratio:1.5" disabled={tradeParams.stopLossType === 'none'}>盈亏比 1:1.5</option>
-                  <option value="fixed_pct:10">固定涨幅 10%</option>
-                  <option value="fixed_pct:20">固定涨幅 20%</option>
-                  <option value="atr:3.0">平均真实波幅 × 3.0</option>
+                  {TAKE_PROFIT_OPTIONS.map(option => (
+                    <option
+                      key={tradeOptionKey(option.type, option.value)}
+                      value={tradeOptionKey(option.type, option.value)}
+                      disabled={option.requiresStopLoss === true && tradeParams.stopLossType === 'none'}
+                    >
+                      {option.label}
+                    </option>
+                  ))}
+                  {!findTradeOption(TAKE_PROFIT_OPTIONS, tradeParams.takeProfitType, tradeParams.takeProfitValue) && (
+                    <option value={tradeOptionKey(tradeParams.takeProfitType, tradeParams.takeProfitValue)}>
+                      当前设置：{describeTradeParam(tradeParams.takeProfitType, tradeParams.takeProfitValue, TAKE_PROFIT_UNIT)}
+                    </option>
+                  )}
                 </select>
+              </div>
+            </div>
+
+            <div className="mt-5 grid grid-cols-1 md:grid-cols-2 gap-5">
+              <div>
+                <label className="text-[11px] text-[var(--text-muted)] block mb-1.5">
+                  <ParameterHint
+                    label="持仓上限"
+                    text="持有超过设定的K线根数后，按当根K线收盘价到期平仓。0 表示不限，只由止损/止盈/出场条件决定何时卖出。"
+                  />
+                </label>
+                <input
+                  type="number"
+                  min={0}
+                  max={5000}
+                  step={1}
+                  aria-label="持仓上限"
+                  value={tradeParams.maxHoldBars ?? 0}
+                  onChange={e => {
+                    const raw = Number.parseInt(e.target.value, 10)
+                    const next = Number.isFinite(raw) ? Math.min(5000, Math.max(0, raw)) : 0
+                    setTradeParams({ ...tradeParams, maxHoldBars: next })
+                  }}
+                  className="w-full h-10 bg-[var(--bg-tertiary)] text-[12px] text-[var(--text-primary)] px-3 rounded-lg border border-[var(--border-primary)] outline-none focus:border-[var(--accent)]"
+                />
+                <p className="mt-1.5 text-[10px] text-[var(--text-muted)]">
+                  {tradeParams.maxHoldBars > 0
+                    ? `持仓满 ${tradeParams.maxHoldBars} 根K线仍未出场时按收盘价平仓`
+                    : '不限 · 不设置到期平仓'}
+                </p>
               </div>
             </div>
 

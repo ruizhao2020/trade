@@ -1,7 +1,7 @@
 import { describe, expect, it } from 'vitest'
 import type { BacktestResult } from '../api/signal.ts'
 import type { RawKline } from './types.ts'
-import { buildStrategyTradeMarkerResult } from './strategyMarkers.ts'
+import { EXIT_REASON_LABEL, buildStrategyTradeMarkerResult } from './strategyMarkers.ts'
 
 function kline(time: string): RawKline {
   return { openTime: Date.parse(time), open: 1, high: 2, low: 0.5, close: 1.5, volume: 100, isClosed: true }
@@ -39,7 +39,7 @@ describe('strategy trade chart markers', () => {
     const values = buildStrategyTradeMarkerResult(result, '1d', klines)[0]!.values
     expect(values).toEqual([
       { time: klines[0]!.openTime, _trade: 1, _tradeIndex: 0 },
-      { time: klines[1]!.openTime, _trade: -1, _tradeIndex: 0 },
+      { time: klines[1]!.openTime, _trade: -1, _tradeIndex: 0, _tradeExitTag: 4 },
     ])
   })
 
@@ -53,7 +53,7 @@ describe('strategy trade chart markers', () => {
     const values = buildStrategyTradeMarkerResult(result, '30m', klines)[0]!.values
     expect(values).toEqual([
       { time: klines[0]!.openTime, _trade: 1, _tradeIndex: 0 },
-      { time: klines[3]!.openTime, _trade: -1, _tradeIndex: 0 },
+      { time: klines[3]!.openTime, _trade: -1, _tradeIndex: 0, _tradeExitTag: 4 },
     ])
   })
 
@@ -95,15 +95,18 @@ describe('strategy trade chart markers', () => {
     ]
     expect(buildStrategyTradeMarkerResult(secondResult, '1d', klines)[0]!.values).toEqual([
       { time: klines[0]!.openTime, _trade: 1, _tradeIndex: 0 },
-      { time: klines[1]!.openTime, _trade: -1, _tradeIndex: 0 },
+      { time: klines[1]!.openTime, _trade: -1, _tradeIndex: 0, _tradeExitTag: 4 },
       { time: klines[2]!.openTime, _trade: 1, _tradeIndex: 1 },
-      { time: klines[3]!.openTime, _trade: -1, _tradeIndex: 1 },
+      { time: klines[3]!.openTime, _trade: -1, _tradeIndex: 1, _tradeExitTag: 4 },
     ])
   })
 
+  // 到期平仓（timeout）以前在图上是没有来由的「策略卖」：它必须和止损/止盈一样带原因。
   it.each([
     ['stop_loss', 1, '止损'],
     ['take_profit', 2, '止盈'],
+    ['timeout', 3, '到期平仓'],
+    ['condition', 4, '条件平仓'],
   ])('tags only the exit side of a %s trade', (exitReason, exitTag, tagLabel) => {
     const riskResult: BacktestResult = {
       ...result,
@@ -123,5 +126,25 @@ describe('strategy trade chart markers', () => {
       labelTagField: '_tradeExitTag',
       labelTags: { [exitTag]: tagLabel },
     })
+  })
+
+  it('四种出场原因都有中文文案，且图上标签与交易明细共用同一份映射', () => {
+    // 交易明细用的是 EXIT_REASON_LABEL[trade.exitReason]，图上用的是 labelTags：
+    // 两者必须是同一份数据，否则同一个原因在两处会写成不同的话。
+    expect(EXIT_REASON_LABEL).toEqual({
+      stop_loss: '止损',
+      take_profit: '止盈',
+      timeout: '到期平仓',
+      condition: '条件平仓',
+    })
+
+    const marker = buildStrategyTradeMarkerResult(result, '1d', [
+      kline('2026-09-01T00:00:00+08:00'),
+      kline('2026-09-02T00:00:00+08:00'),
+    ])[0]!.render.markers![0]!
+    expect(Object.values(marker.labelTags!)).toEqual(Object.values(EXIT_REASON_LABEL))
+    // 没有原因代码的出场（后端新增了原因，前端还没跟上）在图上退化成不带后缀的「策略卖」，
+    // 不能凭空显示一个错的标签。
+    expect(marker.labelTags![99]).toBeUndefined()
   })
 })

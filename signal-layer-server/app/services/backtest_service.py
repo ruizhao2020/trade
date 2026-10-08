@@ -122,12 +122,11 @@ class BacktestService:
 
             if in_position:
                 bars_held = i - entry_bar
-                condition_only = (
-                    tp.stop_loss_type == "none"
-                    and tp.take_profit_type == "none"
-                    and bool(tp.exit_conditions)
-                )
-                if bars_held > 100 and not condition_only:
+                # 到期平仓：只有显式配置了持仓上限才生效（0 = 不限）。
+                # 以前这里写死 100 根、并且对"止损止盈关闭 + 有出场条件"额外豁免，
+                # 导致同样的"关闭"设置在不同配置下行为不同、界面上也看不到这条规则。
+                max_hold_bars = int(getattr(tp, "max_hold_bars", 0) or 0)
+                if max_hold_bars > 0 and bars_held > max_hold_bars:
                     pnl = (closes[i] - entry_price) / entry_price * 100
                     trades.append(TradeRecord(
                         entry_time=int(klines[entry_bar]["open_time"]),

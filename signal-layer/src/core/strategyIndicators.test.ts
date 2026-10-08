@@ -52,6 +52,7 @@ function template(entry: ConditionGroup[], exit: ConditionGroup[] = []): Conditi
       takeProfitType: 'rr_ratio', takeProfitValue: 2,
       exitConditions: exit,
       exitLogic: 'OR',
+      maxHoldBars: 0,
     },
   }
 }

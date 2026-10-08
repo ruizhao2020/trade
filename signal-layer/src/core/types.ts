@@ -298,6 +298,8 @@ export interface TradeParams {
   stopLossValue: number
   takeProfitType: 'none' | 'atr' | 'fixed_pct' | 'rr_ratio'
   takeProfitValue: number
+  /** 持仓上限（根）：超过后按收盘价到期平仓。0 = 不限 */
+  maxHoldBars: number
   // 条件式出场：复用条件组结构，引用指标/价格/缠论做判断
   exitConditions: ConditionGroup[]
   exitLogic: 'AND' | 'OR'

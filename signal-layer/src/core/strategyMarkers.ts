@@ -27,10 +27,26 @@ function resolveMarkerTime(
   return side === 'entry' ? sameDay[0]!.openTime : sameDay.at(-1)!.openTime
 }
 
+/**
+ * 出场原因 → 展示文案。
+ *
+ * 图上的标记统一叫「策略卖」，只有带上原因后缀才解释得清"它为什么平仓"——
+ * 之前只映射了止损/止盈，于是"到期平仓"在图上看就是一个没有来由的「策略卖」。
+ */
+export const EXIT_REASON_LABEL: Record<string, string> = {
+  stop_loss: '止损',
+  take_profit: '止盈',
+  timeout: '到期平仓',
+  condition: '条件平仓',
+}
+
+/** 标记上的原因后缀代码（对应下面 markers 的 labelTags）。 */
+const EXIT_REASON_TAG: Record<string, number> = {
+  stop_loss: 1, take_profit: 2, timeout: 3, condition: 4,
+}
+
 function riskExitTag(exitReason: string): number | undefined {
-  if (exitReason === 'stop_loss') return 1
-  if (exitReason === 'take_profit') return 2
-  return undefined
+  return EXIT_REASON_TAG[exitReason]
 }
 
 /** 将真实回测交易转换成图表买卖标记，并映射到当前图表周期。 */
@@ -71,7 +87,7 @@ export function buildStrategyTradeMarkerResult(
         field: '_trade',
         labelIndexField: '_tradeIndex',
         labelTagField: '_tradeExitTag',
-        labelTags: { 1: '止损', 2: '止盈' },
+        labelTags: Object.fromEntries(Object.entries(EXIT_REASON_TAG).map(([reason, tag]) => [tag, EXIT_REASON_LABEL[reason]!])),
         size: 1.25,
         spacing: 1.5,
         // 使用界面已有的蓝色与橙色强调色，避免与红/绿 K 线冲突。

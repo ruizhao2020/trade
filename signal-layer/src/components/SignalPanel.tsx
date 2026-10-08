@@ -13,6 +13,7 @@ import { evaluateSignal, runBacktest } from '../api/signal.ts'
 import type { BacktestResult } from '../api/signal.ts'
 import { LayerControls } from './LayerControls.tsx'
 import { TemplateEditor } from './TemplateEditor.tsx'
+import { EXIT_REASON_LABEL } from '../core/strategyMarkers.ts'
 import { SECONDARY_TIMEFRAME, conditionTimeframeLabel, timeframeLabel } from '../core/constants.ts'
 
 const STATE_LABEL: Record<string, string> = {
@@ -336,6 +337,11 @@ export function SignalPanel({ symbol = '', embedded = false, showLayers = true, 
           <div className="grid grid-cols-2 gap-px overflow-hidden rounded-md bg-[var(--border-primary)]">
             <div className="bg-[var(--bg-tertiary)] p-2"><span className="block text-[11px] text-[var(--text-muted)]">止损</span><span className="block mt-1 text-[11px] font-mono">{activeTemplate.tradeParams.stopLossType === 'none' ? '关闭' : `${activeTemplate.tradeParams.stopLossValue}${STOP_LOSS_UNIT[activeTemplate.tradeParams.stopLossType] ?? ''}`}</span></div>
             <div className="bg-[var(--bg-tertiary)] p-2"><span className="block text-[11px] text-[var(--text-muted)]">止盈</span><span className="block mt-1 text-[11px] font-mono">{activeTemplate.tradeParams.takeProfitType === 'none' ? '关闭' : `${activeTemplate.tradeParams.takeProfitValue}${TAKE_PROFIT_UNIT[activeTemplate.tradeParams.takeProfitType] ?? ''}`}</span></div>
+            {/* 持仓上限也要显示：止损止盈都关掉时它仍然会平仓，不能被藏起来 */}
+            <div className="col-span-2 bg-[var(--bg-tertiary)] p-2 flex items-center justify-between">
+              <span className="text-[11px] text-[var(--text-muted)]">持仓上限</span>
+              <span className="text-[11px] font-mono">{(activeTemplate.tradeParams.maxHoldBars ?? 0) > 0 ? `${activeTemplate.tradeParams.maxHoldBars} 根K线到期平仓` : '不限'}</span>
+            </div>
           </div>
         ) : <div className="text-[11px] text-[var(--text-muted)]">未配置风控参数</div>}
 
@@ -393,7 +399,7 @@ export function SignalPanel({ symbol = '', embedded = false, showLayers = true, 
             <div className="rounded-md bg-[rgba(108,140,255,.10)] border border-[rgba(108,140,255,.22)] p-2.5"><span className="block text-[11px] text-[var(--text-muted)]">凯利建议仓位</span><span className="block mt-1 text-[15px] font-mono text-[var(--accent)]">{backtestResult.suggestedPosition}%</span></div>
           </div>
           <div className="mt-2 text-[11px] leading-4 text-[var(--text-muted)]">建议仓位 = 胜率 −（1 − 胜率）÷ 平均盈亏比；仅基于本次历史样本。</div>
-          {backtestResult.trades.length > 0 && <div className="mt-4"><div className="text-[11px] font-semibold mb-2">交易明细</div>{backtestResult.trades.map((trade, index) => <div key={`${trade.entryTime}-${index}`} className="grid grid-cols-[24px_1fr_auto] gap-2 py-2 border-b border-[var(--border-primary)] text-[11px]"><span className="text-[var(--text-muted)]">#{index + 1}</span><span className="font-mono text-[var(--text-secondary)]">{trade.entryPrice} → {trade.exitPrice}</span><span className={`font-mono ${financialValueColorClass(trade.pnlPct)}`}>{trade.pnlPct >= 0 ? '+' : ''}{trade.pnlPct}%</span></div>)}</div>}
+          {backtestResult.trades.length > 0 && <div className="mt-4"><div className="text-[11px] font-semibold mb-2">交易明细</div>{backtestResult.trades.map((trade, index) => <div key={`${trade.entryTime}-${index}`} className="grid grid-cols-[24px_1fr_auto_auto] gap-2 py-2 border-b border-[var(--border-primary)] text-[11px]"><span className="text-[var(--text-muted)]">#{index + 1}</span><span className="font-mono text-[var(--text-secondary)]">{trade.entryPrice} → {trade.exitPrice}</span><span className="text-[var(--text-muted)]">{EXIT_REASON_LABEL[trade.exitReason] ?? trade.exitReason}</span><span className={`font-mono ${financialValueColorClass(trade.pnlPct)}`}>{trade.pnlPct >= 0 ? '+' : ''}{trade.pnlPct}%</span></div>)}</div>}
           <button type="button" onClick={handleBacktest} disabled={!symbol} className="w-full h-9 mt-4 rounded-md bg-[var(--accent)] text-white text-[11px] font-medium disabled:opacity-40">重新回测</button>
         </>
       )}

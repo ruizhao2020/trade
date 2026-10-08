@@ -49,6 +49,7 @@ interface ApiTemplate {
     stop_loss_value: number
     take_profit_type: 'none' | 'atr' | 'fixed_pct' | 'rr_ratio'
     take_profit_value: number
+    max_hold_bars?: number
     exit_conditions: ApiConditionGroup[]
     exit_logic: 'AND' | 'OR'
   }
@@ -161,6 +162,7 @@ export function templateToSnake(t: ConditionTemplate): ApiTemplate {
       stop_loss_value: t.tradeParams.stopLossValue,
       take_profit_type: t.tradeParams.takeProfitType,
       take_profit_value: t.tradeParams.takeProfitValue,
+      max_hold_bars: t.tradeParams.maxHoldBars ?? 0,
       exit_conditions: t.tradeParams.exitConditions.map((group) => ({
         id: group.id,
         name: group.name,
@@ -205,6 +207,7 @@ function templateFromSnake(t: ApiTemplate): ConditionTemplate {
       stopLossValue: t.trade_params.stop_loss_value,
       takeProfitType: t.trade_params.take_profit_type,
       takeProfitValue: t.trade_params.take_profit_value,
+      maxHoldBars: t.trade_params.max_hold_bars ?? 0,
       exitConditions: (t.trade_params.exit_conditions ?? []).map((group) => ({
         id: group.id,
         name: group.name,
