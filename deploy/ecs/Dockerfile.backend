@@ -1,0 +1,54 @@
+# ============================================================================
+# 后端镜像（FastAPI + akshare）
+# ============================================================================
+#
+# 构建上下文必须是**仓库根目录**（要同时拿到 signal-layer-server 的代码和
+# deploy/ecs 下的配置）：
+#
+#   docker build -f deploy/ecs/Dockerfile.backend -t signal-layer-backend .
+#
+# 依赖来源只有 pyproject.toml 一处。仓库里没有 poetry.lock，所以构建时按
+# ^ 约束解析版本；要锁死版本就把 lock 文件一并提交并在下面改成 `poetry install --sync`。
+
+FROM python:3.12-slim
+
+ENV PYTHONUNBUFFERED=1 \
+    PYTHONDONTWRITEBYTECODE=1 \
+    PIP_NO_CACHE_DIR=1 \
+    POETRY_VERSION=1.8.5 \
+    POETRY_VIRTUALENVS_CREATE=false
+
+# curl 用于容器健康检查；akshare 的依赖在 x86_64/aarch64 上都有 wheel，
+# 不需要编译器工具链，装完即删 apt 缓存控制体积。
+RUN apt-get update \
+    && apt-get install -y --no-install-recommends curl tzdata \
+    && rm -rf /var/lib/apt/lists/* \
+    && ln -snf /usr/share/zoneinfo/Asia/Shanghai /etc/localtime
+
+WORKDIR /app
+
+RUN pip install "poetry==${POETRY_VERSION}"
+
+# 只装运行时依赖，不装本包（源码直接跑，不需要 pip install -e）
+COPY signal-layer-server/pyproject.toml ./
+# 没有 poetry.lock 时先 lock 再装；将来把 lock 文件提交进来后这里会原样复用
+# （poetry 2.x 去掉了 --no-update，届时改成 `poetry install --only main --no-root`）
+RUN poetry lock --no-update && poetry install --only main --no-root
+
+# PyMySQL 只在 rsa extra 里声明 cryptography，而 MySQL 8 默认用
+# caching_sha2_password：非 TLS 连接下的完整认证必须有它，否则后端根本连不上库。
+# 本地能跑是因为 akshare 间接带了它，镜像里显式装一次，别依赖这个巧合。
+RUN pip install "cryptography>=42"
+
+COPY signal-layer-server/app ./app
+# 建表脚本：首次启动 MySQL 时由 mysql 容器的初始化钩子执行，
+# 后端自己也会 create_all + 补列，这里带上是为了排障时能直接查 schema。
+COPY signal-layer-server/database ./database
+
+EXPOSE 8000
+
+# --proxy-headers：让 FastAPI 看到的是 nginx 转发的真实客户端 IP/协议。
+# 单进程：WS 连接表（ConnectionManager）在进程内，多 worker 之间不会共享。
+# 需要提并发时先加 --workers 之外的方案（例如把 WS 拆出去），不要盲加 worker。
+CMD ["uvicorn", "app.main:app", "--host", "0.0.0.0", "--port", "8000", \
+     "--proxy-headers", "--forwarded-allow-ips", "*"]

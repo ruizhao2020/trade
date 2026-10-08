@@ -1,0 +1,120 @@
+# ============================================================================
+# ECS 单机部署（nginx + backend + mysql + redis + certbot）
+# ============================================================================
+#
+# 在仓库根目录执行：
+#   cp deploy/ecs/.env.example deploy/ecs/.env   # 然后按注释改成自己的值
+#   docker compose -f deploy/ecs/docker-compose.yml --env-file deploy/ecs/.env up -d --build
+#
+# 首次部署请按 deploy/ecs/README.md 的顺序来（要先单独签发证书再起 nginx）。
+#
+# 端口暴露策略：只有 nginx 的 80/443 对公网开放；后端只绑到回环（方便 SSH 隧道看
+# Swagger），MySQL/Redis 完全不对外发布。
+
+name: signal-layer
+
+services:
+  mysql:
+    image: mysql:8.4
+    restart: unless-stopped
+    environment:
+      MYSQL_ROOT_PASSWORD: ${MYSQL_ROOT_PASSWORD:?deploy/ecs/.env 缺少 MYSQL_ROOT_PASSWORD}
+      MYSQL_DATABASE: ${SIGNAL_MYSQL_DATABASE:-signal_layer}
+      MYSQL_USER: ${SIGNAL_MYSQL_USER:?deploy/ecs/.env 缺少 SIGNAL_MYSQL_USER}
+      MYSQL_PASSWORD: ${SIGNAL_MYSQL_PASSWORD:?deploy/ecs/.env 缺少 SIGNAL_MYSQL_PASSWORD}
+      TZ: Asia/Shanghai
+    command: --character-set-server=utf8mb4 --collation-server=utf8mb4_unicode_ci
+    volumes:
+      - mysql_data:/var/lib/mysql
+      # 这两个 SQL 只在数据目录为空时执行（建表 + 权限种子）。
+      # 注意 002 是行情参考表，之前 dev 的 compose 漏了它。
+      - ../../signal-layer-server/database/mysql/001_app_schema.sql:/docker-entrypoint-initdb.d/001_app_schema.sql:ro
+      - ../../signal-layer-server/database/mysql/002_market_reference_schema.sql:/docker-entrypoint-initdb.d/002_market_reference_schema.sql:ro
+      - ../../signal-layer-server/database/mysql/010_access_control_seed.sql:/docker-entrypoint-initdb.d/010_access_control_seed.sql:ro
+    healthcheck:
+      test: ["CMD", "mysqladmin", "ping", "-h", "127.0.0.1", "-uroot", "-p${MYSQL_ROOT_PASSWORD}"]
+      interval: 10s
+      timeout: 5s
+      retries: 12
+      start_period: 60s
+    networks: [internal]
+
+  redis:
+    image: redis:7-alpine
+    restart: unless-stopped
+    command: redis-server --appendonly yes
+    volumes:
+      - redis_data:/data
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 10s
+      timeout: 3s
+      retries: 5
+    networks: [internal]
+
+  backend:
+    build:
+      context: ../..
+      dockerfile: deploy/ecs/Dockerfile.backend
+    restart: unless-stopped
+    env_file:
+      - .env
+    depends_on:
+      mysql:
+        condition: service_healthy
+      redis:
+        condition: service_started
+    ports:
+      # 只绑回环：从笔记本上看 Swagger/日志用 SSH 隧道（见 README），公网访问不到
+      - "127.0.0.1:8000:8000"
+    volumes:
+      # 后端在 MySQL 连不上时会回退到 SQLite（data/），挂出来便于排障时取证
+      - backend_data:/app/data
+    healthcheck:
+      test: ["CMD", "curl", "-fsS", "http://127.0.0.1:8000/health"]
+      interval: 15s
+      timeout: 5s
+      retries: 10
+      # 首次启动要连库、建表、预热行情，给足时间
+      start_period: 120s
+    networks: [internal]
+
+  nginx:
+    build:
+      context: ../..
+      dockerfile: deploy/ecs/Dockerfile.frontend
+    restart: unless-stopped
+    depends_on:
+      - backend
+    ports:
+      - "80:80"
+      - "443:443"
+    volumes:
+      - letsencrypt:/etc/letsencrypt:ro
+      - acme:/var/www/acme:ro
+    healthcheck:
+      test: ["CMD", "wget", "-qO-", "http://127.0.0.1/healthz"]
+      interval: 30s
+      timeout: 5s
+      retries: 3
+    networks: [internal]
+
+  certbot:
+    image: certbot/certbot:latest
+    restart: unless-stopped
+    volumes:
+      - letsencrypt:/etc/letsencrypt
+      - acme:/var/www/acme
+    # 每 12 小时尝试续期一次；证书到期前 30 天才真正续，正常情况是空操作
+    entrypoint: /bin/sh -c 'trap exit TERM; while :; do certbot renew --webroot -w /var/www/acme --quiet; sleep 12h & wait $${!}; done'
+    networks: [internal]
+
+volumes:
+  mysql_data:
+  redis_data:
+  backend_data:
+  letsencrypt:
+  acme:
+
+networks:
+  internal:

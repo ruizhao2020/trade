@@ -7,6 +7,7 @@ Monorepo with two apps (a stock/futures trading-signal platform) plus supporting
 - `signal-layer/` — React 19 + Vite 8 + TypeScript + Tailwind CSS v4 frontend. ONE codebase, TWO entrypoints.
 - `signal-layer-server/` — Python 3.12 FastAPI backend (Poetry; MySQL + Redis + akshare).
 - `deploy/k8s/` — Kubernetes manifests for the dual-entry frontend build.
+- `deploy/ecs/` — single-server Docker Compose deploy (nginx + FastAPI + MySQL + Redis + certbot) serving two hostnames: public site and private site. See `deploy/ecs/README.md`. Its two Dockerfiles use the REPO ROOT as build context (so the root `.dockerignore` applies); the frontend build in `signal-layer/Dockerfile` uses the `signal-layer/` subdir as context.
 - `pinescript/` — a single Pine Script reference indicator (not built here).
 - `public/` (repo ROOT) — `real_data.json` sample data. Do NOT confuse with the frontend's `signal-layer/public/` (favicon/icons). Two different `public/` dirs.
 - `signal-layer-server/data/` — gitignored runtime data (SQLite dev DB, backups).
@@ -37,7 +38,7 @@ TypeScript gotchas (`tsconfig.app.json`): `verbatimModuleSyntax` (must use `impo
 
 - Poetry, Python 3.12. Config via pydantic-settings, env prefix `SIGNAL_`, loaded from `.env` (keys in `.env.example`).
 - Run: `uvicorn app.main:app --host 0.0.0.0 --port 8000` (from `signal-layer-server/`). Swagger `/docs`, health `/health`.
-- Services init in `app/api/deps.py::init_services()` (lifespan). Redis optional (degrades to no-op cache); MySQL init failure logs a warning and falls back to SQLite.
+- Services init in `app/api/deps.py::init_services()` (lifespan). Redis optional (degrades to no-op cache). MySQL init failure does NOT switch to SQLite (`_get_db_url()` always returns the configured MySQL URL): it only logs a warning and keeps starting, so `/health` stays 200 while every DB-backed endpoint returns 500. Deploys must verify a data endpoint, not just `/health`.
 - Tests: `poetry run pytest` (`asyncio_mode=auto`, `testpaths=tests`). Single: `poetry run pytest tests/test_engine/test_duan.py`. Tests use fixtures/monkeypatch + in-memory SQLite — NO live MySQL/Redis required.
 - Dev admin login: `admin / Admin123!` (override in prod via `SIGNAL_BOOTSTRAP_ADMIN_PASSWORD`).
 

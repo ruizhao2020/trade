@@ -1,0 +1,48 @@
+# ============================================================================
+# 构建上下文忽略清单
+# ============================================================================
+#
+# 只影响**以仓库根目录为上下文**的构建（deploy/ecs 下的两个 Dockerfile）。
+# `docker build signal-layer` 那种以子目录为上下文的构建读的是 signal-layer/.dockerignore。
+#
+# 目的：把 node_modules（几百 MB）、.git、本地运行数据排除出去，构建更快；
+# 同时确保 .env 这类秘密**不会**被 COPY 进镜像。
+
+.git
+.gitignore
+.idea
+.playwright-mcp
+.sisyphus
+.DS_Store
+
+**/__pycache__
+**/*.pyc
+**/.pytest_cache
+**/node_modules
+**/dist
+**/dist-public
+**/dist-private
+
+# 后端：镜像里只需要 app/ 与 database/（见 Dockerfile.backend 的 COPY）
+signal-layer-server/tests
+signal-layer-server/alembic
+signal-layer-server/docs
+signal-layer-server/scripts
+signal-layer-server/data
+signal-layer-server/docker
+signal-layer-server/docker-compose.yml
+signal-layer-server/.env
+signal-layer-server/.env.example
+
+# 秘密：任何位置的 .env 都不进镜像
+**/.env
+# 备份文件
+deploy/ecs/backups
+
+# 与镜像无关
+public
+pinescript
+deploy/k8s
+start-private.sh
+start-public.sh
+AGENTS.md

@@ -87,7 +87,13 @@ async def init_services():
         await init_db()
         logger.info("Database initialized")
     except Exception as e:
-        logger.warning(f"Database init failed: {e}, using SQLite")
+        # 这里**不会**切到 SQLite（_get_db_url 恒为配置里的 MySQL），只是不中断启动：
+        # _session_factory 仍是 None，之后每个请求都会因为拿不到会话而 500，
+        # 而 /health 依然返回 200。原文案写 "using SQLite" 会把排障带偏。
+        logger.warning(
+            f"Database init failed: {e}. "
+            "服务会继续启动，但需要数据库的接口都会返回 500（/health 仍是 200，不能当成正常）。"
+        )
 
     try:
         r = await get_redis()
