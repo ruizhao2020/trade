@@ -134,18 +134,17 @@ export function SignalPanel({ symbol = '', embedded = false, showLayers = true, 
   const addStoreTemplate = useAppStore((state) => state.addTemplate)
   const deleteStoreTemplate = useAppStore((state) => state.deleteTemplate)
   const updateStoreTemplate = useAppStore((state) => state.updateTemplate)
+  const setStoreTemplates = useAppStore((state) => state.setTemplates)
   const setActiveTemplateId = useAppStore((state) => state.setActiveTemplateId)
   const setTemplateSignal = useAppStore((state) => state.setTemplateSignal)
 
+  // 服务端列表是权威来源：整体替换，而不是逐条 add/update。
+  // 增量合并会留下当前账号已经没有的模板（换账号后最明显），点编辑就会 404。
   useEffect(() => {
     fetchTemplates()
-      .then((list) => list.forEach((template) => {
-        const exists = useAppStore.getState().templates.some((item) => item.id === template.id)
-        if (exists) updateStoreTemplate(template.id, template)
-        else addStoreTemplate(template)
-      }))
+      .then((list) => setStoreTemplates(list))
       .catch((error) => console.error('[SL:SIGNAL] failed to load templates:', error))
-  }, [addStoreTemplate, updateStoreTemplate])
+  }, [setStoreTemplates])
 
   useEffect(() => {
     if (!menuOpen) return
@@ -389,7 +388,7 @@ export function SignalPanel({ symbol = '', embedded = false, showLayers = true, 
       {!backtesting && !backtestResult && <div className="h-40 flex flex-col items-center justify-center gap-3 text-[11px] text-[var(--text-muted)]"><span>{symbol ? '尚未生成回测结果' : '请先选择市场和标的'}</span><button type="button" onClick={handleBacktest} disabled={!symbol} className="h-8 px-3 rounded-md bg-[var(--accent)] text-white disabled:opacity-40">运行回测</button></div>}
       {backtestResult && (
         <>
-          <div className="flex items-center justify-between mb-3"><span className="text-[11px] font-semibold">最近 300 根 K 线</span><span className="text-[11px] text-[var(--text-muted)]">{backtestResult.totalTrades} 笔交易</span></div>
+          <div className="flex items-center justify-between mb-3"><span className="text-[11px] font-semibold">最近 300 根 K 线</span><span className="text-[11px] text-[var(--text-muted)]">{backtestResult.totalTrades} 笔交易{backtestResult.openPosition ? ' · 1 笔持有中' : ''}</span></div>
           <div className="grid grid-cols-2 gap-1.5">
             <div className="rounded-md bg-[var(--bg-tertiary)] p-2.5"><span className="block text-[11px] text-[var(--text-muted)]">累计收益</span><span className={`block mt-1 text-[15px] font-mono ${financialValueColorClass(backtestResult.totalReturn)}`}>{backtestResult.totalReturn}%</span></div>
             <div className="rounded-md bg-[var(--bg-tertiary)] p-2.5"><span className="block text-[11px] text-[var(--text-muted)]">最大回撤</span><span className={`block mt-1 text-[15px] font-mono ${financialValueColorClass(-backtestResult.maxDrawdown)}`}>-{backtestResult.maxDrawdown}%</span></div>
@@ -399,7 +398,12 @@ export function SignalPanel({ symbol = '', embedded = false, showLayers = true, 
             <div className="rounded-md bg-[rgba(108,140,255,.10)] border border-[rgba(108,140,255,.22)] p-2.5"><span className="block text-[11px] text-[var(--text-muted)]">凯利建议仓位</span><span className="block mt-1 text-[15px] font-mono text-[var(--accent)]">{backtestResult.suggestedPosition}%</span></div>
           </div>
           <div className="mt-2 text-[11px] leading-4 text-[var(--text-muted)]">建议仓位 = 胜率 −（1 − 胜率）÷ 平均盈亏比；仅基于本次历史样本。</div>
-          {backtestResult.trades.length > 0 && <div className="mt-4"><div className="text-[11px] font-semibold mb-2">交易明细</div>{backtestResult.trades.map((trade, index) => <div key={`${trade.entryTime}-${index}`} className="grid grid-cols-[24px_1fr_auto_auto] gap-2 py-2 border-b border-[var(--border-primary)] text-[11px]"><span className="text-[var(--text-muted)]">#{index + 1}</span><span className="font-mono text-[var(--text-secondary)]">{trade.entryPrice} → {trade.exitPrice}</span><span className="text-[var(--text-muted)]">{EXIT_REASON_LABEL[trade.exitReason] ?? trade.exitReason}</span><span className={`font-mono ${financialValueColorClass(trade.pnlPct)}`}>{trade.pnlPct >= 0 ? '+' : ''}{trade.pnlPct}%</span></div>)}</div>}
+          {(backtestResult.trades.length > 0 || backtestResult.openPosition) && <div className="mt-4"><div className="text-[11px] font-semibold mb-2">交易明细</div>{backtestResult.trades.map((trade, index) => <div key={`${trade.entryTime}-${index}`} className="grid grid-cols-[24px_1fr_auto_auto] gap-2 py-2 border-b border-[var(--border-primary)] text-[11px]"><span className="text-[var(--text-muted)]">#{index + 1}</span><span className="font-mono text-[var(--text-secondary)]">{trade.entryPrice} → {trade.exitPrice}</span><span className="text-[var(--text-muted)]">{EXIT_REASON_LABEL[trade.exitReason] ?? trade.exitReason}</span><span className={`font-mono ${financialValueColorClass(trade.pnlPct)}`}>{trade.pnlPct >= 0 ? '+' : ''}{trade.pnlPct}%</span></div>)}
+            {/* 仍在持仓的这一笔：没有卖出价可写，改写「入场价 → 最新价」与浮动盈亏，
+                并注明不计入上面的统计，避免和已完成交易混为一谈 */}
+            {backtestResult.openPosition && <div className="grid grid-cols-[24px_1fr_auto_auto] gap-2 py-2 border-b border-[var(--border-primary)] text-[11px]"><span className="text-[var(--text-muted)]">#{backtestResult.trades.length + 1}</span><span className="font-mono text-[var(--text-secondary)]">{backtestResult.openPosition.entryPrice} → {backtestResult.openPosition.lastPrice}</span><span className="text-[var(--accent-orange)]" title={`持有 ${backtestResult.openPosition.barsHeld} 根K线`}>持有中</span><span className={`font-mono ${financialValueColorClass(backtestResult.openPosition.pnlPct)}`}>{backtestResult.openPosition.pnlPct >= 0 ? '+' : ''}{backtestResult.openPosition.pnlPct}%</span></div>}
+            {backtestResult.openPosition && <div className="mt-1.5 text-[10px] leading-4 text-[var(--text-muted)]">最后 1 笔仍持有（已持有 {backtestResult.openPosition.barsHeld} 根K线，按最新收盘价计浮动盈亏），未计入上面的胜率与累计收益。</div>}
+          </div>}
           <button type="button" onClick={handleBacktest} disabled={!symbol} className="w-full h-9 mt-4 rounded-md bg-[var(--accent)] text-white text-[11px] font-medium disabled:opacity-40">重新回测</button>
         </>
       )}

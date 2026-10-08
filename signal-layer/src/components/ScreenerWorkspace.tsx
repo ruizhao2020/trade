@@ -45,7 +45,8 @@ export function ScreenerWorkspace({
 }: Props) {
   const templates = useAppStore((state) => state.templates)
   const activeTemplateId = useAppStore((state) => state.activeTemplateId)
-  const addTemplate = useAppStore((state) => state.addTemplate)
+  const templatesLoaded = useAppStore((state) => state.templatesLoaded)
+  const setStoreTemplates = useAppStore((state) => state.setTemplates)
   const setActiveTemplateId = useAppStore((state) => state.setActiveTemplateId)
   const [collapsed, setCollapsed] = useState(false)
   const [market, setMarket] = useState('')
@@ -67,14 +68,14 @@ export function ScreenerWorkspace({
   const stopRequestedRef = useRef(false)
   const scanControllerRef = useRef<AbortController | null>(null)
 
+  // 服务端列表是权威来源，整体替换；用 templatesLoaded 而不是 length>0 判断
+  // "要不要拉"，否则列表为空时永远拉不到，换账号后也会漏刷新。
   useEffect(() => {
-    if (templates.length > 0) return
+    if (templatesLoaded) return
     fetchTemplates()
-      .then((list) => {
-        list.forEach((template) => addTemplate(template))
-      })
+      .then((list) => setStoreTemplates(list))
       .catch(() => {})
-  }, [addTemplate, templates.length])
+  }, [setStoreTemplates, templatesLoaded])
 
   useEffect(() => {
     fetchMarkets().then((response) => setMarkets(response.markets)).catch(() => {})

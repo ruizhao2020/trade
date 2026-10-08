@@ -4,7 +4,7 @@ from dataclasses import replace
 
 from app.schemas.signal import (
     ConditionTemplateSchema, TradeParams,
-    BacktestResult, TradeRecord,
+    BacktestResult, OpenPosition, TradeRecord,
 )
 from app.services.condition_service import ConditionService
 
@@ -232,13 +232,29 @@ class BacktestService:
         profit_factor = round(win_pnl / loss_pnl, 2) if loss_pnl > 0 else (999 if win_pnl > 0 else 0)
         payoff_ratio, suggested_position = _kelly_metrics(trades)
 
+        # 区间结束时还在仓位里：单独报出来。统计口径保持"只算已平仓"，
+        # 但界面和图表需要知道这笔还在（否则只设入场条件的策略看起来毫无信号）。
+        open_position = None
+        if in_position:
+            last = len(klines) - 1
+            last_close = closes[last]
+            open_position = OpenPosition(
+                entry_time=int(klines[entry_bar]["open_time"]),
+                entry_price=round(entry_price, 2),
+                side=side,
+                bars_held=last - entry_bar,
+                last_time=int(klines[last]["open_time"]),
+                last_price=round(last_close, 2),
+                pnl_pct=round((last_close - entry_price) / entry_price * 100, 2),
+            )
+
         return BacktestResult(
             template_id=template.id, symbol=symbol, timeframe=tf,
             total_trades=total, win_trades=wins, win_rate=win_rate,
             total_return=total_return, avg_return=avg_return,
             max_drawdown=max_drawdown, profit_factor=profit_factor,
             payoff_ratio=payoff_ratio, suggested_position=suggested_position,
-            trades=trades,
+            trades=trades, open_position=open_position,
         )
 
 

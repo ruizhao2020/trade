@@ -29,6 +29,11 @@ describe('ApiClient 错误文案', () => {
     { name: '403 映射为权限提示', status: 403, body: '{"detail":"Forbidden"}', expected: '没有权限执行该操作' },
     { name: '5xx 收敛为通用文案', status: 500, body: '{"detail":"KeyError: internal_column"}', expected: '服务暂时不可用，请稍后重试' },
     { name: '非 JSON 响应体不泄漏到界面', status: 502, body: '<html>bad gateway</html>', expected: '服务暂时不可用，请稍后重试' },
+    // 后端 4xx 的 detail 不都是给用户看的：英文业务文案与 str(e) 漏出的异常文本
+    // 都不能当提示语（曾经把 "Template not found" 直接显示在策略编辑器里）
+    { name: '英文业务 detail 不直接展示', status: 404, body: '{"detail":"Template not found"}', expected: '请求的数据不存在或已被移除' },
+    { name: '英文异常 detail 不直接展示', status: 400, body: '{"detail":"KeyError: internal_column"}', expected: '请求参数有误，请检查后重试' },
+    { name: '中文 detail 即使是 4xx 也照原样展示', status: 409, body: '{"detail":"该策略 ID 已存在"}', expected: '该策略 ID 已存在' },
   ]
 
   for (const item of errorCases) {

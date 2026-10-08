@@ -23,7 +23,8 @@ function ChannelPicker({ channels, value, onChange }: { channels: NotificationCh
 
 export function NotificationWorkspace() {
   const templates = useAppStore((s) => s.templates)
-  const addTemplate = useAppStore((s) => s.addTemplate)
+  const templatesLoaded = useAppStore((s) => s.templatesLoaded)
+  const setStoreTemplates = useAppStore((s) => s.setTemplates)
   const [channels, setChannels] = useState<NotificationChannel[]>([])
   const [monitors, setMonitors] = useState<StrategyMonitor[]>([])
   const [schedules, setSchedules] = useState<ScreenerSchedule[]>([])
@@ -58,12 +59,12 @@ export function NotificationWorkspace() {
   }
   useEffect(() => { const timer = window.setTimeout(() => { void load() }, 0); return () => window.clearTimeout(timer) }, [])
   useEffect(() => {
-    if (templates.length) return
+    if (templatesLoaded) return
     void fetchTemplates().then((list) => {
-      list.forEach(addTemplate)
+      setStoreTemplates(list)
       if (list[0]) { setMonitorTemplateId(list[0].id); setScreenTemplateId(list[0].id) }
     }).catch(() => {})
-  }, [addTemplate, templates.length])
+  }, [setStoreTemplates, templatesLoaded])
   useEffect(() => {
     const timer = window.setInterval(async () => {
       try {

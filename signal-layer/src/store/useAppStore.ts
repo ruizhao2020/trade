@@ -8,6 +8,10 @@
  *   templates: 条件模板列表（CRUD）
  *   templateSignals: 各模板的信号评估状态 {templateId: TemplateSignal}
  *   layers: 图层配置（可见性、透明度）
+ *
+ * 这个 store 是纯内存的、模块级单例：换账号登录不会重新创建它。
+ * 所以凡是「属于某个账号」的切片（templates / activeTemplateId / templateSignals）
+ * 必须在身份变化时用 resetWorkspace() 清掉，否则上一个账号的数据会留在界面上。
  */
 
 import { create } from 'zustand'
@@ -17,6 +21,8 @@ import { DEFAULT_LAYER_CONFIGS, DEFAULT_SETTINGS, DEFAULT_TIMEFRAMES } from '../
 interface AppState {
   settings: AppSettings
   templates: ConditionTemplate[]
+  /** 模板列表是否已经从服务端取过一次（用它判断"要不要再拉"，不要用 length>0） */
+  templatesLoaded: boolean
   activeTemplateId: string | null
   templateSignals: Record<string, TemplateSignal>
   layers: LayerConfig[]
@@ -26,7 +32,11 @@ interface AppState {
   addTemplate: (template: ConditionTemplate) => void
   updateTemplate: (id: string, updates: Partial<ConditionTemplate>) => void
   deleteTemplate: (id: string) => void
+  /** 用服务端返回的完整列表替换本地列表（权威来源，会剔除已不属于当前账号的条目） */
+  setTemplates: (templates: ConditionTemplate[]) => void
   setActiveTemplateId: (id: string | null) => void
+  /** 身份变化（登录/退出/401）时清空账号级状态，避免跨账号残留 */
+  resetWorkspace: () => void
   // 信号评估
   setTemplateSignal: (templateId: string, signal: TemplateSignal) => void
   // 图层操作
@@ -44,6 +54,7 @@ const getInitialState = () => ({
     theme: DEFAULT_SETTINGS.theme as 'dark' | 'light',
   },
   templates: [],
+  templatesLoaded: false,
   activeTemplateId: null,
   templateSignals: {},
   layers: DEFAULT_LAYER_CONFIGS,
@@ -73,9 +84,28 @@ export const useAppStore = create<AppState>((set) => ({
       templateSignals: Object.fromEntries(Object.entries(s.templateSignals).filter(([templateId]) => templateId !== id)),
     }))
   },
+  setTemplates: (templates) => {
+    console.log(`[SL:DATA] setTemplates`, { count: templates.length })
+    return set((s) => {
+      const ids = new Set(templates.map((t) => t.id))
+      return {
+        templates,
+        templatesLoaded: true,
+        // 选中的模板如果已经不在列表里（换账号、被别处删除），选中态也要一起清掉
+        activeTemplateId: s.activeTemplateId && !ids.has(s.activeTemplateId) ? null : s.activeTemplateId,
+        templateSignals: Object.fromEntries(
+          Object.entries(s.templateSignals).filter(([templateId]) => ids.has(templateId)),
+        ),
+      }
+    })
+  },
   setActiveTemplateId: (id) => {
     console.log(`[SL:SIGNAL] template selected:`, id)
     return set({ activeTemplateId: id })
+  },
+  resetWorkspace: () => {
+    console.log(`[SL:DATA] resetWorkspace`)
+    return set({ templates: [], templatesLoaded: false, activeTemplateId: null, templateSignals: {} })
   },
   setTemplateSignal: (templateId, signal) => set((s) => ({ templateSignals: { ...s.templateSignals, [templateId]: signal } })),
   toggleLayerVisibility: (timeframeId) => {

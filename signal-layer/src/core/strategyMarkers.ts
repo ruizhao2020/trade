@@ -55,7 +55,10 @@ export function buildStrategyTradeMarkerResult(
   targetTimeframe: string,
   klines: RawKline[],
 ): IndicatorResult[] {
-  if (!result || result.trades.length === 0 || klines.length === 0) return []
+  // 只有持仓（还没有任何已完成交易）也要画买入标记：只设入场条件、没设出场规则的
+  // 策略就属于这种，以前这里直接返回空数组，图上什么都看不到。
+  if (!result || klines.length === 0) return []
+  if (result.trades.length === 0 && !result.openPosition) return []
   const values: Record<string, number>[] = []
   const seen = new Set<string>()
   result.trades.forEach((trade, tradeIndex) => {
@@ -75,6 +78,16 @@ export function buildStrategyTradeMarkerResult(
     }
   })
   values.sort((left, right) => left.time - right.time)
+  // 区间结束时仍持仓：只画买入，不画卖出——卖出位置回测自己都不知道，
+  // 凭空补一个就等于替策略编了一个出场价。序号排在已完成交易之后。
+  const open = result.openPosition
+  if (open) {
+    const openTime = resolveMarkerTime(open.entryTime, 'entry', result.timeframe, targetTimeframe, klines)
+    if (openTime !== null && !seen.has(`entry:${openTime}`)) {
+      values.push({ time: openTime, _trade: 1, _tradeIndex: result.trades.length })
+      values.sort((left, right) => left.time - right.time)
+    }
+  }
   if (values.length === 0) return []
   return [{
     type: `strategy_trades_${result.templateId}`,

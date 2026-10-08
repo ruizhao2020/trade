@@ -25,6 +25,7 @@
 | `chan-v0-1d.json` | `GET /api/v1/chan/V0/1d?limit=10` |
 | `indicator-calculate.json` | `POST /api/v1/indicator/calculate`，body 见下 |
 | `signal-evaluate.json` | `POST /api/v1/signal/evaluate`，template 用 `templates.json` 里的建议模板（id 形如 `advisor_volume:*`） |
+| `backtest-open-position.json` | `POST /api/v1/signal/backtest`，symbol `000002_sz`、template 取 `templates.json` 里的「布林通道策略」、`kline_limit` 500。它刻意覆盖「**0 笔已完成交易 + 1 笔持有中**」：那条策略只设了入场条件，止损止盈关闭、无出场条件、持仓上限不限，所以仓位从 2025-02-12 一直持到现在（浮动 -49%）。契约测试断言 `open_position` 映射成 `openPosition`，并守住"报文里没有这个字段时回退为 null" |
 | `advisor-run-detail.json` | `GET /api/v1/advisor/runs/{id}`（**已裁剪**：只保留前 8 个候选，完整报文可达数百 KB） |
 
 `indicator-calculate` 的请求体（刻意同时覆盖"样本不足/预热期"与"有值"两种情况，

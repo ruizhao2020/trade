@@ -147,6 +147,25 @@ class TradeRecord(BaseModel):
     exit_reason: str
 
 
+class OpenPosition(BaseModel):
+    """回测区间结束时仍未平仓的仓位。
+
+    trades 只装"已经平仓的完整交易"，所以这种仓位以前在结果里完全不存在：累计收益 0、
+    0 笔交易，图上连买点都没有，看起来像策略没有信号。这里单独报出来，但**不并入**
+    total_trades / 胜率 / 累计收益这些已完成交易的统计——浮盈浮亏不是已实现收益。
+    """
+
+    entry_time: int
+    entry_price: float
+    side: str
+    # 持有到最后一根 K 线的根数（口径与"到期平仓"一致：开仓那根算 0）
+    bars_held: int
+    last_time: int
+    last_price: float
+    # 按最后一根收盘价计算的浮动盈亏百分比
+    pnl_pct: float
+
+
 class BacktestResult(BaseModel):
     template_id: str
     symbol: str
@@ -161,3 +180,5 @@ class BacktestResult(BaseModel):
     payoff_ratio: float
     suggested_position: float
     trades: list[TradeRecord]
+    # 仍持仓时才有值。"0 笔交易 + 有持仓"是合法组合：只设了入场条件、没有出场规则
+    open_position: Optional[OpenPosition] = None

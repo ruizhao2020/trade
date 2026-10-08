@@ -51,7 +51,7 @@ async def create_template(
     logger.info(f"POST /templates id={body.id}")
     existing = await session.get(Template, body.id)
     if existing:
-        raise HTTPException(status_code=409, detail="Template already exists")
+        raise HTTPException(status_code=409, detail="该策略 ID 已存在")
     t = Template(
         id=body.id,
         name=body.name,
@@ -79,7 +79,7 @@ async def get_template(
     logger.info(f"GET /templates/{template_id}")
     t = await session.get(Template, template_id)
     if not t or t.user_id != user.id:
-        raise HTTPException(status_code=404, detail="Template not found")
+        raise HTTPException(status_code=404, detail="策略不存在或不属于当前账号")
     return _to_response(t)
 
 
@@ -93,7 +93,7 @@ async def update_template(
     logger.info(f"PUT /templates/{template_id}")
     t = await session.get(Template, template_id)
     if not t or t.user_id != user.id:
-        raise HTTPException(status_code=404, detail="Template not found")
+        raise HTTPException(status_code=404, detail="策略不存在或不属于当前账号")
     # JSON列显式从Pydantic对象序列化并标记为已修改，避免嵌套配置更新
     # （尤其是止损/止盈改为 none）被ORM当成原JSON值而漏写。
     update_data = body.model_dump(exclude_unset=True, exclude={"trade_params"})
@@ -125,7 +125,7 @@ async def delete_template(
     logger.info(f"DELETE /templates/{template_id}")
     t = await session.get(Template, template_id)
     if not t or t.user_id != user.id:
-        raise HTTPException(status_code=404, detail="Template not found")
+        raise HTTPException(status_code=404, detail="策略不存在或不属于当前账号")
     await session.delete(t)
     await session.commit()
     logger.info(f"DELETE /templates/{template_id} deleted")

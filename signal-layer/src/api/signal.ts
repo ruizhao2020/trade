@@ -85,6 +85,16 @@ interface ApiTradeRecord {
   exit_reason: string
 }
 
+interface ApiOpenPosition {
+  entry_time: number
+  entry_price: number
+  side: string
+  bars_held: number
+  last_time: number
+  last_price: number
+  pnl_pct: number
+}
+
 interface ApiBacktestResponse {
   template_id: string
   symbol: string
@@ -99,6 +109,7 @@ interface ApiBacktestResponse {
   payoff_ratio: number
   suggested_position: number
   trades: ApiTradeRecord[]
+  open_position?: ApiOpenPosition | null
 }
 
 export interface TradeRecord {
@@ -108,6 +119,17 @@ export interface TradeRecord {
   exitPrice: number
   pnlPct: number
   exitReason: string
+}
+
+/** 回测区间结束时仍未平仓的仓位：不计入已完成交易的统计 */
+export interface OpenPosition {
+  entryTime: number
+  entryPrice: number
+  side: string
+  barsHeld: number
+  lastTime: number
+  lastPrice: number
+  pnlPct: number
 }
 
 export interface BacktestResult {
@@ -124,6 +146,8 @@ export interface BacktestResult {
   payoffRatio: number
   suggestedPosition: number
   trades: TradeRecord[]
+  /** 仍持仓时才有值；"0 笔交易 + 有持仓"是合法组合（只设了入场条件、没设出场规则） */
+  openPosition: OpenPosition | null
 }
 
 interface ApiEvaluateResponse {
@@ -291,5 +315,14 @@ export async function runBacktest(
       pnlPct: t.pnl_pct,
       exitReason: t.exit_reason,
     })),
+    openPosition: raw.open_position ? {
+      entryTime: raw.open_position.entry_time,
+      entryPrice: raw.open_position.entry_price,
+      side: raw.open_position.side,
+      barsHeld: raw.open_position.bars_held,
+      lastTime: raw.open_position.last_time,
+      lastPrice: raw.open_position.last_price,
+      pnlPct: raw.open_position.pnl_pct,
+    } : null,
   }
 }

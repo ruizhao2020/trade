@@ -11,7 +11,8 @@
 
 import { useState, useEffect } from 'react'
 import { useAppStore } from '../store/useAppStore.ts'
-import { createTemplate, updateTemplate } from '../api/template.ts'
+import { ApiError } from '../api/client.ts'
+import { createTemplate, fetchTemplates, updateTemplate } from '../api/template.ts'
 import { fetchIndicatorList } from '../api/indicator.ts'
 import type { ConditionTemplate, ConditionGroup, IndicatorInfo, TradeParams } from '../core/types.ts'
 
@@ -97,9 +98,15 @@ function LogicControl({ value, onChange }: { value: 'AND' | 'OR'; onChange: (val
 export function TemplateEditor({ template, onClose }: Props) {
   const addTemplate = useAppStore((s) => s.addTemplate)
   const updateStoreTemplate = useAppStore((s) => s.updateTemplate)
+  const setStoreTemplates = useAppStore((s) => s.setTemplates)
   const [saving, setSaving] = useState(false)
   const [saveError, setSaveError] = useState<string | null>(null)
   const [indicators, setIndicators] = useState<IndicatorInfo[]>([])
+
+  // 记住"进来时在编辑哪条策略"。不能只看 template 属性：保存失败（404）后如果顺手
+  // 刷新了列表，这条策略会从 store 里消失、属性变成 undefined，编辑器就会悄悄切换成
+  // "新建策略"，再点保存就变成用同一个 id 去创建（409），错误越来越难懂。
+  const [editingTemplateId] = useState(() => template?.id ?? null)
 
   useEffect(() => {
     fetchIndicatorList().then(setIndicators).catch(() => {})
@@ -154,7 +161,7 @@ export function TemplateEditor({ template, onClose }: Props) {
     setSaveError(null)
     const now = Date.now()
     const tpl: ConditionTemplate = {
-      id: template?.id ?? `tpl_${now}`,
+      id: editingTemplateId ?? `tpl_${now}`,
       name: name.trim(),
       logic,
       conditionGroups: groups,
@@ -166,16 +173,28 @@ export function TemplateEditor({ template, onClose }: Props) {
       tradeParams: { ...tradeParams, exitConditions: exitGroups, exitLogic },
     }
     try {
-      if (template) {
-        const updated = await updateTemplate(template.id, tpl)
-        updateStoreTemplate(template.id, updated)
+      if (editingTemplateId) {
+        const updated = await updateTemplate(editingTemplateId, tpl)
+        updateStoreTemplate(editingTemplateId, updated)
       } else {
         const created = await createTemplate(tpl)
         addTemplate(created)
       }
       onClose()
     } catch (err: unknown) {
-      setSaveError(err instanceof Error ? err.message : String(err))
+      // 404：这条策略不属于当前账号（多半是切换账号后残留的旧列表项）。
+      // 拉一次最新列表把它清掉，并给出中文说明——而不是把后端的英文
+      // "Template not found" 直接摊在界面上。
+      if (err instanceof ApiError && err.status === 404) {
+        try {
+          setStoreTemplates(await fetchTemplates())
+        } catch (reloadError: unknown) {
+          console.error('[SL:EDITOR] 刷新策略列表失败:', reloadError)
+        }
+        setSaveError('该策略不存在或不属于当前账号，已刷新策略列表')
+      } else {
+        setSaveError(err instanceof Error ? err.message : String(err))
+      }
     } finally {
       setSaving(false)
     }
@@ -190,7 +209,7 @@ export function TemplateEditor({ template, onClose }: Props) {
       >
         <div className="h-16 flex items-center justify-between px-8 border-b border-[var(--border-primary)] shrink-0">
           <h3 className="text-[15px] font-semibold text-[var(--text-primary)]">
-            {template ? '编辑策略' : '新建策略'}
+            {editingTemplateId ? '编辑策略' : '新建策略'}
           </h3>
           <button
             onClick={onClose}

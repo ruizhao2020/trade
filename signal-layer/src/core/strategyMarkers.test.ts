@@ -20,6 +20,7 @@ const result: BacktestResult = {
   profitFactor: 999,
   payoffRatio: 0,
   suggestedPosition: 100,
+  openPosition: null,
   trades: [{
     entryTime: Date.parse('2026-09-01T00:00:00+08:00'),
     exitTime: Date.parse('2026-09-02T00:00:00+08:00'),
@@ -146,5 +147,66 @@ describe('strategy trade chart markers', () => {
     // 没有原因代码的出场（后端新增了原因，前端还没跟上）在图上退化成不带后缀的「策略卖」，
     // 不能凭空显示一个错的标签。
     expect(marker.labelTags![99]).toBeUndefined()
+  })
+})
+
+describe('仍持仓（open position）', () => {
+  const openOnly: BacktestResult = {
+    ...result,
+    totalTrades: 0,
+    trades: [],
+    openPosition: {
+      entryTime: Date.parse('2026-09-01T00:00:00+08:00'),
+      entryPrice: 10,
+      side: 'long',
+      barsHeld: 5,
+      lastTime: Date.parse('2026-09-05T00:00:00+08:00'),
+      lastPrice: 11,
+      pnlPct: 10,
+    },
+  }
+
+  it('只有持仓、没有已完成交易时也画出买入标记（这是它以前完全消失的场景）', () => {
+    const klines = [
+      kline('2026-09-01T00:00:00+08:00'),
+      kline('2026-09-05T00:00:00+08:00'),
+    ]
+    const values = buildStrategyTradeMarkerResult(openOnly, '1d', klines)[0]!.values
+    expect(values).toEqual([
+      { time: klines[0]!.openTime, _trade: 1, _tradeIndex: 0 },
+    ])
+  })
+
+  it('不给持仓中的那一笔编造卖出标记', () => {
+    const klines = [
+      kline('2026-09-01T00:00:00+08:00'),
+      kline('2026-09-05T00:00:00+08:00'),
+    ]
+    const values = buildStrategyTradeMarkerResult(openOnly, '1d', klines)[0]!.values
+    expect(values.some((value) => value._trade === -1)).toBe(false)
+    expect(values.every((value) => value._tradeExitTag === undefined)).toBe(true)
+  })
+
+  it('已完成交易在前、持仓中的买入排在其后，序号不重复', () => {
+    const mixed: BacktestResult = {
+      ...result,
+      trades: [{ ...result.trades[0]!, exitTime: Date.parse('2026-09-02T00:00:00+08:00') }],
+      openPosition: {
+        entryTime: Date.parse('2026-09-03T00:00:00+08:00'),
+        entryPrice: 10, side: 'long', barsHeld: 2,
+        lastTime: Date.parse('2026-09-04T00:00:00+08:00'), lastPrice: 12, pnlPct: 20,
+      },
+    }
+    const klines = [
+      kline('2026-09-01T00:00:00+08:00'),
+      kline('2026-09-02T00:00:00+08:00'),
+      kline('2026-09-03T00:00:00+08:00'),
+      kline('2026-09-04T00:00:00+08:00'),
+    ]
+
+    const values = buildStrategyTradeMarkerResult(mixed, '1d', klines)[0]!.values
+
+    expect(values.map((value) => value._trade)).toEqual([1, -1, 1])
+    expect(values.map((value) => value._tradeIndex)).toEqual([0, 0, 1])
   })
 })

@@ -69,7 +69,7 @@ function statusMessage(status: number): string {
   return `请求失败（${status}）`
 }
 
-/** 从响应体里取出后端给的中文说明（FastAPI 约定为 detail 字段） */
+/** 从响应体里取出后端给的 detail 原文（FastAPI 约定为 detail 字段），不做文案筛除 */
 function extractDetail(text: string): string | null {
   if (!text) return null
   let parsed: unknown
@@ -80,8 +80,7 @@ function extractDetail(text: string): string | null {
   }
   const detail = (parsed as { detail?: unknown } | null)?.detail
   if (typeof detail === 'string') {
-    const trimmed = detail.trim()
-    return BOILERPLATE_DETAILS.has(trimmed.toLowerCase()) ? null : trimmed || null
+    return detail.trim() || null
   }
   // FastAPI 校验失败时 detail 是数组，取第一条可读的 msg
   if (Array.isArray(detail)) {
@@ -93,6 +92,18 @@ function extractDetail(text: string): string | null {
     }
   }
   return null
+}
+
+/**
+ * 后端 detail 是否可以直接展示给用户。
+ *
+ * 界面文案一律是中文，所以只认含中文的 detail：像 "Template not found" 这种英文
+ * 后端文案、以及 str(e) 漏出来的 Python 异常文本，都不能当提示语用（后者还会
+ * 把实现细节暴露到界面上）。英文原文仍然会进日志。
+ */
+function isUserFacingDetail(detail: string): boolean {
+  if (BOILERPLATE_DETAILS.has(detail.toLowerCase())) return false
+  return /[\u3400-\u9fff]/.test(detail)
 }
 
 export function getAccessToken() {
@@ -165,8 +176,11 @@ class ApiClient {
         window.dispatchEvent(new Event('signal-layer:unauthorized'))
       }
       const detail = extractDetail(text)
-      // 5xx 一律用收敛后的文案，不把后端内部细节带到界面上
-      const message = res.status >= 500 ? statusMessage(res.status) : detail ?? statusMessage(res.status)
+      // 5xx 一律用收敛后的文案，不把后端内部细节带到界面上；
+      // 4xx 只在 detail 确实是给用户看的中文时才用它。
+      const message = res.status >= 500 || !(detail && isUserFacingDetail(detail))
+        ? statusMessage(res.status)
+        : detail
       console.error(`[SL:API] ${method} ${path} -> FAIL ${res.status}`, detail ?? text)
       throw new ApiError(res.status, message, detail)
     }

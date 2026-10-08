@@ -354,7 +354,7 @@ function WorkbenchApp({ user, onLogout, onUserChange, onLogin }: { user: AuthUse
             ? { tone: 'muted' as const, text: '计算策略买卖点…' }
             : visibleStrategyMarkerCount > 0
               ? { tone: 'muted' as const, text: `当前图表已标注 ${visibleStrategyMarkerCount} 个策略买卖点` }
-              : activeTradeResult?.trades.length
+              : (activeTradeResult?.trades.length ?? 0) > 0 || activeTradeResult?.openPosition
                 ? { tone: 'muted' as const, text: '当前可视范围无策略买卖点' }
                 : { tone: 'muted' as const, text: '当前策略暂无买卖点' }
 
@@ -518,6 +518,7 @@ function WorkbenchApp({ user, onLogout, onUserChange, onLogin }: { user: AuthUse
 function App() {
   const [user, setUser] = useState<AuthUser | null>(null)
   const [initializing, setInitializing] = useState(() => Boolean(getAccessToken()))
+  const resetWorkspace = useAppStore((state) => state.resetWorkspace)
 
   useEffect(() => {
     const handleUnauthorized = () => setUser(null)
@@ -527,6 +528,14 @@ function App() {
     }
     return () => window.removeEventListener('signal-layer:unauthorized', handleUnauthorized)
   }, [])
+
+  // 工作区里的模板/信号都是账号级数据，而 store 是模块级单例、换账号不会重建，
+  // 所以这里以「身份」为唯一开关：只要 user.id 变了就清空。
+  // 不清的话，上一个账号的模板会留在「选择策略模板」下拉里，点了编辑还会因为
+  // 后端按归属人校验而报 404（Template not found）。
+  useEffect(() => {
+    resetWorkspace()
+  }, [user?.id, resetWorkspace])
 
   if (initializing) {
     return <div className="h-full flex items-center justify-center bg-[var(--bg-primary)] text-[var(--text-muted)]">正在验证登录状态…</div>

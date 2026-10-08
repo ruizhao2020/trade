@@ -19,7 +19,7 @@
 import { afterEach, describe, expect, it, vi } from 'vitest'
 import { fetchKlines } from './kline.ts'
 import { calculateIndicatorsDetailed, fetchIndicatorList } from './indicator.ts'
-import { evaluateSignal } from './signal.ts'
+import { evaluateSignal, runBacktest } from './signal.ts'
 import { fetchTemplates, templateToSnake } from './template.ts'
 import { fetchMarkets } from './symbol.ts'
 import { fetchAdvisorRun } from './advisor.ts'
@@ -73,6 +73,7 @@ const calculateFixture = fixture('indicator-calculate')
 const evaluateFixture = fixture('signal-evaluate')
 const advisorRunFixture = fixture('advisor-run-detail')
 const authMeFixture = fixture('auth-me')
+const backtestOpenFixture = fixture('backtest-open-position')
 
 const CALCULATE_RESULTS = rows(field(calculateFixture, 'results'))
 
@@ -453,5 +454,35 @@ describe('登录用户映射', () => {
     for (const entry of user.modules) {
       expect(entry.component_key || entry.code).toBeTruthy()
     }
+  })
+})
+
+describe('回测映射', () => {
+  it('未平仓仓位映射成 openPosition（后端改字段名会立刻失败）', async () => {
+    stubResponse(backtestOpenFixture)
+    const template = { id: 'tpl_x', name: 'x', logic: 'AND', conditionGroups: [], primaryTimeframeId: '1d', secondaryTimeframeIds: [], createdAt: 0, updatedAt: 0, enabled: true } as ConditionTemplate
+    const result = await runBacktest('000002_sz', template, 500)
+
+    const raw = item(field(backtestOpenFixture, 'open_position'))
+    // 这份报文就是"只设了入场条件、没有出场规则"的真实结果：0 笔已完成交易 + 1 笔持有中
+    expect(result.totalTrades).toBe(0)
+    expect(result.trades).toEqual([])
+    expect(result.openPosition).not.toBeNull()
+    expect(result.openPosition!.entryTime).toBe(raw.entry_time)
+    expect(result.openPosition!.entryPrice).toBe(raw.entry_price)
+    expect(result.openPosition!.barsHeld).toBe(raw.bars_held)
+    expect(result.openPosition!.lastPrice).toBe(raw.last_price)
+    expect(result.openPosition!.pnlPct).toBe(raw.pnl_pct)
+  })
+
+  it('老报文没有 open_position 时回退为 null', async () => {
+    const legacy = { ...backtestOpenFixture }
+    delete legacy.open_position
+    stubResponse(legacy)
+    const template = { id: 'tpl_x', name: 'x', logic: 'AND', conditionGroups: [], primaryTimeframeId: '1d', secondaryTimeframeIds: [], createdAt: 0, updatedAt: 0, enabled: true } as ConditionTemplate
+
+    const result = await runBacktest('000002_sz', template, 500)
+
+    expect(result.openPosition).toBeNull()
   })
 })

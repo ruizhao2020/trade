@@ -159,3 +159,68 @@ def test_hold_limit_also_applies_when_exit_conditions_exist():
 
     assert result.total_trades >= 1
     assert result.trades[0].exit_reason == "timeout"
+
+
+def test_unclosed_position_is_reported_and_kept_out_of_realized_stats():
+    """没有出场规则时，仓位一直开着：要报出来，但不能混进已完成交易的统计。
+
+    真实案例：策略只配了入场条件（布林开口 + 中轨向上），止损止盈都关闭、
+    也没设出场条件、持仓上限默认不限 —— 以前结果里 0 笔交易、累计收益 0，
+    图上连买点都没有，看起来像策略完全没有信号。
+    """
+    template = _hold_template(None)   # 不传持仓上限，走 schema 默认 0（不限）
+    klines = _flat_klines(200)
+
+    result = asyncio.run(BacktestService(ConditionOnlyService()).run(
+        "000001_sz", template, {"1d": klines}, {}, {}, 200,
+    ))
+
+    assert result.total_trades == 0
+    open_position = result.open_position
+    assert open_position is not None, "仍持仓必须被报出来，否则图上连买点都没有"
+
+    # 入场在第 21 根（is_ready 之后），一直持到最后一根
+    assert open_position.entry_time == klines[20]["open_time"]
+    assert open_position.entry_price == round(klines[20]["close"], 2)
+    assert open_position.last_time == klines[-1]["open_time"]
+    assert open_position.last_price == round(klines[-1]["close"], 2)
+    assert open_position.bars_held == len(klines) - 1 - 20
+    expected_pnl = round(
+        (klines[-1]["close"] - klines[20]["close"]) / klines[20]["close"] * 100, 2,
+    )
+    assert open_position.pnl_pct == expected_pnl
+
+    # 浮动盈亏不是已实现收益：统计口径必须还是空的
+    assert open_position.pnl_pct != 0
+    assert result.total_return == 0
+    assert result.win_rate == 0
+    assert result.win_trades == 0
+    assert result.profit_factor == 0
+
+
+def test_no_open_position_when_everything_is_closed():
+    """有出场规则、仓位已平掉时不报 open_position（避免界面多出一行"持有中"）。"""
+    template = _hold_template(20)
+    klines = _flat_klines(200)
+
+    result = asyncio.run(BacktestService(ConditionOnlyService()).run(
+        "000001_sz", template, {"1d": klines}, {}, {}, 200,
+    ))
+
+    assert result.total_trades == 1
+    assert result.open_position is None
+
+
+def test_open_position_absorbs_later_signals_while_holding():
+    """仍在持仓时不会再开新仓：第二根之后的信号不该产生第二笔交易或第二个持仓。"""
+    template = _hold_template(None)
+    klines = _flat_klines(400)
+
+    result = asyncio.run(BacktestService(ConditionOnlyService()).run(
+        "000001_sz", template, {"1d": klines}, {}, {}, 400,
+    ))
+
+    assert result.total_trades == 0
+    assert result.open_position is not None
+    assert result.open_position.entry_time == klines[20]["open_time"]
+    assert result.open_position.bars_held == len(klines) - 1 - 20

@@ -1,12 +1,15 @@
 import { act, fireEvent, render, screen } from '@testing-library/react'
 import { beforeEach, describe, expect, it, vi } from 'vitest'
-import { createTemplate, updateTemplate } from '../api/template.ts'
+import { ApiError } from '../api/client.ts'
+import { createTemplate, fetchTemplates, updateTemplate } from '../api/template.ts'
 import { fetchIndicatorList } from '../api/indicator.ts'
+import { useAppStore } from '../store/useAppStore.ts'
 import { TemplateEditor } from './TemplateEditor.tsx'
 
 vi.mock('../api/template.ts', () => ({
   createTemplate: vi.fn(),
   updateTemplate: vi.fn(),
+  fetchTemplates: vi.fn(),
 }))
 vi.mock('../api/indicator.ts', () => ({
   fetchIndicatorList: vi.fn(),
@@ -310,5 +313,63 @@ describe('TemplateEditor 持仓上限', () => {
     expect(await vi.mocked(updateTemplate).mock.calls[0]?.[1]).toMatchObject({
       tradeParams: { maxHoldBars: 45 },
     })
+  })
+})
+
+// ── 保存时策略已不属于当前账号（404）────────────────────────────────────
+//
+// 真实场景：在 test 账号下建了策略，退出后登录 admin，下拉里还留着那条（旧版
+// store 合并式列表的残留）。点编辑 → 保存 → 后端按归属人返回 404，界面上直接
+// 摊出英文 "Template not found"。修复后：中文提示 + 顺手刷新列表把它清掉。
+
+describe('TemplateEditor 保存 404', () => {
+  const foreign = {
+    id: 'tpl_other', name: '布林通道均线策略', logic: 'AND' as const, conditionGroups: [],
+    primaryTimeframeId: '1d', secondaryTimeframeIds: [],
+    createdAt: 1, updatedAt: 1, enabled: true,
+    tradeParams: {
+      stopLossType: 'none' as const, stopLossValue: 0,
+      takeProfitType: 'none' as const, takeProfitValue: 0,
+      maxHoldBars: 0, exitConditions: [], exitLogic: 'OR' as const,
+    },
+  }
+
+  beforeEach(() => {
+    vi.mocked(fetchIndicatorList).mockResolvedValue([])
+    vi.mocked(updateTemplate).mockReset()
+    vi.mocked(fetchTemplates).mockReset()
+    useAppStore.setState({ templates: [foreign], templatesLoaded: true, activeTemplateId: 'tpl_other', templateSignals: {} })
+  })
+
+  it('给出中文提示并刷新列表，不再暴露后端的英文文案', async () => {
+    vi.mocked(updateTemplate).mockRejectedValue(new ApiError(404, '请求的数据不存在或已被移除', '策略不存在或不属于当前账号'))
+    vi.mocked(fetchTemplates).mockResolvedValue([])
+
+    render(<TemplateEditor onClose={vi.fn()} template={foreign} />)
+    await act(async () => { await Promise.resolve() })
+
+    fireEvent.click(screen.getByRole('button', { name: '保存策略' }))
+    await act(async () => { await Promise.resolve() })
+
+    expect(screen.getByText('该策略不存在或不属于当前账号，已刷新策略列表')).toBeInTheDocument()
+    expect(screen.queryByText(/not found/i)).not.toBeInTheDocument()
+    // 列表已经拉过：残留的那条要从 store 里消失，否则下次还会重演
+    expect(fetchTemplates).toHaveBeenCalled()
+    expect(useAppStore.getState().templates).toEqual([])
+    // 对话框留在「编辑策略」，不能因为列表刷新而悄悄变成「新建策略」
+    expect(screen.getByRole('heading', { name: '编辑策略' })).toBeInTheDocument()
+  })
+
+  it('刷新列表失败也不吞掉 404 提示', async () => {
+    vi.mocked(updateTemplate).mockRejectedValue(new ApiError(404, '请求的数据不存在或已被移除'))
+    vi.mocked(fetchTemplates).mockRejectedValue(new Error('network down'))
+
+    render(<TemplateEditor onClose={vi.fn()} template={foreign} />)
+    await act(async () => { await Promise.resolve() })
+
+    fireEvent.click(screen.getByRole('button', { name: '保存策略' }))
+    await act(async () => { await Promise.resolve() })
+
+    expect(screen.getByText('该策略不存在或不属于当前账号，已刷新策略列表')).toBeInTheDocument()
   })
 })
