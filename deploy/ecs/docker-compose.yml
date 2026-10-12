@@ -23,7 +23,15 @@ services:
       MYSQL_USER: ${SIGNAL_MYSQL_USER:?deploy/ecs/.env 缺少 SIGNAL_MYSQL_USER}
       MYSQL_PASSWORD: ${SIGNAL_MYSQL_PASSWORD:?deploy/ecs/.env 缺少 SIGNAL_MYSQL_PASSWORD}
       TZ: Asia/Shanghai
-    command: --character-set-server=utf8mb4 --collation-server=utf8mb4_unicode_ci
+    # 小内存机器（2C2G）上的取舍：performance_schema 在 MySQL 8 默认开着，
+    # 对这套应用没有用却常驻吃约 150–200MB，直接关掉；连接数收到 50（够用：一个后端进程）。
+    # 升到 4G 以上想把 performance_schema 开回来时，删掉那一项即可。
+    command: >-
+      --character-set-server=utf8mb4
+      --collation-server=utf8mb4_unicode_ci
+      --performance-schema=OFF
+      --max-connections=50
+      --innodb-buffer-pool-size=128M
     volumes:
       - mysql_data:/var/lib/mysql
       # 这两个 SQL 只在数据目录为空时执行（建表 + 权限种子）。

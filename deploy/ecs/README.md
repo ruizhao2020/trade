@@ -95,8 +95,9 @@ sudo firewall-cmd --list-services 2>/dev/null || sudo ufw status 2>/dev/null || 
 
 ## 2. ECS 准备
 
-**规格建议**：2 核 4G 起（后端要跑 pandas/akshare，1 核 2G 会在拉数据时被 OOM 杀），
-系统盘 ≥ 40G ESSD（镜像约 3G，行情表会长期增长）。
+**规格建议**：2 核 4G 起最舒服，系统盘 ≥ 40G ESSD（镜像 + 构建缓存约 4G，行情表会长期增长）。
+**2 核 2G 也能跑**，但需要按下面「2 核 2G 的机器」一节做几处调整 —— 尤其是必须加 swap，
+否则构建时和拉行情时都可能被 OOM 杀。
 
 **安全组**（阿里云控制台 → 网络与安全 → 安全组 → 入方向）：
 
@@ -155,6 +156,58 @@ sudo tee /etc/docker/daemon.json >/dev/null <<'JSON'
 JSON
 sudo systemctl restart docker
 ```
+
+### 2 核 2G 的机器
+
+**能构建、也能跑**，但两处都要照做，否则会在最容易踩的时刻被 OOM 杀掉。
+
+**（1）加 2G swap —— 最有效的一步。** 2G 物理内存里，系统本身（含阿里云的监控/安全
+agent）通常已占 200–300MB，剩下约 1.6G 要装 MySQL + 后端 + 构建过程：
+
+```bash
+sudo fallocate -l 2G /swapfile || sudo dd if=/dev/zero of=/swapfile bs=1M count=2048
+sudo chmod 600 /swapfile
+sudo mkswap /swapfile
+sudo swapon /swapfile
+echo '/swapfile none swap sw 0 0' | sudo tee -a /etc/fstab   # 重启后仍然生效
+free -h                                                       # 确认 Swap 那行有 2.0Gi
+```
+
+swap 不解决"慢"的问题（ESSD 上的 swap 比内存慢得多），但它把"进程被直接杀死"变成
+"变慢一点"，对构建和行情拉取这种瞬时峰值特别有用。
+
+**（2）加构建缓存会占的磁盘，并串行构建**（两个镜像同时构建会在 2G 上同时压 Node 与 pip）：
+
+```bash
+export COMPOSE_PARALLEL_LIMIT=1
+bash deploy/ecs/scripts/first-deploy.sh
+```
+
+脚本用的是 `up -d --build`，compose 会按依赖顺序逐个构建；想完全手动控制就分两次：
+`$C build backend` → `$C build nginx`。
+
+**（3）MySQL 已经按小内存调过了**：`deploy/ecs/docker-compose.yml` 里的 mysql 容器关了
+`performance_schema`（MySQL 8 默认开着，白吃约 150–200MB）并把连接数收到 50。粗估常驻
+占用大致是：系统 250MB + docker 150MB + MySQL 250MB + 后端 400MB（pandas 导入后）
++ redis/nginx 各 20MB ≈ **1.1GB 基线**，留 500MB 给 backtest / akshare 的瞬时峰值。
+看实际值：`docker stats --no-stream`。
+
+**（4）避免一次性压满内存的操作**：
+
+- 「选股」里对整个市场扫描是最重的（逐个标的拉数据算指标），2G 上建议先只扫小范围
+  （把扫描数量调到 10–50）验证流程，再决定要不要全量。
+- 回测的 K 线数量（`kline_limit`）越大峰值越高，2G 上别长期贴着 2000 跑。
+
+**（5）如果被 OOM 杀了，怎么确认：**
+
+```bash
+dmesg -T | grep -i "out of memory"     # 有 oom-kill 记录就是内存不够
+docker compose -f deploy/ecs/docker-compose.yml --env-file deploy/ecs/.env ps   # 看谁被重启了
+```
+
+**（6）升级路径**：不必重装 —— 阿里云控制台对同一台 ECS **停机 → 变更实例规格**（2C4G）
+即可，系统盘和数据（包括 docker 卷里的 MySQL 数据）都保留。做完上面 1–5 步还是频繁
+OOM 的话，就直接变配到 4G，这是最省事的解法。
 
 ---
 
