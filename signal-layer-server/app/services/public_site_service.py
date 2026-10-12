@@ -5,13 +5,25 @@ from typing import Iterable
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from app.engine.indicator.base import get_registered_indicators
 from app.models.auth import PublicIndicatorFeaturePolicy, PublicIndicatorPolicy
 
 
 async def public_indicator_policies(session: AsyncSession) -> list[PublicIndicatorPolicy]:
-    return list((await session.execute(
-        select(PublicIndicatorPolicy).order_by(PublicIndicatorPolicy.sort_order, PublicIndicatorPolicy.id)
-    )).scalars().all())
+    """公开站的指标策略行，只保留**当前引擎里真实存在**的指标。
+
+    策略表是数据、引擎是代码，两者会漂移：某个指标被下线后，旧库里仍留着它的策略行
+    （种子 SQL 只在空库上执行，启动时的补种也只增不减）。这类死行如果被返回给公开站，
+    前端会照着它去请求一个不存在的指标；content_service 里更是**没有 try/except**，
+    直接就是 500。所以这里统一按注册表过滤一次。
+    """
+    registered = set(get_registered_indicators())
+    return [
+        item for item in (await session.execute(
+            select(PublicIndicatorPolicy).order_by(PublicIndicatorPolicy.sort_order, PublicIndicatorPolicy.id)
+        )).scalars().all()
+        if item.indicator_type in registered
+    ]
 
 
 async def public_indicator_feature_policies(

@@ -363,7 +363,7 @@ export interface TemplateSignal {
 
 // 每个周期图层需要显示什么指标
 export interface IndicatorDisplay {
-  type: 'ma' | 'ema' | 'macd' | 'bollinger' | 'rsi' | 'kdj' | 'chan' | string
+  type: 'ma' | 'ema' | 'macd' | 'bollinger' | 'chan' | string
   params: Record<string, number>
   window: 'main' | 'sub'
   color?: string

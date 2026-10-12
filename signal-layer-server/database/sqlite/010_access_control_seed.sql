@@ -91,7 +91,6 @@ INSERT INTO public_indicator_policies
 VALUES
     ('chan', '缠论', 1, 0, 1, 0, 5),
     ('ma', '移动平均线', 1, 1, 1, 0, 10), ('macd', 'MACD', 1, 1, 1, 0, 20),
-    ('kdj', 'KDJ', 1, 1, 1, 0, 30), ('rsi', 'RSI', 1, 1, 1, 0, 40),
     ('bollinger', '布林带', 1, 1, 1, 0, 50), ('volume', '成交量', 1, 1, 1, 0, 60),
     ('volume_structure', '量柱结构', 0, 1, 0, 0, 65),
     ('dilun_structure', '帝论·合理价格', 0, 1, 0, 0, 67),

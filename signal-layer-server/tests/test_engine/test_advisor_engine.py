@@ -56,8 +56,9 @@ def test_secondary_levels_are_strictly_finer():
 
 def test_every_registered_indicator_is_searchable():
     types = {space.indicator_type for space in INDICATOR_SPACES}
-    # 用户要求的七个指标 + RSI 都要在候选空间里
-    assert {"ma", "macd", "bollinger", "kdj", "rsi", "volume", "volume_structure", "chip_distribution"} <= types
+    assert {"ma", "macd", "bollinger", "volume", "volume_structure", "chip_distribution"} <= types
+    # KDJ / RSI 已从产品里下线：候选空间若还留着它们，寻优会生成指向不存在指标的规则
+    assert not ({"kdj", "rsi"} & types)
     for space in INDICATOR_SPACES:
         assert space.param_grid, f"{space.indicator_type} 没有可搜索参数"
         assert space.rules, f"{space.indicator_type} 没有可用规则"
@@ -334,8 +335,8 @@ def test_budget_is_spread_across_indicator_families():
 
     assert truncated is True
     families = {item.family for item in candidates}
-    # 七个指标族 + 缠论都要有代表
-    for expected in ("均线", "MACD", "布林带", "KDJ", "RSI", "成交量", "量柱结构", "筹码分布", "缠论"):
+    # 各指标族 + 缠论都要有代表（KDJ/RSI 已下线）
+    for expected in ("均线", "MACD", "布林带", "成交量", "量柱结构", "筹码分布", "缠论"):
         assert expected in families, f"{expected} 未进入候选空间"
 
 

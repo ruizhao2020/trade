@@ -83,11 +83,11 @@ describe('strategy indicator dependencies by timeframe', () => {
       right: {
         source: 'timeframe',
         timeframeId: '30m',
-        inner: { source: 'indicator', indicatorType: 'rsi', params: { period: 14 }, field: 'value' },
+        inner: { source: 'indicator', indicatorType: 'bollinger', params: { period: 20 }, field: 'middle' },
       },
     })])
     expect(collectStrategyIndicatorsForTimeframe(target, '1d')).toEqual([])
-    expect(collectStrategyIndicatorsForTimeframe(target, '30m')).toEqual([{ type: 'rsi', params: { period: 14 } }])
+    expect(collectStrategyIndicatorsForTimeframe(target, '30m')).toEqual([{ type: 'bollinger', params: { period: 20 } }])
   })
 
   it.each(['buy1', 'buy2', 'buy3', 'sell1', 'sell2', 'sell3'])('enables chan for %s only at its timeframe', (property) => {
@@ -115,7 +115,7 @@ describe('strategy indicator dependencies by timeframe', () => {
       ...condition({ source: 'price', field: 'close' }, '1d'),
       right: {
         source: 'timeframe', timeframeId: '5m',
-        inner: { source: 'indicator', indicatorType: 'rsi', params: { period: 14 }, field: 'value' },
+        inner: { source: 'indicator', indicatorType: 'bollinger', params: { period: 20 }, field: 'middle' },
       },
     })])
     target.secondaryTimeframeIds = []

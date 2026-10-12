@@ -83,14 +83,6 @@ class ContentService:
                     paragraphs.append(f"动量方面，DIF{'高于' if dif >= dea else '低于'}DEA，柱体为{'正' if histogram >= 0 else '负'}值，反映当前动量状态但不代表未来方向。")
                     period_charts.append(("macd", "MACD 动量", [{"type": "macd", "params": {"fast": 12, "slow": 26, "signal": 9}}], []))
 
-            if indicator_policies.get("rsi") and indicator_policies["rsi"].public_visible:
-                rsi = await self._indicator.calculate(symbol, timeframe, "rsi", {"period": 14}, klines)
-                if rsi.values:
-                    rsi_value = float(rsi.values[-1].get("value", 0))
-                    period_facts.append(_fact("RSI14", _number(rsi_value), "RSI(14)", timeframe))
-                    paragraphs.append(f"RSI14为{_number(rsi_value)}，处于{'相对高位' if rsi_value >= 70 else '相对低位' if rsi_value <= 30 else '中性区间'}。")
-                    period_charts.append(("rsi", "RSI 强弱", [{"type": "rsi", "params": {"period": 14}}], []))
-
             if indicator_policies.get("volume") and indicator_policies["volume"].public_visible:
                 volume = float(latest.get("volume", 0))
                 previous_volume = float(previous.get("volume", 0))

@@ -69,7 +69,7 @@ def test_one_indicator_failure_does_not_discard_successful_results(monkeypatch):
         indicators=[
             {"type": "ma", "params": {"period": 5}},
             {"type": "broken", "params": {}},
-            {"type": "rsi", "params": {"period": 14}},
+            {"type": "bollinger", "params": {"period": 20, "std": 2}},
         ],
     )
 
@@ -77,9 +77,9 @@ def test_one_indicator_failure_does_not_discard_successful_results(monkeypatch):
         request, FakeRequest(), user=object(), session=object(),
     ))
 
-    assert [item.type for item in response.results] == ["ma", "rsi"]
+    assert [item.type for item in response.results] == ["ma", "bollinger"]
     assert [(item.type, item.code) for item in response.errors] == [("broken", "invalid_parameters")]
-    assert service.calls == ["ma", "broken", "rsi"]
+    assert service.calls == ["ma", "broken", "bollinger"]
 
 
 def test_indicator_input_mutation_cannot_leak_into_the_next_indicator(monkeypatch):

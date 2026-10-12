@@ -4,7 +4,7 @@
 ============================================================================
 
 ## 功能
-提供技术指标计算,包括 MA/MACD/RSI/KDJ/Bollinger。
+提供技术指标计算,包括 MA/MACD/Bollinger/成交量结构/筹码分布等。
 计算结果通过 Redis 缓存,同一 (symbol+timeframe+type+params) 只算一次,
 跨用户共享。
 
@@ -89,7 +89,7 @@ class IndicatorService:
         Args:
             symbol: 交易对(如 "BTCUSDT")
             timeframe: 周期(如 "15m")
-            indicator_type: 指标类型(ma/macd/rsi/kdj/bollinger/...)
+            indicator_type: 指标类型(ma/macd/bollinger/volume/...)
             params: 指标参数(如 {"period": 5})
 
         Returns:

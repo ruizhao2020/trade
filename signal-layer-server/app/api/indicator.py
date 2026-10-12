@@ -24,8 +24,6 @@ INDICATOR_META: dict[str, dict] = {
         "default_params": {"period": 5, "touch_tolerance_pct": 0.5},
     },
     "macd": {"name": "MACD", "description": "指数平滑异同移动平均线", "default_params": {"fast": 12, "slow": 26, "signal": 9}},
-    "kdj": {"name": "KDJ", "description": "随机指标", "default_params": {"n": 9, "m1": 3, "m2": 3}},
-    "rsi": {"name": "RSI", "description": "相对强弱指标", "default_params": {"period": 14}},
     "bollinger": {
         "name": "布林带",
         "description": "Bollinger Bands 通道指标。带宽＝上轨−下轨，与若干根之前比较、幅度超过阈值即判定开口（走阔）或收口（收窄）。",

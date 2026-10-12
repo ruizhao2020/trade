@@ -291,10 +291,11 @@ describe('指标计算映射', () => {
     }
 
     // 策略建议的候选空间依赖这些指标存在，缺一个会让可搜索范围静默缩小。
+    // KDJ / RSI 已从产品下线，不再出现在这里。
     // 注意：/indicator/list 里 ma、macd 的 render.plots 是空的（元数据未填，
     // 完整字段在引擎的 RenderSpec 里），所以这里不断言 plots 非空——那是数据现状。
     const types = new Set(indicators.map((entry) => entry.type))
-    for (const expected of ['ma', 'macd', 'kdj', 'bollinger', 'rsi', 'volume', 'volume_structure', 'chip_distribution']) {
+    for (const expected of ['ma', 'macd', 'bollinger', 'volume', 'volume_structure', 'chip_distribution']) {
       expect(types.has(expected)).toBe(true)
     }
   })

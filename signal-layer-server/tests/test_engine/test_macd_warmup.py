@@ -1,14 +1,10 @@
-"""MACD 与 KDJ 的预热期语义。
+"""MACD 的预热期语义。
 
-两者原来的问题都属于"把算不出来伪装成算出来了"：
-- MACD：`_ema` 用首值播种且不返回 None，于是第 0 根的 DIF/DEA/柱体全是 0，
-  advisor 的"柱体转正"规则在预热期就是靠这个 0 在判信号。
-- KDJ：`m1`/`m2` 读了没用（平滑系数写死 2/3、1/3），且第 n-1 根明明能算出 RSV
-  却被填成种子 50。
+原来的问题属于"把算不出来伪装成算出来了"：`_ema` 用首值播种且不返回 None，
+于是第 0 根的 DIF/DEA/柱体全是 0，advisor 的"柱体转正"规则在预热期就是靠这个 0 判信号。
 """
 
 from app.engine.indicator.base import _ema, _rma, _sma
-from app.engine.indicator.kdj import KDJCalculator
 from app.engine.indicator.macd import MACDCalculator
 
 
@@ -69,38 +65,6 @@ def test_macd_rejects_inverted_periods():
     for params in ({"fast": 26, "slow": 12}, {"fast": 0}, {"signal": 0}):
         try:
             MACDCalculator().calculate(klines, params)
-        except ValueError:
-            continue
-        raise AssertionError(f"参数 {params} 应当被拒绝")
-
-
-def test_kdj_uses_m1_and_m2():
-    """修复前 m1=3/m2=3 与 m1=5/m2=8 输出完全一致（参数是死的）。"""
-    klines = make_klines(60)
-    default = KDJCalculator().calculate(klines, {"n": 9, "m1": 3, "m2": 3})
-    smoothed = KDJCalculator().calculate(klines, {"n": 9, "m1": 5, "m2": 8})
-
-    assert default.values[-1]["k"] != smoothed.values[-1]["k"]
-    assert default.values[-1]["d"] != smoothed.values[-1]["d"]
-    # m1=m2=3 时必须与经典口径 (2/3, 1/3) 等价
-    assert abs(default.values[-1]["j"] - (3 * default.values[-1]["k"] - 2 * default.values[-1]["d"])) < 1e-3
-
-
-def test_kdj_first_value_lands_on_the_first_computable_bar():
-    klines = make_klines(30)
-    result = KDJCalculator().calculate(klines, {"n": 9, "m1": 3, "m2": 3})
-
-    assert len(result.values) == len(klines)
-    # n=9 → 第 8 根就有完整的 9 根窗口，RSV 可算
-    assert all(row["k"] is None for row in result.values[:8]), "预热期必须是 None"
-    assert result.values[8]["k"] is not None, "第 8 根就能算 RSV，不该还是种子 50"
-
-
-def test_kdj_rejects_invalid_params():
-    klines = make_klines(30)
-    for params in ({"n": 1}, {"m1": 0}, {"m2": -1}):
-        try:
-            KDJCalculator().calculate(klines, params)
         except ValueError:
             continue
         raise AssertionError(f"参数 {params} 应当被拒绝")

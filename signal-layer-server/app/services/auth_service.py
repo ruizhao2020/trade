@@ -164,8 +164,6 @@ PUBLIC_INDICATOR_DEFAULTS = [
     ("chan", "缠论", True, False, True, False, 5),
     ("ma", "移动平均线", True, True, True, False, 10),
     ("macd", "MACD", True, True, True, False, 20),
-    ("kdj", "KDJ", True, True, True, False, 30),
-    ("rsi", "RSI", True, True, True, False, 40),
     ("bollinger", "布林带", True, True, True, False, 50),
     ("volume", "成交量", True, True, True, False, 60),
     ("volume_structure", "量柱结构", False, True, False, False, 65),

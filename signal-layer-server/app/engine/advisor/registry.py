@@ -6,7 +6,7 @@
 序列引用（SeriesRef）写法：
   "price"      —— 该级别的收盘价
   "<字段名>"   —— 该指标自身输出的字段（如 macd 的 dif / dea）
-  数字         —— 常量阈值（如 RSI 的 30 / 70）
+  数字         —— 常量阈值（如超买超卖用的固定数值）
 
 规则声明 RuleSpec 的元组含义：
   (kind, direction, left, right, label_template)
@@ -87,23 +87,6 @@ INDICATOR_SPACES: tuple[IndicatorSpace, ...] = (
             RuleSpec("cross", "below", "price", "upper", "价格下穿布林上轨"),
             RuleSpec("compare", "above", "price", "middle", "收盘价在布林中轨上方持有"),
             RuleSpec("direction", "rising", "middle", None, "布林中轨上行时持有"),
-        ),
-    ),
-    IndicatorSpace(
-        indicator_type="kdj", family="KDJ",
-        param_grid=({"n": 9, "m1": 3, "m2": 3},),
-        rules=(
-            RuleSpec("cross", "above", "k", "d", "KDJ 金叉（K 上穿 D）"),
-            RuleSpec("cross", "below", "k", "d", "KDJ 死叉（K 下穿 D）"),
-            RuleSpec("compare", "below", "j", 0.0, "J 值低于 0（超卖）"),
-        ),
-    ),
-    IndicatorSpace(
-        indicator_type="rsi", family="RSI",
-        param_grid=({"period": 14}, {"period": 6}),
-        rules=(
-            RuleSpec("compare", "below", "value", 30.0, "RSI{period} 低于 30（超卖）"),
-            RuleSpec("cross", "above", "value", 50.0, "RSI{period} 上穿 50"),
         ),
     ),
     IndicatorSpace(

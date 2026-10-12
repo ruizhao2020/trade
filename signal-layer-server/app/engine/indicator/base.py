@@ -41,7 +41,7 @@ IndicatorService 启动时会自动 import 本目录所有 .py 文件,触发注�
    只要长度对齐，两条路径等价；长度不齐会让 advisor 整体错位。
 
 2. **预热期填 None**: 样本不足的字段必须是 None，不能填 0、不能填首值、不能填周期默认值
-   (如 KDJ 的 50)。伪值会被条件判断当成"真实读数"，直接产生假信号。
+   (如把中值当成初始读数)。伪值会被条件判断当成"真实读数"，直接产生假信号。
 
 3. **因果性**: 第 i 行的值只能依赖 0..i 根的数据，不得回填历史下标。
    图表需要"画在更早的位置"时，不要在 `values` 里回填——回填出来的字段
@@ -272,7 +272,7 @@ def _ema(values: list[Optional[float]], period: int) -> list[Optional[float]]:
 def _rma(values: list[Optional[float]], period: int) -> list[Optional[float]]:
     """Wilder 平滑(RMA)。alpha = 1/period，SMA 播种，预热期 None。
 
-    ATR 与 RSI 用的是这个，不是 `_ema`：两者 alpha 不同(1/n vs 2/(n+1))，
+    ATR 用的是这个，不是 `_ema`：两者的 alpha 不同(1/n vs 2/(n+1))，
     拿 EMA 代替 RMA 会让 ATR 的反应速度约为标准口径的 1.87 倍。
     """
     return _smooth(values, period, 1.0 / period)

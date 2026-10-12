@@ -36,9 +36,7 @@
  "indicators": [{"type": "ma", "params": {"period": 260}},
                 {"type": "ma", "params": {"period": 20}},
                 {"type": "bollinger", "params": {"period": 20, "std": 2}},
-                {"type": "rsi", "params": {"period": 14}},
                 {"type": "macd", "params": {"fast": 12, "slow": 26, "signal": 9}},
-                {"type": "kdj", "params": {"n": 9, "m1": 3, "m2": 3}},
                 {"type": "support_resistance", "params": {}},
                 {"type": "liquidity_zone", "params": {}},
                 {"type": "liquidity_sweep", "params": {}}]}
@@ -54,9 +52,7 @@
 | `ma period=260` | 60 行全 `value: null`（60 根数据不够 260 根均线）；`support`/`resistance` 是 0/1 标志位，0 表示未触及 |
 | `ma period=20` | 前 19 行 `null`，第 20 行起有值 |
 | `bollinger` | 三轨同步 null / 有值 |
-| `rsi period=14` | 前 14 行 `null`，下标 14 起有值 |
 | `macd` | `dif` 自下标 25 起有值，`dea`/`histogram` 自下标 33 起有值 |
-| `kdj` | 前 8 行 `null`，下标 8 起有值 |
 | `support_resistance` | 决策字段（`nearest_support` 等）与渲染线 `level_1..level_6`；后者是"当前有效位"的快照，不在 outputs 白名单里 |
 | `liquidity_sweep` | `render.plots` 为**空**、信号走 `render.markers`（挂在被扫价位上的 SSL/BSL SWEEP）；决策字段 `bull_signal`/`bear_signal`/`bull_level`/`bear_level`/`atr`。主图叠加折线的值必须是价格量级，这条由 `test_indicator_contract.py` 的护栏守住 |
 | `liquidity_zone` | 决策字段（`nearest_zone_*`、`sweep_up/down` 等，只描述仍在聚集阶段的区）与**按槽位的方框字段** `zone_{k}_low/high/consumed/swept/swept_from_top`；`zone_{k}_*` 不在 outputs 白名单里，前端按这套命名约定还原方框 |

@@ -126,7 +126,7 @@ type IndicatorValue = Extract<ConditionValue, { source: 'indicator' }>
 const PARAM_LABELS: Record<string, string> = {
   period: '周期', touch_tolerance_pct: '触碰容差', fast: '快线', slow: '慢线', signal: '信号线',
   squeeze_lookback: '对比回看', squeeze_threshold_pct: '幅度阈值',
-  n: '计算周期', m1: 'K值平滑', m2: 'D值平滑', std: '标准差倍数',
+  std: '标准差倍数',
   bins: '价格档位', lookback: '回看天数', min_turnover_days: '最少有效天数',
   piv_len: '枢轴长度', atr_len: '波幅周期',
   shrink_max: '缩量上限', increase_min: '增量起点', double_min: '倍量起点',
@@ -148,7 +148,6 @@ const PARAM_HELP: Record<string, string> = {
   period: '用于计算均线或指标的K线数量。周期越大，结果越平滑，但反应越慢。',
   touch_tolerance_pct: '判断均线支撑或压制时允许的触碰范围，按均线价格的百分比计算。',
   fast: 'MACD快线的计算周期。', slow: 'MACD慢线的计算周期。', signal: 'MACD信号线的平滑周期。',
-  n: 'KDJ的基础计算周期。', m1: 'KDJ中K值的平滑周期。', m2: 'KDJ中D值的平滑周期。',
   std: '布林带标准差倍数，数值越大通道越宽。',
   lookback: '向前回看的K线数量，用于识别历史区间或结构。',
   min_turnover_days: '筹码分布至少需要具备有效换手数据的交易日数量。',
