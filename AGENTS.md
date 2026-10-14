@@ -62,6 +62,11 @@ Token + RBAC (see `docs/AUTHORIZATION.md`). HTTP `Authorization: Bearer <token>`
 
 ## Conventions
 
+Two standing rules from the user — apply them to every change unless told otherwise:
+
+- **Do not touch ECS deployment as part of feature work.** The user deploys himself. `deploy/ecs/` stays as reference; don't add deployment steps, notes, or image/build changes to feature changes.
+- **Do not expose changes on the public site by default.** Public visibility is data-driven (`public_indicator_policies` / `public_indicator_feature_policies` seeds). Don't add public policy rows or public-surface content for a new indicator/module unless the user asks for it explicitly.
+
 - Code comments/docstrings are largely in Chinese — keep consistent when editing.
 - Backend routers in `app/api/*.py`, registered in `app/api/router.py` under `/api/v1`.
 - Frontend API modules mirror backend routes in `src/api/*.ts`.
