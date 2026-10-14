@@ -108,6 +108,24 @@ INDICATOR_SPACES: tuple[IndicatorSpace, ...] = (
         discrete=True,
     ),
     IndicatorSpace(
+        indicator_type="volume_price", family="量价",
+        param_grid=(
+            {"volume_ratio_min": 1.5, "shrink_max": 0.7},
+            {"volume_ratio_min": 1.3, "shrink_max": 0.6},
+            {"volume_ratio_min": 2.0, "shrink_max": 0.8},
+        ),
+        # 只登记"当入场条件"讲得通的形态：放量滞涨与天量天价是顶部预警，
+        # 拿去当入场等于系统性地追顶，会白白占掉搜索预算，因此不进候选空间，
+        # 留在条件编辑器里让用户按出场条件手工用。
+        rules=(
+            RuleSpec("compare", "above", "volume_breakout", 0.5, "出现放量突破"),
+            RuleSpec("compare", "above", "shrink_pullback", 0.5, "出现缩量回调"),
+            RuleSpec("compare", "above", "price_volume_rise", 0.5, "量价齐升"),
+            RuleSpec("compare", "above", "bottom_volume", 0.5, "底部放量"),
+        ),
+        discrete=True,
+    ),
+    IndicatorSpace(
         indicator_type="chip_distribution", family="筹码分布",
         param_grid=({"lookback": 60},),
         rules=(

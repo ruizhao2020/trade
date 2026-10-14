@@ -174,6 +174,36 @@ INDICATOR_META: dict[str, dict] = {
             {"field": "golden_line_break", "kind": "event", "label": "跌破黄金线"},
         ],
     },
+    "volume_price": {
+        "name": "量价",
+        "description": (
+            "量能与价格的结合形态：放量突破、缩量回调、量价齐升、放量滞涨、"
+            "天量天价、地量地价、底部放量。量能是否放大按当根之前的基线中位数衡量。"
+        ),
+        "default_params": {
+            "breakout_window": 20,
+            "baseline_window": 20,
+            "position_window": 60,
+            "rally_streak": 3,
+            "volume_ratio_min": 1.5,
+            "shrink_max": 0.7,
+            "stagnant_pct": 1.0,
+            "low_position_pct": 20.0,
+        },
+        "outputs": [
+            {"field": "volume_breakout", "kind": "event", "label": "放量突破"},
+            {"field": "shrink_pullback", "kind": "event", "label": "缩量回调"},
+            {"field": "price_volume_rise", "kind": "event", "label": "量价齐升"},
+            {"field": "volume_stagnation", "kind": "event", "label": "放量滞涨"},
+            {"field": "climax_top", "kind": "event", "label": "天量天价"},
+            {"field": "exhaustion_bottom", "kind": "event", "label": "地量地价"},
+            {"field": "bottom_volume", "kind": "event", "label": "底部放量"},
+            {"field": "relative_volume", "label": "相对量能"},
+            {"field": "breakout_pct", "label": "距前高百分比"},
+            {"field": "drawdown_pct", "label": "距区间高点回撤"},
+            {"field": "change_pct", "label": "当日涨幅"},
+        ],
+    },
     "dilun_structure": {
         "name": "帝论·合理价格",
         "description": "基于确认分型和三段走势折叠，识别合理价格区间、回归、回归失败与态势末端脱离。",

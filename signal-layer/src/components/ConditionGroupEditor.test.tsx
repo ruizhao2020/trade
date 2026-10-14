@@ -1,4 +1,4 @@
-import { fireEvent, render, screen } from '@testing-library/react'
+import { fireEvent, render, screen, within } from '@testing-library/react'
 import { describe, expect, it, vi } from 'vitest'
 import { ConditionOperator } from '../core/types.ts'
 import type { ConditionGroup, IndicatorInfo } from '../core/types.ts'
@@ -147,7 +147,7 @@ describe('ConditionGroupEditor condition isolation', () => {
     expect(screen.queryByRole('spinbutton')).not.toBeInTheDocument()
   })
 
-  it('allows strategy conditions to select non-plot indicator outputs', () => {
+  it('形态类指标的字段直接列在取值下拉里，不再另给一个字段下拉', () => {
     const onChange = vi.fn()
     const group = maGroup('量柱确认', 5)
     group.conditions[0] = {
@@ -159,13 +159,17 @@ describe('ConditionGroupEditor condition isolation', () => {
     }
 
     render(<ConditionGroupEditor groups={[group]} indicators={[maInfo, volumeStructureInfo]} onChange={onChange} />)
-    const output = screen.getByLabelText('量柱结构 输出线')
-    expect(output).toHaveValue('key_pillar')
-    expect(screen.getByRole('option', { name: '黄金柱确认' })).toBeInTheDocument()
+    // 编码里带着字段，取值下拉自己就能显示当前选中的是哪一条
+    const source = screen.getByLabelText('条件 1 左值')
+    expect(source).toHaveValue('signal:volume_structure:key_pillar')
+    expect(screen.queryByLabelText('量柱结构 输出线')).not.toBeInTheDocument()
+    expect(within(source).getByRole('option', { name: '黄金柱确认' })).toBeInTheDocument()
 
-    fireEvent.change(output, { target: { value: 'golden_confirmed' } })
+    fireEvent.change(source, { target: { value: 'signal:volume_structure:golden_confirmed' } })
     const updated = onChange.mock.lastCall?.[0] as ConditionGroup[]
-    expect(updated[0]!.conditions[0]!.left).toMatchObject({ field: 'golden_confirmed' })
+    expect(updated[0]!.conditions[0]!.left).toMatchObject({
+      source: 'indicator', indicatorType: 'volume_structure', field: 'golden_confirmed',
+    })
   })
 })
 
@@ -409,5 +413,92 @@ describe('布林带开口与收口', () => {
       .map((o) => o.textContent.trim())
     expect(labels).not.toContain('支撑')
     expect(labels).not.toContain('压制')
+  })
+})
+
+// ── 取值分类整理 ────────────────────────────────────────────────────────
+
+const volumePriceInfo: IndicatorInfo = {
+  type: 'volume_price',
+  name: '量价',
+  description: '量价结合形态',
+  default_params: {
+    breakout_window: 20, baseline_window: 20, position_window: 60, rally_streak: 3,
+    volume_ratio_min: 1.5, shrink_max: 0.7, stagnant_pct: 1, low_position_pct: 20,
+  },
+  outputs: [
+    { field: 'volume_breakout', label: '放量突破', kind: 'event' },
+    { field: 'shrink_pullback', label: '缩量回调', kind: 'event' },
+    { field: 'relative_volume', label: '相对量能' },
+  ],
+  render: { window: 'sub', plots: [{ field: 'volume', type: 'histogram', color: '#596477', label: '成交量' }] },
+}
+
+describe('ConditionGroupEditor 取值分类', () => {
+  const indicators = [maInfo, volumeStructureInfo, volumePriceInfo]
+
+  function sourceGroups(select: HTMLElement): (string | null)[] {
+    return Array.from(select.querySelectorAll('optgroup')).map((group) => group.getAttribute('label'))
+  }
+
+  it('量柱结构与量价与价格、缠论平级；缠论不再分「信号 / 形态」', () => {
+    render(<ConditionGroupEditor groups={[maGroup('分类', 5)]} indicators={indicators} onChange={vi.fn()} />)
+
+    const groups = sourceGroups(screen.getByLabelText('条件 1 左值'))
+    expect(groups).toEqual(['价格', '缠论', '量柱结构', '量价', '指标'])
+    expect(groups).not.toContain('缠论·信号')
+    expect(groups).not.toContain('缠论·形态')
+
+    // 提级之后不该在「指标」组里重复出现
+    const instrument = screen.getByLabelText('条件 1 左值').querySelector('optgroup[label="指标"]')!
+    expect(instrument.textContent).not.toContain('量柱结构')
+    expect(instrument.textContent).not.toContain('量价')
+  })
+
+  it('去掉成交量 / 笔数 / 中枢数；固定值只保留在右值', () => {
+    render(<ConditionGroupEditor groups={[maGroup('精简', 5)]} indicators={indicators} onChange={vi.fn()} />)
+
+    for (const label of ['成交量', '笔数', '中枢数']) {
+      expect(screen.queryByRole('option', { name: label }), `${label} 不该再出现在取值下拉里`).not.toBeInTheDocument()
+    }
+    // 左值拿常数当主体没有意义；右值必须要它——所有阈值都填在那里
+    expect(sourceGroups(screen.getByLabelText('条件 1 左值'))).not.toContain('其他')
+    expect(sourceGroups(screen.getByLabelText('条件 1 右值'))).toContain('其他')
+  })
+
+  it('选中量价的形态即一条「出现即成立」的条件', () => {
+    const onChange = vi.fn()
+    render(<ConditionGroupEditor groups={[maGroup('量价', 5)]} indicators={indicators} onChange={onChange} />)
+
+    fireEvent.change(screen.getByLabelText('条件 1 左值'), { target: { value: 'signal:volume_price:volume_breakout' } })
+
+    const updated = onChange.mock.lastCall?.[0] as ConditionGroup[]
+    expect(updated[0]!.conditions[0]).toMatchObject({
+      operator: ConditionOperator.NonZero,
+      left: { source: 'indicator', indicatorType: 'volume_price', field: 'volume_breakout' },
+    })
+    // 参数自动带后端的默认值，用户不必先猜该填多少
+    expect((updated[0]!.conditions[0]!.left as { params: Record<string, number> }).params)
+      .toMatchObject({ volume_ratio_min: 1.5, breakout_window: 20 })
+  })
+
+  it('已在用量价事件条件的策略渲染成独立条件，但参数仍可调', () => {
+    const group = maGroup('放量突破', 5)
+    group.conditions[0] = {
+      ...group.conditions[0]!,
+      left: {
+        source: 'indicator', indicatorType: 'volume_price',
+        params: { ...volumePriceInfo.default_params }, field: 'volume_breakout',
+      },
+      operator: ConditionOperator.NonZero,
+    }
+
+    render(<ConditionGroupEditor groups={[group]} indicators={indicators} onChange={vi.fn()} />)
+
+    expect(screen.getByLabelText('条件 1 左值')).toHaveValue('signal:volume_price:volume_breakout')
+    expect(screen.getByText('出现即成立')).toBeInTheDocument()
+    expect(screen.queryByLabelText('条件 1 运算符')).not.toBeInTheDocument()
+    expect(screen.queryByPlaceholderText('数值')).not.toBeInTheDocument()
+    expect(screen.getByLabelText('量价 放量倍数')).toHaveValue(1.5)
   })
 })

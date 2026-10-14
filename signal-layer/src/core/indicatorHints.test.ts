@@ -23,7 +23,7 @@ function indicatorParams(type: string): string[] {
 }
 
 /** 已经写了参数说明的指标。新增一个就加到这里，孤儿检查随之生效。 */
-const DOCUMENTED = ['bollinger', 'liquidity_zone', 'support_resistance', 'liquidity_sweep']
+const DOCUMENTED = ['bollinger', 'liquidity_zone', 'support_resistance', 'liquidity_sweep', 'volume_price']
 
 describe('指标参数说明', () => {
   for (const type of DOCUMENTED) {

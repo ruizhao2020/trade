@@ -59,3 +59,31 @@ export function volumeBarStyle(classValue: number | undefined, shapeValue: numbe
 export function volumeBarColor(isUp: boolean) {
   return isUp ? VOLUME_UP_COLOR : VOLUME_DOWN_COLOR
 }
+
+/**
+ * 这条柱状序列要不要按当日阴阳着红绿。
+ *
+ * 判据取**数据**而不是指标名：只要画的是 `volume` 柱、且行里带了 `is_up`
+ * 标志，就逐根上色——成交量、量柱结构、量价都是这么输出的。
+ *
+ * 这里曾经写死成两个指标 type（`volume` / `volume_structure`），于是新加的
+ * 量价画出来的量柱是一片灰：加指标的人不会想起来还有这么个列表要改。
+ */
+export function isVolumeBarSeries(plotField: string, values: Record<string, number>[]): boolean {
+  return plotField === 'volume' && values.some(value => Number.isFinite(value.is_up))
+}
+
+/** 自己就带红绿成交量柱的指标：它们会画量能副图，不需要再叠一个普通「成交量」。 */
+const SELF_CONTAINED_VOLUME_PANES = new Set(['volume_structure', 'volume_price'])
+
+/**
+ * 判断某个指标是否该因为"已经有人在画量能副图"而跳过。
+ *
+ * 只影响画图：同一个标的上同时开「量柱结构 / 量价」和普通「成交量」时，
+ * 会出现两个几乎一样的量能副图，所以只画前者那个。计算与数据详情不受影响，
+ * 两个指标的数值照样都在。
+ */
+export function shouldSkipVolumePane(indicatorType: string, allTypes: string[]): boolean {
+  if (indicatorType !== 'volume') return false
+  return allTypes.some(type => SELF_CONTAINED_VOLUME_PANES.has(type))
+}

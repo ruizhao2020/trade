@@ -20,6 +20,8 @@ import type { IndicatorProfileData, IndicatorResult, RenderSpec } from '../core/
 import {
   GENERAL_PILLAR_COLOR,
   GOLDEN_PILLAR_COLOR,
+  isVolumeBarSeries,
+  shouldSkipVolumePane,
   volumeBarColor,
 } from '../core/volumeIndicator.ts'
 import { findProfileSnapshot } from '../core/profileData.ts'
@@ -61,10 +63,11 @@ export class IndicatorRenderer {
     // 简单策略:全量重建。后续可优化为增量对比
     this.clear()
 
-    const hasVolumeStructure = results.some((result) => result.type === 'volume_structure')
+    const types = results.map((result) => result.type)
     for (const result of results) {
-      // 量柱结构自身包含红绿成交量柱；同时存在普通成交量时避免生成两个重复子图。
-      if (hasVolumeStructure && result.type === 'volume') continue
+      // 量柱结构 / 量价自己就画红绿成交量柱；同时开着普通「成交量」会多出一个
+      // 几乎一样的量能副图，这里只画前者那个。
+      if (shouldSkipVolumePane(result.type, types)) continue
       if (!result.render || result.values.length === 0) continue
       this._renderOne(result)
     }
@@ -186,7 +189,7 @@ export class IndicatorRenderer {
           priceLineVisible: false,
           lastValueVisible: false,
         }, paneIndex)
-        if ((result.type === 'volume' || result.type === 'volume_structure') && plot.field === 'volume') {
+        if (isVolumeBarSeries(plot.field, result.values)) {
           const volumeData = result.values
             .filter(value => Number.isFinite(value.volume))
             .map(value => ({
@@ -221,7 +224,11 @@ export class IndicatorRenderer {
       }
     }
 
-    if (render.markers && render.window === 'main') {
+    // 标记一律挂在主图的 candlestick series 上（走价格轴），与指标自己的 window
+    // 无关：副图指标（量价）的买卖点也要落在 K 线上，才能和它下面那根量柱对齐在
+    // 同一根 K 线。这里曾经要求 window === 'main'，副图指标即使声明了 markers
+    // 也会被整段跳过。
+    if (render.markers) {
       for (const ms of render.markers) {
         const markers: SeriesMarker<Time>[] = []
         for (const v of result.values) {

@@ -242,6 +242,11 @@ INVALID_PARAMS: dict[str, list[dict]] = {
     "macd": [{"fast": 0}, {"fast": 30, "slow": 20}],
     "volume": [{"lookback": 1}, {"shrink_max": 2.0}],
     "volume_structure": [{"lookback": 1}, {"confirm_bars": 1}],
+    "volume_price": [
+        {"breakout_window": 1}, {"baseline_window": 1}, {"position_window": 1},
+        {"rally_streak": 1}, {"volume_ratio_min": 1.0}, {"shrink_max": 1.5},
+        {"stagnant_pct": -1.0}, {"low_position_pct": 100.0},
+    ],
     "liquidity_sweep": [{"piv_len": 0}, {"piv_len": 1}, {"atr_len": 0}, {"dir_mode": "short only"}],
     "support_resistance": [
         {"span": 0}, {"span": 101}, {"atr_len": 1}, {"tolerance_atr": 0},
