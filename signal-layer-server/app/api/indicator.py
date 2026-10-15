@@ -178,16 +178,18 @@ INDICATOR_META: dict[str, dict] = {
         "name": "量价",
         "description": (
             "量能与价格的结合形态：放量突破、缩量回调、量价齐升、放量滞涨、"
-            "天量天价、地量地价、底部放量。量能是否放大按当根之前的基线中位数衡量。"
+            "天量天价、地量地价、底部放量。量能是否放大按当根之前的基线中位数衡量；"
+            "缩量回调、量价齐升、地量地价按连续多根 K 线判定。"
         ),
         "default_params": {
             "breakout_window": 20,
             "baseline_window": 20,
             "position_window": 60,
-            "rally_streak": 3,
+            "consecutive_bars": 3,
             "volume_ratio_min": 1.5,
             "shrink_max": 0.7,
             "stagnant_pct": 1.0,
+            "stagnant_max_drawdown_pct": 10.0,
             "low_position_pct": 20.0,
         },
         "outputs": [

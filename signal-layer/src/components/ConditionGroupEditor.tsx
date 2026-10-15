@@ -155,9 +155,9 @@ const PARAM_LABELS: Record<string, string> = {
   maturity_bars: '态势成熟根数', maturity_folds: '态势成熟折叠',
   breakout_buffer_pct: '突破缓冲',
   breakout_window: '突破参考窗口', baseline_window: '量能基线窗口',
-  position_window: '位置参考窗口', rally_streak: '齐升连续根数',
+  position_window: '位置参考窗口', consecutive_bars: '连续K线根数',
   volume_ratio_min: '放量倍数', stagnant_pct: '滞涨涨幅上限',
-  low_position_pct: '低位回撤阈值',
+  stagnant_max_drawdown_pct: '滞涨高位上限', low_position_pct: '低位回撤阈值',
 }
 
 const PARAM_HELP: Record<string, string> = {
