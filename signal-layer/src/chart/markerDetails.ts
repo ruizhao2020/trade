@@ -1,4 +1,4 @@
-import type { BuySellPoint, Divergence, IndicatorMarkerDetail } from '../core/types.ts'
+import type { BuySellPoint, Divergence, IndicatorMarkerDetail, IndicatorResult } from '../core/types.ts'
 import type { SeriesMarker, Time } from 'lightweight-charts'
 
 const BUY_SELL_LABELS: Record<string, string> = {
@@ -87,6 +87,136 @@ export function buildBuySellMarkerDetail(point: BuySellPoint): IndicatorMarkerDe
       ...(point.reason ? [{ label: '触发依据', value: reasonLabel[point.reason] ?? point.reason }] : []),
     ],
   }
+}
+
+/**
+ * 点击某根 K 线时，若该根上有「量价」形态触发，构造详情浮窗数据。
+ *
+ * 只认带 rule 的标记：其他指标的标记没有口径文本，不参与这个弹窗。
+ * 同一根上多个形态同时成立时，按标记顺序取第一个作标题，其余列进"同时成立"。
+ * "信号 N 号"里的 N 是形态的对外编号（1 起、只增不改），用于交流时指认信号。
+ *
+ * 纯函数，便于单测（见 markerDetails.test.ts）。
+ */
+export function buildFormMarkerDetail(
+  result: IndicatorResult,
+  timeSeconds: number,
+  field?: string,
+): IndicatorMarkerDetail | undefined {
+  const formMarkers = (result.render?.markers ?? []).filter((marker) => marker.rule)
+  if (formMarkers.length === 0) return undefined
+
+  const row = result.values.find((value) => Math.round(value.time / 1000) === timeSeconds)
+  if (!row) return undefined
+
+  const fired = formMarkers.filter(
+    (marker) => Boolean(row[marker.field]) && (!field || marker.field === field),
+  )
+  if (fired.length === 0) return undefined
+
+  const numbers = formSignalNumbers(result)
+  const sequenceOf = (markerField: string) => numbers.get(`${markerField}:${Math.round(row.time / 1000)}`)
+  const primary = fired[0]!
+  const isBuy = Number(row[primary.field]) > 0
+  const fields = [
+    { label: '时间', value: dateText(row.time) },
+    { label: '相对量能', value: numberText(row.relative_volume) },
+    { label: '当日涨幅', value: pctText(row.change_pct) },
+    { label: '距高点回撤', value: magnitudeText(row.drawdown_pct) },
+    { label: '成交量', value: numberText(row.volume) },
+    { label: '量能基线', value: numberText(row.baseline) },
+  ]
+  if (fired.length > 1) {
+    fields.push({
+      label: '同时成立',
+      value: fired.slice(1).map((marker) => {
+        const number = sequenceOf(marker.field)
+        return number ? `${marker.buyLabel} #${number}` : marker.buyLabel
+      }).join('、'),
+    })
+  }
+
+  return {
+    id: `${result.type}:${primary.field}:${timeSeconds}`,
+    title: isBuy ? primary.buyLabel : primary.sellLabel,
+    subtitle: `信号 ${sequenceOf(primary.field) ? `#${sequenceOf(primary.field)}` : '—'} · ${isBuy ? '买入侧' : '顶部预警'}`,
+    accentColor: isBuy ? '#ff5b62' : '#2fc58d',
+    fields,
+    reasonsTitle: '计算口径',
+    reasons: [fillRule(primary.rule ?? '', result.params)],
+  }
+}
+
+/** 把口径模板里的 {param} 换成实际参数——改了参数，弹窗里的说明也跟着变。 */
+export function fillRule(rule: string, params: Record<string, number>): string {
+  return rule.replace(/\{(\w+)\}/g, (match, key: string) => {
+    const value = params[key]
+    return value === undefined ? match : String(value)
+  })
+}
+
+/**
+ * 形态标记的自增编号：在当前图的数据范围内，按时间先后、同一根再按形态顺序，
+ * 每个触发占一个号（同一根上两个形态算两个号）。
+ *
+ * 键是 `字段:秒级时间`，用于给图上的标记文字和弹窗取号。
+ */
+export function formSignalNumbers(result: IndicatorResult): Map<string, number> {
+  const formMarkers = (result.render?.markers ?? []).filter((marker) => marker.rule)
+  const numbers = new Map<string, number>()
+  let sequence = 0
+  for (const value of result.values) {
+    const timeSeconds = Math.round(value.time / 1000)
+    for (const marker of formMarkers) {
+      if (!value[marker.field]) continue
+      numbers.set(`${marker.field}:${timeSeconds}`, ++sequence)
+    }
+  }
+  return numbers
+}
+
+/** 约定：带弹窗的指标文字用中括号包起来；有自增编号时写成 `[12. 放量突破]`。 */
+export function popupMarkerLabel(label: string, hasPopup: boolean, sequence?: number): string {
+  if (!hasPopup) return label
+  return sequence ? `[${sequence}. ${label}]` : `[${label}]`
+}
+
+/** 指标形态标记的 id：点击时据此找回具体是哪一根、哪一个形态。 */
+export function formMarkerId(resultType: string, field: string, timeSeconds: number): string {
+  return `form:${resultType}:${field}:${timeSeconds}`
+}
+
+export interface FormMarkerRef {
+  resultType: string
+  field: string
+  timeSeconds: number
+}
+
+/** 解析标记 id；不是形态标记（如缠论的 chan: 前缀）时返回 undefined。 */
+export function parseFormMarkerId(markerId: string): FormMarkerRef | undefined {
+  const parts = markerId.split(':')
+  if (parts[0] !== 'form' || parts.length < 4) return undefined
+  const [, resultType, field] = parts
+  const timeSeconds = Number(parts[3])
+  if (!resultType || !field || !Number.isFinite(timeSeconds)) return undefined
+  return { resultType, field, timeSeconds }
+}
+
+function pctText(value: number | undefined): string {
+  if (value === undefined || value === null || !Number.isFinite(value)) return '—'
+  return `${value >= 0 ? '+' : ''}${value.toFixed(2)}%`
+}
+
+/** 幅度（如回撤）不是涨跌，不带正负号。 */
+function magnitudeText(value: number | undefined): string {
+  if (value === undefined || value === null || !Number.isFinite(value)) return '—'
+  return `${value.toFixed(2)}%`
+}
+
+function dateText(epochMs: number): string {
+  return new Intl.DateTimeFormat('zh-CN', {
+    year: 'numeric', month: '2-digit', day: '2-digit',
+  }).format(new Date(epochMs))
 }
 
 export function placeMarkerDetailPopup(

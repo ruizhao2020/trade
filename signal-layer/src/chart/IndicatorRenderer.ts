@@ -16,7 +16,7 @@
 
 import type { IChartApi, ISeriesApi, Time, ISeriesMarkersPluginApi, SeriesMarker } from 'lightweight-charts'
 import { LineSeries, HistogramSeries, createSeriesMarkers } from 'lightweight-charts'
-import type { IndicatorProfileData, IndicatorResult, RenderSpec } from '../core/types.ts'
+import type { IndicatorMarkerDetail, IndicatorProfileData, IndicatorResult, RenderSpec } from '../core/types.ts'
 import {
   GENERAL_PILLAR_COLOR,
   GOLDEN_PILLAR_COLOR,
@@ -29,6 +29,7 @@ import { VolumeBoxPrimitive, type VolumeBoxPoint } from './VolumeBoxPrimitive.ts
 import { PriceProfilePrimitive, type PriceProfilePoint } from './PriceProfilePrimitive.ts'
 import { DilunZonePrimitive, type DilunZoneRegion } from './DilunZonePrimitive.ts'
 import { buildZoneBoxes, fillHeightRatio } from './zoneBoxes.ts'
+import { buildFormMarkerDetail, formMarkerId, formSignalNumbers, parseFormMarkerId, popupMarkerLabel } from './markerDetails.ts'
 
 interface AttachedPrimitive {
   detach: () => void
@@ -48,6 +49,8 @@ export class IndicatorRenderer {
   private created: CreatedSeries[] = []
   private subPaneCount = 1
   private priceProfile?: { primitive: PriceProfilePrimitive; data: IndicatorProfileData }
+  /** 保留最近一次渲染结果，供"点击 K 线看形态说明"使用 */
+  private results: IndicatorResult[] = []
 
   constructor(chart: IChartApi, candleSeries: ISeriesApi<'Candlestick'>) {
     this.chart = chart
@@ -62,6 +65,7 @@ export class IndicatorRenderer {
   render(results: IndicatorResult[]) {
     // 简单策略:全量重建。后续可优化为增量对比
     this.clear()
+    this.results = results
 
     const types = results.map((result) => result.type)
     for (const result of results) {
@@ -89,6 +93,20 @@ export class IndicatorRenderer {
     this.created = []
     this.subPaneCount = 1
     this.priceProfile = undefined
+    this.results = []
+  }
+
+  /**
+   * 点击带中括号的指标文字时，按标记 id 找回详情（MarkerDetailProvider 接口）。
+   *
+   * id 形如 `form:<指标>:<字段>:<秒级时间>`，由渲染标记时写入；
+   * 只有带口径文本的形态标记才有 id，其他指标的标记不受影响。
+   */
+  getMarkerDetail(markerId: string): IndicatorMarkerDetail | undefined {
+    const ref = parseFormMarkerId(markerId)
+    if (!ref) return undefined
+    const result = this.results.find((item) => item.type === ref.resultType)
+    return result ? buildFormMarkerDetail(result, ref.timeSeconds, ref.field) : undefined
   }
 
   /** 渲染单个指标 */
@@ -229,6 +247,8 @@ export class IndicatorRenderer {
     // 同一根 K 线。这里曾经要求 window === 'main'，副图指标即使声明了 markers
     // 也会被整段跳过。
     if (render.markers) {
+      // 形态标记的自增编号（当前图范围内按时间累计）；其他指标没有 rule，不参与编号。
+      const formNumbers = render.markers.some((marker) => marker.rule) ? formSignalNumbers(result) : null
       for (const ms of render.markers) {
         const markers: SeriesMarker<Time>[] = []
         for (const v of result.values) {
@@ -241,13 +261,18 @@ export class IndicatorRenderer {
           const labelTag = labelTagCode !== undefined && Number.isFinite(labelTagCode)
             ? ms.labelTags?.[Math.trunc(labelTagCode)]
             : undefined
-          const label = `${isBuy ? ms.buyLabel : ms.sellLabel}${labelIndex !== undefined && Number.isFinite(labelIndex) ? Math.trunc(labelIndex) : ''}${labelTag ? ` · ${labelTag}` : ''}`
+          const rawLabel = `${isBuy ? ms.buyLabel : ms.sellLabel}${labelIndex !== undefined && Number.isFinite(labelIndex) ? Math.trunc(labelIndex) : ''}${labelTag ? ` · ${labelTag}` : ''}`
+          // 约定：带弹窗的指标文字用中括号包起来（点击文字弹出说明），
+          // 与普通文字区分；同时给标记一个 id，点击时才能定位到具体形态。
+          const hasPopup = Boolean(ms.rule)
+          const markerTime = Math.round(v.time / 1000)
           const markerBase = {
             time: (v.time / 1000) as Time,
             color: isBuy ? ms.buyColor : ms.sellColor,
             shape: isBuy ? 'arrowUp' as const : 'arrowDown' as const,
-            text: label,
+            text: popupMarkerLabel(rawLabel, hasPopup, formNumbers?.get(`${ms.field}:${markerTime}`)),
             size: ms.size ?? 2,
+            ...(hasPopup ? { id: formMarkerId(result.type, ms.field, markerTime) } : {}),
           }
           const markerPrice = ms.priceField ? v[ms.priceField] : undefined
           if (markerPrice !== undefined && Number.isFinite(markerPrice)) {

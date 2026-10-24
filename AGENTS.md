@@ -9,6 +9,8 @@ Monorepo with two apps (a stock/futures trading-signal platform) plus supporting
 - `deploy/k8s/` — Kubernetes manifests for the dual-entry frontend build.
 - `deploy/ecs/` — single-server Docker Compose deploy (nginx + FastAPI + MySQL + Redis + certbot) serving two hostnames: public site and private site. See `deploy/ecs/README.md`. Its two Dockerfiles use the REPO ROOT as build context (so the root `.dockerignore` applies); the frontend build in `signal-layer/Dockerfile` uses the `signal-layer/` subdir as context.
 - `pinescript/` — a single Pine Script reference indicator (not built here).
+- `articles/` — 对外的指标科普文章（`<slug>.md`）与配图（`images/`，统一尺寸、按图一/图二编号）。写作约定与配图方法论见 `articles/README.md`。
+- `.agents/skills/indicator-article/` — 项目级 skill：写指标科普文章 + 从真实图表导配图 + 程序化校验的完整流程（含 `scripts/find_window.py`）。写/改这类文章时先读它。
 - `public/` (repo ROOT) — `real_data.json` sample data. Do NOT confuse with the frontend's `signal-layer/public/` (favicon/icons). Two different `public/` dirs.
 - `signal-layer-server/data/` — gitignored runtime data (SQLite dev DB, backups).
 
@@ -62,12 +64,26 @@ Token + RBAC (see `docs/AUTHORIZATION.md`). HTTP `Authorization: Bearer <token>`
 
 ## Conventions
 
-Two standing rules from the user — apply them to every change unless told otherwise:
+Standing rules from the user — apply them to every change unless told otherwise:
 
 - **Do not touch ECS deployment as part of feature work.** The user deploys himself. `deploy/ecs/` stays as reference; don't add deployment steps, notes, or image/build changes to feature changes.
 - **Do not expose changes on the public site by default.** Public visibility is data-driven (`public_indicator_policies` / `public_indicator_feature_policies` seeds). Don't add public policy rows or public-surface content for a new indicator/module unless the user asks for it explicitly.
+- **只改代码，不改文档——除非用户明确要求。** "文档"指 `articles/` 下的指标文章与配图，以及 README/说明类 markdown。
+  指标文档的更新由用户发起；代码改了而文档没跟上时，在交付说明里写一句"文档未同步"即可，不要顺手改。
+  代码注释与 docstring 属于代码，照常维护。
 
 - Code comments/docstrings are largely in Chinese — keep consistent when editing.
 - Backend routers in `app/api/*.py`, registered in `app/api/router.py` under `/api/v1`.
 - Frontend API modules mirror backend routes in `src/api/*.ts`.
 - `.env` is gitignored; `.env.example` is the template. Commit messages are terse (the existing history is mostly one-word messages).
+
+### UI 交互约定
+
+- **弹窗一律挂在指标文字上，不挂在整根 K 线或图表空白处。** 点击标记文字弹出说明；
+  点空白或普通 K 线不弹窗（避免误触）。
+- **带弹窗的指标文字统一用中括号包起来**，与普通文字区分：`[放量冲高回落]`、`[底背驰]`、`[一买]`。
+  中括号只加在**可点击**的文字上；弹窗内部的标题不加。
+- 实现方式：给标记写入 `id`（形如 `form:<指标>:<字段>:<秒级时间>`），通过
+  `MarkerDetailProvider.getMarkerDetail(id)` 找回详情，复用 `IndicatorMarkerPopover`；
+  中括号由前端在渲染标记时按"该标记是否有弹窗内容"统一添加，**不要写死在各指标里**。
+

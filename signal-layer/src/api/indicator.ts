@@ -16,6 +16,8 @@ interface ApiMarkerSpec {
   sell_color: string
   buy_label: string
   sell_label: string
+  index?: number
+  rule?: string
 }
 
 interface ApiIndicatorResult {
@@ -100,6 +102,8 @@ function toFrontend(r: ApiIndicatorResult): IndicatorResult {
         sellColor: marker.sell_color,
         buyLabel: marker.buy_label,
         sellLabel: marker.sell_label,
+        index: marker.index,
+        rule: marker.rule,
       })),
     },
     profileData: r.profile_data ? {
@@ -183,6 +187,8 @@ export async function fetchIndicatorList(): Promise<IndicatorInfo[]> {
         sellColor: marker.sell_color,
         buyLabel: marker.buy_label,
         sellLabel: marker.sell_label,
+        index: marker.index,
+        rule: marker.rule,
       })),
     },
   }))

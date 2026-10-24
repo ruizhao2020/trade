@@ -148,6 +148,8 @@ export interface IndicatorMarkerDetail {
   accentColor: string
   fields: Array<{ label: string; value: string }>
   reasons?: string[]
+  /** reasons 区的小标题（默认"判定依据"；指标形态用"计算口径"） */
+  reasonsTitle?: string
 }
 
 export interface ChanAnalysis {
@@ -207,6 +209,10 @@ export interface MarkerSpec {
   sellColor: string            // 卖出标记颜色
   buyLabel: string             // 买入标签(如 "BUY")
   sellLabel: string            // 卖出标签(如 "SELL")
+  /** 形态编号（1 起）；用于"形态 4 / 8"这类展示 */
+  index?: number
+  /** 计算口径模板（{param} 由实际参数替换）；点击标记时展示 */
+  rule?: string
 }
 
 /** 指标渲染规格 - 前端据此自动绘制,无需硬编码 */

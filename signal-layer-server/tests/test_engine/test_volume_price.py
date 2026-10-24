@@ -32,15 +32,20 @@ DEFAULT_PARAMS = {
 }
 
 
-def make_bars(closes: list[float], volumes: list[float], opens: list[float] | None = None) -> list[dict]:
-    """按收盘/成交量构造 K 线；开高低跟着收盘走，避免影线干扰前高前低。"""
+def make_bars(closes: list[float], volumes: list[float], opens: list[float] | None = None,
+              highs: list[float] | None = None) -> list[dict]:
+    """按收盘/成交量构造 K 线；开高低默认跟着收盘走，避免影线干扰前高前低。
+
+    需要"盘中冲高"（上影线）的场景传 highs。
+    """
     bars: list[dict] = []
     for index, (close, volume) in enumerate(zip(closes, volumes)):
         open_price = opens[index] if opens else (closes[index - 1] if index else close)
+        high_price = highs[index] if highs else max(open_price, close)
         bars.append({
             "open_time": 1_700_000_000_000 + index * 86_400_000,
             "open": open_price,
-            "high": max(open_price, close),
+            "high": high_price,
             "low": min(open_price, close),
             "close": close,
             "volume": volume,
@@ -64,6 +69,7 @@ def test_missing_baseline_returns_none_not_zero():
         assert row["climax_top"] is None
         assert row["exhaustion_bottom"] is None
         assert row["bottom_volume"] is None
+        assert row["failed_breakout"] is None
         assert row["relative_volume"] is None
     # 量价齐升只依赖连续根数：consecutive_bars=3 时前 3 根预热，之后是真实判定
     assert [row["price_volume_rise"] for row in result.values] == [None, None, None, 0.0, 0.0]
@@ -118,20 +124,33 @@ def test_price_volume_rise_requires_both_legs():
     assert flat_volume.values[3]["price_volume_rise"] == 0.0
 
 
-def test_volume_stagnation_requires_a_high_position():
-    """放量滞涨：量放大而价格没动，**且处在相对高位**。
+def test_volume_stagnation_requires_up_bar_and_small_gain():
+    """放量滞涨：放量 + **收阳** + 净涨幅 0~1% + 处在相对高位。
 
-    没有高位这条约束时，下跌途中的放量横盘（承接/换手）会被误判成顶部预警。
+    "滞涨"按字面就是"涨了但没涨动"。阴线（净跌）不属于这里——
+    那是「放量冲高回落」或放量下跌的范畴。
     """
     flat_high = compute(make_bars([10.0] * 20 + [10.05], [100.0] * 20 + [200.0]), position_window=10)
-    # 贴在高位（回撤 0%）、量能 2 倍、涨幅 0.5%
+    # 收阳（开 10.0 收 10.05）、净涨 0.5%、量能 2 倍、贴近高点
     assert flat_high.values[20]["volume_stagnation"] == -1.0
 
     # 反例一：量能没放大
-    quiet = compute(make_bars([10.0] * 20 + [10.05], [100.0] * 21), position_window=10)
+    quiet = compute(make_bars([10.0] * 20 + [10.05], [100.0] * 20 + [100.0]), position_window=10)
     assert quiet.values[20]["volume_stagnation"] == 0.0
 
-    # 反例二：同样放量滞涨，但已经跌掉三分之一（回撤 33% > 高位上限 10%）→ 不是顶部预警
+    # 反例二：阴线（开 10.0 收 9.95，净跌 0.5%）——放量但收跌，不算滞涨
+    yin = make_bars([10.0] * 20 + [9.95], [100.0] * 20 + [200.0], opens=[10.0] * 21)
+    assert compute(yin, position_window=10).values[20]["volume_stagnation"] == 0.0
+
+    # 反例三：收阳但净跌（低开高走：开 9.9 收 9.98，相对昨收 -0.2%）
+    low_open = make_bars([10.0] * 20 + [9.98], [100.0] * 20 + [200.0], opens=[10.0] * 20 + [9.90])
+    assert compute(low_open, position_window=10).values[20]["volume_stagnation"] == 0.0
+
+    # 反例四：收阳且放量，但净涨超过阈值（+2%）
+    surge = compute(make_bars([10.0] * 20 + [10.2], [100.0] * 20 + [200.0]), position_window=10)
+    assert surge.values[20]["volume_stagnation"] == 0.0
+
+    # 反例五：同样放量收阳，但已经跌掉三分之一（回撤 33% > 高位上限 10%）→ 不是顶部预警
     dropped = compute(make_bars([30.0] * 19 + [20.0, 20.0], [100.0] * 19 + [100.0, 200.0]), position_window=10)
     assert dropped.values[20]["volume_stagnation"] == 0.0
     # 把高位上限放宽到 50%，同一根就会被认成滞涨 → 证明限制生效的是这一条
@@ -140,6 +159,68 @@ def test_volume_stagnation_requires_a_high_position():
         position_window=10, stagnant_max_drawdown_pct=50.0,
     )
     assert relaxed.values[20]["volume_stagnation"] == -1.0
+
+
+def test_failed_breakout_is_the_failed_side_of_volume_breakout():
+    """放量冲高回落：盘中越过前高、收盘又跌回前高之下（假突破）。
+
+    与「放量突破」共用同一个参照（前高），因此两者天然互斥。
+    """
+    # 前 20 根：收盘 10.0、最高 10.0 → 前高 = 10.0
+    base_closes = [10.0] * 20
+    base_volumes = [100.0] * 20
+    base_opens = [10.0] * 20
+    base_highs = [10.0] * 20
+
+    # 正例：盘中冲到 10.6，收盘 9.9（跌回前高之下），放量
+    failed = compute(make_bars(
+        base_closes + [9.9], base_volumes + [200.0],
+        opens=base_opens + [10.0], highs=base_highs + [10.6],
+    ))
+    assert failed.values[20]["failed_breakout"] == -1.0
+    assert failed.values[20]["volume_breakout"] == 0.0
+
+    # 正例二：收阳但没守住前高（开 9.8 收 9.95）同样算——"回落"是相对盘中高点
+    up_but_failed = compute(make_bars(
+        base_closes + [9.95], base_volumes + [200.0],
+        opens=base_opens + [9.8], highs=base_highs + [10.6],
+    ))
+    assert up_but_failed.values[20]["failed_breakout"] == -1.0
+
+    # 反例一：收盘站住前高 → 是放量突破，不是冲高回落
+    held = compute(make_bars(
+        base_closes + [10.3], base_volumes + [200.0],
+        opens=base_opens + [10.0], highs=base_highs + [10.6],
+    ))
+    assert held.values[20]["failed_breakout"] == 0.0
+    assert held.values[20]["volume_breakout"] == 1.0
+
+    # 反例二：没有放量
+    no_volume = compute(make_bars(
+        base_closes + [9.9], base_volumes + [100.0],
+        opens=base_opens + [10.0], highs=base_highs + [10.6],
+    ))
+    assert no_volume.values[20]["failed_breakout"] == 0.0
+
+    # 反例三：盘中没越过前高（最高价刚好等于前高）
+    no_spike = compute(make_bars(
+        base_closes + [9.9], base_volumes + [200.0],
+        opens=base_opens + [10.0], highs=base_highs + [10.0],
+    ))
+    assert no_spike.values[20]["failed_breakout"] == 0.0
+
+
+def test_failed_breakout_takes_priority_over_stagnation():
+    """同一根同时满足两个顶部预警时，只保留更强的「冲高回落」。"""
+    # 前 20 根：收盘 10.0，但最高 10.5 → 前高 10.5（高于昨收）
+    closes = [10.0] * 20 + [10.05]          # 昨收 10.0 → 净涨 0.5%
+    volumes = [100.0] * 20 + [200.0]        # 放量 2 倍
+    opens = [10.0] * 20 + [10.02]           # 收阳
+    highs = [10.5] * 20 + [10.6]            # 越过前高 10.5，收盘 10.05 跌回其下
+    result = compute(make_bars(closes, volumes, opens=opens, highs=highs), position_window=10)
+
+    assert result.values[20]["failed_breakout"] == -1.0
+    assert result.values[20]["volume_stagnation"] == 0.0   # 被优先级让位
 
 
 def test_climax_top_is_sell_side_and_symmetric_to_exhaustion():
@@ -210,8 +291,8 @@ def test_bottom_volume_needs_deep_drawdown_and_up_bar():
     assert shallow.values[9]["bottom_volume"] == 0.0
 
 
-def test_all_seven_forms_are_marked_on_the_price_chart():
-    """七个形态都要在主图标记；买卖侧由字段符号与配色区分。"""
+def test_all_forms_are_marked_on_the_price_chart():
+    """八个形态都要在主图标记；买卖侧由字段符号与配色区分。"""
     result = compute(make_bars([10.0] * 30, [100.0] * 30))
 
     assert result.render is not None
@@ -219,14 +300,20 @@ def test_all_seven_forms_are_marked_on_the_price_chart():
     by_field = {marker.field: marker for marker in result.render.markers}
     assert list(by_field) == [
         "volume_breakout", "shrink_pullback", "price_volume_rise",
-        "bottom_volume", "exhaustion_bottom",
-        "volume_stagnation", "climax_top",
+        "volume_stagnation", "climax_top", "exhaustion_bottom", "bottom_volume",
+        "failed_breakout",
     ]
     # 买入侧沿用阳红、预警侧沿用阴绿（与图表的国内配色一致）
     for field in ["volume_breakout", "shrink_pullback", "price_volume_rise", "bottom_volume", "exhaustion_bottom"]:
         assert by_field[field].buy_color == "#ff5b62"
-    for field in ["volume_stagnation", "climax_top"]:
+    for field in ["volume_stagnation", "climax_top", "failed_breakout"]:
         assert by_field[field].sell_color == "#2fc58d"
+    # 信号编号 1..8（对外标识，只增不改：新增形态往后加号，不要重排），
+    # 且每个形态都带可展示的计算口径（{param} 由前端替换）
+    assert [marker.index for marker in result.render.markers] == list(range(1, 9))
+    for marker in result.render.markers:
+        assert marker.rule.strip(), marker.field
+        assert "{" in marker.rule, marker.field
     # 两个 label 都得是中文：留默认的 BUY/SELL 就有把英文漏到图上的风险
     for marker in result.render.markers:
         assert marker.buy_label not in ("", "BUY"), marker.field

@@ -26,8 +26,8 @@ class VolumePriceCalculator(IndicatorCalculator):
 
     **单根与多根的分界**：缩量回调、量价齐升、地量地价这三个形态按
     `consecutive_bars` 根**连续 K 线**判定——它们描述的是一段走势，单根的量缩
-    或量增没有意义；放量突破、放量滞涨、天量天价、底部放量本身就是单根
-    K 线上的事件，与前面几根无关。
+    或量增没有意义；放量突破、放量滞涨、天量天价、底部放量、放量冲高回落
+    本身就是单根 K 线上的事件，与前面几根无关。
 
     所有判定都只用截至当根的数据：前高/前低取**当根之前**的窗口，
     区间极值取**含当根**的窗口（"创 N 周期新高"天然包含当根）。
@@ -180,20 +180,41 @@ class VolumePriceCalculator(IndicatorCalculator):
                 ) else 0.0
             ) if index >= consecutive_bars else None
 
-            # 放量滞涨：量能放大但价格几乎没动，**且处于相对高位**。
-            # 高位这一条是必要的：下跌途中的放量横盘是承接/换手，不是顶部预警，
-            # 不加位置约束会把它一起标成卖出信号。
+            # 放量滞涨：放量、**收阳**、净涨幅很小（0 ~ stagnant_pct），**且处于相对高位**。
+            # 三条约束都必要：
+            #   - 收阳 + 净涨：字面意思就是"涨了但没涨动"。阴线（净跌）属于另一类信号
+            #     （冲高回落 / 放量下跌），不该归到"滞涨"名下。
+            #   - 高位：下跌途中的放量横盘是承接/换手，不是顶部预警，
+            #     不加位置约束会把它一起标成卖出信号。
             # 取 -1：顶部预警是卖出侧，事件字段的符号即方向（前端 markers 按
             # val > 0 判买卖；条件引擎的「成立」用绝对值，不受影响）。
             row["volume_stagnation"] = (
                 -1.0 if (
                     relative_volume >= volume_ratio_min
+                    and is_up_bar
                     and change_pct is not None
-                    and abs(change_pct) <= stagnant_pct
+                    and 0 <= change_pct <= stagnant_pct
                     and drawdown_pct is not None
                     and drawdown_pct <= stagnant_max_drawdown_pct
                 ) else 0.0
             ) if has_baseline and has_position else None
+
+            # 放量冲高回落（假突破）：盘中最高价越过了前高，收盘又跌回前高之下。
+            # 与「放量突破」共用同一个参照（前高），因此天然互斥：
+            # 收盘站住前高 = 放量突破；没站住 = 冲高回落。
+            # 不要求收阴——"回落"是相对盘中高点说的，收阳但收在前高之下同样算没守住。
+            row["failed_breakout"] = (
+                -1.0 if (
+                    relative_volume >= volume_ratio_min
+                    and highs[index] > reference_high
+                    and closes[index] < reference_high
+                ) else 0.0
+            ) if has_baseline and has_breakout else None
+
+            # 同一根上两个顶部预警可能同时成立（放量、在高位、收盘没站住前高），
+            # 这时按更强的「冲高回落」命名，避免一根 K 线上挂两个卖出标记。
+            if row["failed_breakout"] == -1.0 and row["volume_stagnation"] == -1.0:
+                row["volume_stagnation"] = 0.0
 
             # 天量天价（同为卖出侧，见上）/ 地量地价（买入侧，见下）
             row["climax_top"] = (
@@ -250,39 +271,60 @@ class VolumePriceCalculator(IndicatorCalculator):
                     PlotSpec(field="volume", type="histogram", color="#596477", label="成交量"),
                     PlotSpec(field="baseline", type="line", color="#e7c66b", label="量能基线"),
                 ],
-                # 七个形态全部上图，标记落在主图的 K 线上（挂在 candlestick series 上、
+                # 八个形态全部上图，标记落在主图的 K 线上（挂在 candlestick series 上、
                 # 走价格轴），因此与副图那根量柱对齐在同一根 K 线。
                 # 颜色沿用仓库的国内配色：买入侧阳红 #ff5b62 / 卖出侧阴绿 #2fc58d。
-                # 提示：七个形态都标之后，满屏（几百根 K 线）时标签会拥挤，
+                # index / rule 是给前端标记弹窗用的：编号 + 计算口径（{param} 由前端用实际参数替换）。
+                # 编号是信号的**对外标识**（交流、文章引用都靠它）：按定义顺序 1..N，
+                # 新增形态只追加下一个号，既有编号永远不要重排或复用。
+                # 提示：八个形态都标之后，满屏（几百根 K 线）时标签会拥挤，
                 # 看图时放大到几十根的区间即可。
                 markers=[
                     MarkerSpec(
                         field="volume_breakout", buy_color="#ff5b62", sell_color="#ff5b62",
-                        buy_label="放量突破", sell_label="放量突破", size=1,
+                        buy_label="放量突破", sell_label="放量突破", size=1, index=1,
+                        rule="相对量能 ≥ {volume_ratio_min} 且 收盘价 > 前高"
+                             "（当根之前 {breakout_window} 根 K 线的最高价）",
                     ),
                     MarkerSpec(
                         field="shrink_pullback", buy_color="#ff5b62", sell_color="#ff5b62",
-                        buy_label="缩量回调", sell_label="缩量回调", size=1,
+                        buy_label="缩量回调", sell_label="缩量回调", size=1, index=2,
+                        rule="连续 {consecutive_bars} 根 K 线逐根收跌、且每根相对量能 ≤ {shrink_max}；"
+                             "最后一根收盘仍在前低之上",
                     ),
                     MarkerSpec(
                         field="price_volume_rise", buy_color="#ff5b62", sell_color="#ff5b62",
-                        buy_label="量价齐升", sell_label="量价齐升", size=1,
-                    ),
-                    MarkerSpec(
-                        field="bottom_volume", buy_color="#ff5b62", sell_color="#ff5b62",
-                        buy_label="底部放量", sell_label="底部放量", size=1,
-                    ),
-                    MarkerSpec(
-                        field="exhaustion_bottom", buy_color="#ff5b62", sell_color="#ff5b62",
-                        buy_label="地量地价", sell_label="地量地价", size=1,
+                        buy_label="量价齐升", sell_label="量价齐升", size=1, index=3,
+                        rule="连续 {consecutive_bars} 根 K 线逐根收涨、且成交量逐根放大",
                     ),
                     MarkerSpec(
                         field="volume_stagnation", buy_color="#2fc58d", sell_color="#2fc58d",
-                        buy_label="放量滞涨", sell_label="放量滞涨", size=1,
+                        buy_label="放量滞涨", sell_label="放量滞涨", size=1, index=4,
+                        rule="相对量能 ≥ {volume_ratio_min} 且 收阳、当日涨幅在 0% ~ {stagnant_pct}% 之间，"
+                             "且距区间高点回撤 ≤ {stagnant_max_drawdown_pct}%",
                     ),
                     MarkerSpec(
                         field="climax_top", buy_color="#2fc58d", sell_color="#2fc58d",
-                        buy_label="天量天价", sell_label="天量天价", size=1,
+                        buy_label="天量天价", sell_label="天量天价", size=1, index=5,
+                        rule="成交量 ≥ 位置窗口（含当根 {position_window} 根）的最大量，"
+                             "且收盘 ≥ 该窗口的最高收盘",
+                    ),
+                    MarkerSpec(
+                        field="exhaustion_bottom", buy_color="#ff5b62", sell_color="#ff5b62",
+                        buy_label="地量地价", sell_label="地量地价", size=1, index=6,
+                        rule="连续 {consecutive_bars} 根 K 线每根相对量能 ≤ {shrink_max}，"
+                             "且每根距区间高点回撤 ≥ {low_position_pct}%",
+                    ),
+                    MarkerSpec(
+                        field="bottom_volume", buy_color="#ff5b62", sell_color="#ff5b62",
+                        buy_label="底部放量", sell_label="底部放量", size=1, index=7,
+                        rule="距区间高点回撤 ≥ {low_position_pct}% 且 相对量能 ≥ {volume_ratio_min} 且 当根收阳",
+                    ),
+                    MarkerSpec(
+                        field="failed_breakout", buy_color="#2fc58d", sell_color="#2fc58d",
+                        buy_label="放量冲高回落", sell_label="放量冲高回落", size=1, index=8,
+                        rule="相对量能 ≥ {volume_ratio_min} 且 盘中最高价 > 前高、"
+                             "收盘价跌回前高之下（前高取当根之前 {breakout_window} 根 K 线的最高价）",
                     ),
                 ],
             ),

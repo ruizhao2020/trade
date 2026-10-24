@@ -55,7 +55,7 @@ export function IndicatorMarkerPopover({ detail, left, top, onClose, popupRef }:
 
         {detail.reasons && detail.reasons.length > 0 && (
           <section className="mt-3 pt-3 border-t border-[var(--border-primary)]">
-            <div className="mb-2 text-[11px] font-medium text-[var(--text-secondary)]">判定依据</div>
+            <div className="mb-2 text-[11px] font-medium text-[var(--text-secondary)]">{detail.reasonsTitle ?? '判定依据'}</div>
             <ol className="space-y-1.5">
               {detail.reasons.map((reason, index) => (
                 <li key={`${index}:${reason}`} className="flex gap-2 text-[11px] leading-4 text-[var(--text-muted)]">

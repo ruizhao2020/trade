@@ -10,7 +10,7 @@
 
 | 文件 | 标题 | 讲什么 |
 | --- | --- | --- |
-| [`volume-price-indicator.md`](./volume-price-indicator.md) | 量价：把"放量"和"缩量"变成可执行的条件 | `volume_price` 指标的 7 个量价形态、计算口径与市场含义。含 8 张从真实图表导出的配图（`images/`，图一总览 + 图二~图八 每个形态一张） |
+| [`volume-price-indicator.md`](./volume-price-indicator.md) | 量价：把"放量"和"缩量"变成可执行的条件 | `volume_price` 指标的 7 个量价形态、计算口径与市场含义。含 9 张从真实图表导出的配图（`images/`，图一总览 + 图二~图九 每个形态一张） |
 
 ## 写作约定
 

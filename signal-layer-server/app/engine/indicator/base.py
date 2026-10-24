@@ -130,6 +130,10 @@ class MarkerSpec(BaseModel):
     sell_color: str = "#ef4444"            # 卖出标记颜色
     buy_label: str = "BUY"                 # 买入标签
     sell_label: str = "SELL"               # 卖出标签
+    # 展示用元信息：前端点击标记时弹出（编号 + 计算口径）。
+    # rule 里的 {param} 占位符由前端用该指标的实际参数替换，改了参数口径说明也跟着变。
+    index: int = 0                         # 形态编号（1 起，用于"形态 4 / 8"这类展示）
+    rule: str = ""                         # 计算口径（人类可读）
     price_field: Optional[str] = None       # 使用指定字段精确定位
     label_index_field: Optional[str] = None # 标签编号字段
     label_tag_field: Optional[str] = None   # 标签附注代码字段

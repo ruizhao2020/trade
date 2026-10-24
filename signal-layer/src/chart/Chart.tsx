@@ -1,11 +1,12 @@
 import { useEffect, useRef, useState } from 'react'
-import { createChart, CandlestickSeries, ColorType, CrosshairMode } from 'lightweight-charts'
+import { createChart, CandlestickSeries, ColorType, CrosshairMode, TickMarkType } from 'lightweight-charts'
 import type { IChartApi, ISeriesApi, MouseEventParams, Time } from 'lightweight-charts'
 import type { RawKline, ChanAnalysis, ChanRenderOptions, IndicatorMarkerDetail, IndicatorResult } from '../core/types.ts'
 import { ChanRenderer } from './ChanRenderer.ts'
 import { IndicatorRenderer } from './IndicatorRenderer.ts'
 import { IndicatorMarkerPopover } from '../components/IndicatorMarkerPopover.tsx'
 import { placeMarkerDetailPopup, type MarkerDetailProvider } from './markerDetails.ts'
+import { formatCrosshairTime, formatTickMark } from './timeAxis.ts'
 
 interface Props {
   /** K线数据 */
@@ -59,11 +60,17 @@ export function Chart({ klineData, chanAnalysis, chanOptions, indicatorResults, 
       },
       grid: { vertLines: { color: '#1b202a' }, horzLines: { color: '#1b202a' } },
       crosshair: { mode: CrosshairMode.Normal },
+      // 图表库按 UTC 渲染时间戳；数据是北京时间（日线为 00:00 = 前一日 16:00Z），
+      // 必须显式格式化，否则日线日期会早一天、分钟线时间差 8 小时。
+      localization: {
+        timeFormatter: (time: Time) => formatCrosshairTime(time),
+      },
       rightPriceScale: { borderColor: '#252b37' },
       timeScale: {
         borderColor: '#252b37',
         timeVisible: true,
         secondsVisible: false,
+        tickMarkFormatter: (time: Time, tickMarkType: TickMarkType, locale: string) => formatTickMark(time, tickMarkType, locale),
       },
       // 缩放与平移交互(LWC v5 顶层配置)
       handleScroll: {
@@ -93,7 +100,7 @@ export function Chart({ klineData, chanAnalysis, chanOptions, indicatorResults, 
     })
     chanRendererRef.current = new ChanRenderer(chart, candleRef.current)
     indicatorRendererRef.current = new IndicatorRenderer(chart, candleRef.current)
-    detailProvidersRef.current = [chanRendererRef.current]
+    detailProvidersRef.current = [chanRendererRef.current, indicatorRendererRef.current]
 
     const handleChartClick = (param: MouseEventParams<Time>) => {
       const objectId = param.hoveredInfo?.objectId ?? param.hoveredObjectId
@@ -103,8 +110,11 @@ export function Chart({ klineData, chanAnalysis, chanOptions, indicatorResults, 
           .map(provider => provider.getMarkerDetail(markerId))
           .find((item): item is IndicatorMarkerDetail => Boolean(item))
         : undefined
+      // 只有点中带 id 的标记（缠论点、带中括号的指标文字）才弹窗；
+      // 点空白或普通 K 线不弹，避免误触。
+      const resolved = detail
 
-      if (!detail || !param.point || !containerRef.current) {
+      if (!resolved || !param.point || !containerRef.current) {
         setMarkerPopup(null)
         return
       }
@@ -113,9 +123,9 @@ export function Chart({ klineData, chanAnalysis, chanOptions, indicatorResults, 
         param.point,
         { width: containerRef.current.clientWidth, height: containerRef.current.clientHeight },
       )
-      setMarkerPopup(current => current?.detail.id === detail.id
+      setMarkerPopup(current => current?.detail.id === resolved.id
         ? null
-        : { detail, ...position })
+        : { detail: resolved, ...position })
     }
     chart.subscribeClick(handleChartClick)
     let cursorFrame: number | null = null

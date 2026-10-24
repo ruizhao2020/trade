@@ -178,7 +178,7 @@ INDICATOR_META: dict[str, dict] = {
         "name": "量价",
         "description": (
             "量能与价格的结合形态：放量突破、缩量回调、量价齐升、放量滞涨、"
-            "天量天价、地量地价、底部放量。量能是否放大按当根之前的基线中位数衡量；"
+            "天量天价、地量地价、底部放量、放量冲高回落。量能是否放大按当根之前的基线中位数衡量；"
             "缩量回调、量价齐升、地量地价按连续多根 K 线判定。"
         ),
         "default_params": {
@@ -200,6 +200,7 @@ INDICATOR_META: dict[str, dict] = {
             {"field": "climax_top", "kind": "event", "label": "天量天价"},
             {"field": "exhaustion_bottom", "kind": "event", "label": "地量地价"},
             {"field": "bottom_volume", "kind": "event", "label": "底部放量"},
+            {"field": "failed_breakout", "kind": "event", "label": "放量冲高回落"},
             {"field": "relative_volume", "label": "相对量能"},
             {"field": "breakout_pct", "label": "距前高百分比"},
             {"field": "drawdown_pct", "label": "距区间高点回撤"},
