@@ -1,7 +1,8 @@
 import { api } from './client'
 import { marketRequestTtl, recentMarketRequests } from './requestCache.ts'
 import type {
-  ChanAnalysis, ChanKLine, Fenxing, Bi, Duan, Zhongshu, BuySellPoint, Divergence, SignalType,
+  ChanAnalysis, ChanKLine, Fenxing, Bi, Duan, Zhongshu, BuySellPoint, Divergence, KlineOverlap,
+  NextScenario, SignalType,
 } from '../core/types.ts'
 
 interface ApiBi {
@@ -48,6 +49,33 @@ interface ApiDuan {
   fenxing_type?: string
 }
 
+interface ApiKlineOverlap {
+  start_time: number; end_time: number
+  low: string; high: string
+  bars: number; level: 'sub1' | 'sub2' | 'sub3'; label: string
+}
+
+interface ApiNextScenario {
+  key: string; label: string; condition: string; implication: string; active: boolean
+  children?: ApiNextScenario[]
+}
+
+function toNextScenario(item: ApiNextScenario): NextScenario {
+  return {
+    key: item.key, label: item.label, condition: item.condition,
+    implication: item.implication, active: item.active,
+    children: (item.children ?? []).map(toNextScenario),
+  }
+}
+
+interface ApiClassification {
+  position: 'above' | 'inside' | 'below' | 'unknown'
+  zhongshu_high?: string | null
+  zhongshu_low?: string | null
+  last_close?: string | null
+  scenarios?: ApiNextScenario[]
+}
+
 interface ApiChanResponse {
   symbol: string; timeframe: string
   bis: ApiBi[]; duans: ApiDuan[]
@@ -55,6 +83,8 @@ interface ApiChanResponse {
   duan_zhongshus: ApiZhongshu[]      // 段中枢(level="duan")
   buy_sell_points: ApiBsp[]
   divergences?: ApiDivergence[]
+  overlaps?: ApiKlineOverlap[]
+  classification?: ApiClassification | null
   updated_at: number
   cached: boolean
 }
@@ -130,6 +160,16 @@ function toChanAnalysis(raw: ApiChanResponse): ChanAnalysis {
     reasons: item.reasons ?? [],
   }))
 
+  const overlaps: KlineOverlap[] = (raw.overlaps ?? []).map(item => ({
+    startTime: item.start_time,
+    endTime: item.end_time,
+    low: f(item.low),
+    high: f(item.high),
+    bars: item.bars,
+    level: item.level,
+    label: item.label,
+  }))
+
   return {
     timeframeId: raw.timeframe,
     chanKLines: [] as ChanKLine[],
@@ -140,6 +180,14 @@ function toChanAnalysis(raw: ApiChanResponse): ChanAnalysis {
     duanZhongshus,
     buySellPoints,
     divergences,
+    overlaps,
+    classification: raw.classification ? {
+      position: raw.classification.position,
+      zhongshuHigh: raw.classification.zhongshu_high ? f(raw.classification.zhongshu_high) : undefined,
+      zhongshuLow: raw.classification.zhongshu_low ? f(raw.classification.zhongshu_low) : undefined,
+      lastClose: raw.classification.last_close ? f(raw.classification.last_close) : undefined,
+      scenarios: (raw.classification.scenarios ?? []).map(toNextScenario),
+    } : undefined,
     updatedAt: raw.updated_at,
     isComplete: true,
   }

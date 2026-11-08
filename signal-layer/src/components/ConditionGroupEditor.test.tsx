@@ -21,9 +21,9 @@ const volumeStructureInfo: IndicatorInfo = {
   description: '关键量柱与黄金柱',
   default_params: { lookback: 20, key_ratio_min: 1.8, confirm_bars: 3, break_tolerance: 0 },
   outputs: [
-    { field: 'key_pillar', label: '关键量柱出现' },
-    { field: 'general_confirmed', label: '将军柱确认' },
-    { field: 'golden_confirmed', label: '黄金柱确认' },
+    { field: 'key_pillar', label: '关键量柱出现', verdict: 'valid' },
+    { field: 'general_confirmed', label: '将军柱确认', verdict: 'valid' },
+    { field: 'golden_confirmed', label: '黄金柱确认', verdict: 'valid' },
   ],
   render: {
     window: 'main',
@@ -52,6 +52,9 @@ describe('ConditionGroupEditor condition isolation', () => {
     render(<ConditionGroupEditor groups={[maGroup('短期均线', 5)]} indicators={[maInfo]} onChange={vi.fn()} />)
 
     expect(screen.queryByLabelText('移动平均线 输出线')).not.toBeInTheDocument()
+    // 参数默认收起，点开按钮才显示
+    expect(screen.queryByLabelText('移动平均线 周期')).not.toBeInTheDocument()
+    fireEvent.click(screen.getByLabelText('移动平均线 参数'))
     expect(screen.getByLabelText('移动平均线 周期')).toHaveValue('5')
     expect(screen.getByRole('option', { name: '周期 120' })).toBeInTheDocument()
     expect(screen.getByRole('option', { name: '周期 260' })).toBeInTheDocument()
@@ -99,6 +102,7 @@ describe('ConditionGroupEditor condition isolation', () => {
     const group = { ...first, conditions: [first.conditions[0]!, secondCondition] }
 
     render(<ConditionGroupEditor groups={[group]} indicators={[maInfo]} onChange={onChange} />)
+    screen.getAllByLabelText('移动平均线 参数').forEach((button) => fireEvent.click(button))
     const periodInputs = screen.getAllByLabelText('移动平均线 周期')
     fireEvent.change(periodInputs[1]!, { target: { value: '60' } })
 
@@ -110,6 +114,7 @@ describe('ConditionGroupEditor condition isolation', () => {
   it('changes only the selected condition indicator parameters', () => {
     const onChange = vi.fn()
     render(<ConditionGroupEditor groups={[maGroup('短期均线', 5), maGroup('长期均线', 20)]} indicators={[maInfo]} onChange={onChange} />)
+    screen.getAllByLabelText('移动平均线 参数').forEach((button) => fireEvent.click(button))
     const periodInputs = screen.getAllByLabelText('移动平均线 周期')
     fireEvent.change(periodInputs[1]!, { target: { value: '60' } })
     const updated = onChange.mock.lastCall?.[0] as ConditionGroup[]
@@ -303,7 +308,7 @@ describe('形态/事件型字段的条件编辑', () => {
       <ConditionGroupEditor groups={[group]} onChange={onChange} indicators={[sweepInfo]} />,
     )
 
-    fireEvent.change(screen.getByLabelText('流动性扫荡反转 输出线'), { target: { value: 'bull_signal' } })
+    fireEvent.change(screen.getByLabelText('条件 1 左值'), { target: { value: 'signal:liquidity_sweep:bull_signal' } })
 
     const updated = onChange.mock.calls.at(-1)![0][0] as ConditionGroup
     expect(updated.conditions[0]!.operator).toBe(ConditionOperator.NonZero)
@@ -320,7 +325,7 @@ describe('形态/事件型字段的条件编辑', () => {
       />,
     )
 
-    fireEvent.change(screen.getByLabelText('流动性扫荡反转 输出线'), { target: { value: 'bull_level' } })
+    fireEvent.change(screen.getByLabelText('条件 1 左值'), { target: { value: 'signal:liquidity_sweep:bull_level' } })
 
     const updated = onChange.mock.calls.at(-1)![0][0] as ConditionGroup
     expect(updated.conditions[0]!.operator).toBe(ConditionOperator.GreaterThan)
@@ -355,10 +360,10 @@ const bollingerInfo: IndicatorInfo = {
   description: '通道指标',
   default_params: { period: 20, std: 2 },
   outputs: [
-    { field: 'upper', label: '上轨' },
-    { field: 'middle', label: '中轨' },
-    { field: 'lower', label: '下轨' },
-    { field: 'bandwidth', label: '带宽%' },
+    { field: 'upper', label: '上轨', verdict: 'valid' },
+    { field: 'middle', label: '中轨', verdict: 'valid' },
+    { field: 'lower', label: '下轨', verdict: 'valid' },
+    { field: 'bandwidth', label: '带宽%', verdict: 'valid' },
   ],
   render: { window: 'main', plots: [], markers: [] },
 }
@@ -383,8 +388,8 @@ describe('布林带开口与收口', () => {
       <ConditionGroupEditor groups={[bollingerGroup(ConditionOperator.Falling)]} onChange={vi.fn()} indicators={[bollingerInfo]} />,
     )
 
-    const field = screen.getByLabelText('布林带 输出线') as HTMLSelectElement
-    expect(Array.from(field.options).map((o) => o.textContent.trim())).toEqual(['上轨', '中轨', '下轨', '带宽%'])
+    const bollingerOptgroup = screen.getByRole('group', { name: '布林带' })
+    expect(Array.from(bollingerOptgroup.querySelectorAll('option')).map((o) => o.textContent.trim())).toEqual(['上轨', '中轨', '下轨', '带宽%'])
 
     const operator = screen.getByLabelText('条件 1 运算符') as HTMLSelectElement
     expect(operator.value).toBe(ConditionOperator.Falling)
@@ -427,9 +432,9 @@ const volumePriceInfo: IndicatorInfo = {
     volume_ratio_min: 1.5, shrink_max: 0.7, stagnant_pct: 1, low_position_pct: 20,
   },
   outputs: [
-    { field: 'volume_breakout', label: '放量突破', kind: 'event' },
-    { field: 'shrink_pullback', label: '缩量回调', kind: 'event' },
-    { field: 'relative_volume', label: '相对量能' },
+    { field: 'volume_breakout', label: '放量突破', kind: 'event', verdict: 'valid' },
+    { field: 'shrink_pullback', label: '缩量回调', kind: 'event', verdict: 'valid' },
+    { field: 'relative_volume', label: '相对量能', verdict: 'valid' },
   ],
   render: { window: 'sub', plots: [{ field: 'volume', type: 'histogram', color: '#596477', label: '成交量' }] },
 }
@@ -445,14 +450,12 @@ describe('ConditionGroupEditor 取值分类', () => {
     render(<ConditionGroupEditor groups={[maGroup('分类', 5)]} indicators={indicators} onChange={vi.fn()} />)
 
     const groups = sourceGroups(screen.getByLabelText('条件 1 左值'))
-    expect(groups).toEqual(['价格', '缠论', '量柱结构', '量价', '指标'])
+    // 量柱结构/量价之后，其余指标也各自成组（这里只有移动平均线）
+    expect(groups).toEqual(['价格', '缠论', '量柱结构', '量价', '移动平均线'])
     expect(groups).not.toContain('缠论·信号')
     expect(groups).not.toContain('缠论·形态')
-
-    // 提级之后不该在「指标」组里重复出现
-    const instrument = screen.getByLabelText('条件 1 左值').querySelector('optgroup[label="指标"]')!
-    expect(instrument.textContent).not.toContain('量柱结构')
-    expect(instrument.textContent).not.toContain('量价')
+    // 不再有一个笼统的「指标」组
+    expect(groups).not.toContain('指标')
   })
 
   it('去掉成交量 / 笔数 / 中枢数；固定值只保留在右值', () => {
@@ -497,8 +500,44 @@ describe('ConditionGroupEditor 取值分类', () => {
 
     expect(screen.getByLabelText('条件 1 左值')).toHaveValue('signal:volume_price:volume_breakout')
     expect(screen.getByText('出现即成立')).toBeInTheDocument()
+    fireEvent.click(screen.getByLabelText('量价 参数'))
     expect(screen.queryByLabelText('条件 1 运算符')).not.toBeInTheDocument()
     expect(screen.queryByPlaceholderText('数值')).not.toBeInTheDocument()
     expect(screen.getByLabelText('量价 放量倍数')).toHaveValue(1.5)
+  })
+})
+
+describe('指标字段回显', () => {
+  it('非形态类指标（位置）按 field 编码，选中后不会退回「收盘价」', () => {
+    const positionInfo: IndicatorInfo = {
+      type: 'position',
+      name: '位置',
+      description: '位置',
+      default_params: { window: 120 },
+      outputs: [
+        { field: 'position_pct', label: '位置分位(0-100)' },
+        { field: 'drawdown_pct', label: '距高点回撤%' },
+        { field: 'zone_position', label: '中枢位置(上/中/下)' },
+      ],
+      render: { window: 'sub', plots: [] },
+    }
+    const groups: ConditionGroup[] = [{
+      id: 'g-position',
+      name: '位置',
+      logic: 'AND',
+      conditions: [{
+        id: 'c-position',
+        name: '',
+        left: { source: 'indicator', indicatorType: 'position', params: { window: 120 }, field: 'zone_position' },
+        operator: ConditionOperator.Equal,
+        right: { source: 'constant', value: 0 },
+        enabled: true,
+      }],
+    }]
+
+    render(<ConditionGroupEditor groups={groups} indicators={[positionInfo]} onChange={vi.fn()} />)
+
+    const select = screen.getByLabelText('条件 1 左值') as HTMLSelectElement
+    expect(select.value).toBe('signal:position:zone_position')
   })
 })

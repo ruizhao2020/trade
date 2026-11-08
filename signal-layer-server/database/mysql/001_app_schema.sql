@@ -340,3 +340,32 @@ CREATE TABLE IF NOT EXISTS advisor_recommendations (
     INDEX idx_advisor_recommendation_user (user_id),
     INDEX idx_advisor_recommendation_symbol (symbol)
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
+
+CREATE TABLE IF NOT EXISTS indicator_effectiveness (
+    id BIGINT NOT NULL AUTO_INCREMENT PRIMARY KEY,
+    indicator_type VARCHAR(50) NOT NULL,
+    field VARCHAR(80) NOT NULL,
+    direction VARCHAR(10) NOT NULL DEFAULT 'none',
+    params_key VARCHAR(200) NOT NULL,
+    params JSON NULL,
+    timeframe VARCHAR(10) NOT NULL,
+    universe VARCHAR(80) NOT NULL,
+    horizon INT NOT NULL DEFAULT 10,
+    sample_n INT NOT NULL DEFAULT 0,
+    raw_events INT NOT NULL DEFAULT 0,
+    hit_rate DOUBLE NULL,
+    avg_return DOUBLE NULL,
+    baseline_return DOUBLE NULL,
+    excess_return DOUBLE NULL,
+    p_value DOUBLE NULL,
+    decay JSON NULL,
+    stability JSON NULL,
+    verdict VARCHAR(16) NOT NULL DEFAULT 'insufficient',
+    scope JSON NULL,
+    engine_version VARCHAR(16) NOT NULL DEFAULT 'v1',
+    evaluated_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    created_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    updated_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
+    UNIQUE KEY uq_indicator_effectiveness_unit
+        (indicator_type, field, direction, params_key, timeframe, universe, horizon)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;

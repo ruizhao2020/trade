@@ -52,6 +52,8 @@ function ArticleChartCard({ spec }: { spec: ArticleChartSpec }) {
     showZhongshuAxis: true,
     showDivergences: spec.chan_features.includes('divergence'),
     showBuySellPoints: spec.chan_features.includes('buy_sell_points'),
+    showOverlaps: false,
+    showClassification: false,
     zsLevel: 'bi', biColor: '#e7c66b', duanColor: '#6c8cff', zhongshuColor: '#9b8cf2',
   }
   const downloadSnapshot = useCallback((dataUrl: string) => {

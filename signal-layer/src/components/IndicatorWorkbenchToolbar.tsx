@@ -18,7 +18,7 @@ interface Props {
   chanFeatureLabels?: Record<string, string>
 }
 
-type ChanToggleKey = 'showFenxing' | 'showBi' | 'showDuan' | 'showZhongshu' | 'showDivergences' | 'showBuySellPoints'
+type ChanToggleKey = 'showFenxing' | 'showBi' | 'showDuan' | 'showZhongshu' | 'showDivergences' | 'showBuySellPoints' | 'showOverlaps' | 'showClassification'
 
 const CHAN_ITEMS: { key: ChanToggleKey; label: string; color: string; count: (analysis?: ChanAnalysis) => number }[] = [
   { key: 'showFenxing', label: '分型', color: '#f59e0b', count: (analysis) => analysis?.fenxings.length ?? 0 },
@@ -27,6 +27,8 @@ const CHAN_ITEMS: { key: ChanToggleKey; label: string; color: string; count: (an
   { key: 'showZhongshu', label: '中枢', color: '#9b8cf2', count: (analysis) => analysis?.zhongshus.length ?? 0 },
   { key: 'showDivergences', label: '背驰', color: '#56c7e8', count: (analysis) => analysis?.divergences.length ?? 0 },
   { key: 'showBuySellPoints', label: '买卖点', color: '#36c995', count: (analysis) => analysis?.buySellPoints.length ?? 0 },
+  { key: 'showOverlaps', label: '重叠级别', color: '#22d3ee', count: (analysis) => analysis?.overlaps.length ?? 0 },
+  { key: 'showClassification', label: '完全分类', color: '#e7c66b', count: (analysis) => analysis?.classification?.scenarios.length ?? 0 },
 ]
 
 const PARAM_LABELS: Record<string, string> = {
@@ -177,7 +179,8 @@ export function IndicatorWorkbenchToolbar({
   const maCount = selectedIndicators.filter((item) => item.type === 'ma').length
   const chanFeatureCode: Record<ChanToggleKey, string> = {
     showFenxing: 'fenxing', showBi: 'bi', showDuan: 'duan', showZhongshu: 'zhongshu',
-    showDivergences: 'divergence', showBuySellPoints: 'buy_sell_points',
+    showDivergences: 'divergence', showBuySellPoints: 'buy_sell_points', showOverlaps: 'overlap',
+    showClassification: 'classification',
   }
   const visibleChanItems = visibleChanFeatures
     ? CHAN_ITEMS.filter((item) => visibleChanFeatures.includes(chanFeatureCode[item.key]))
@@ -237,6 +240,8 @@ export function IndicatorWorkbenchToolbar({
       showZhongshuAxis: enabled,
       showBuySellPoints: visibleChanFeatures ? enabled && visibleChanFeatures.includes('buy_sell_points') : enabled,
       showDivergences: visibleChanFeatures ? enabled && visibleChanFeatures.includes('divergence') : enabled,
+      showOverlaps: enabled,
+      showClassification: enabled,
     })
   }
 

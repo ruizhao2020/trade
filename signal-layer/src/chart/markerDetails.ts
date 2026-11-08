@@ -1,4 +1,4 @@
-import type { BuySellPoint, Divergence, IndicatorMarkerDetail, IndicatorResult } from '../core/types.ts'
+import type { BuySellPoint, Divergence, IndicatorMarkerDetail, IndicatorResult, ChanClassification } from '../core/types.ts'
 import type { SeriesMarker, Time } from 'lightweight-charts'
 
 const BUY_SELL_LABELS: Record<string, string> = {
@@ -315,4 +315,36 @@ export function arrangeSeriesMarkersVertically(markers: SeriesMarker<Time>[], co
     })
   }
   return arranged
+}
+
+
+const CLASSIFICATION_MARKER_ID = 'chan:classification'
+
+export function classificationMarkerId(): string {
+  return CLASSIFICATION_MARKER_ID
+}
+
+export function classificationMarkerLabel(): string {
+  return '[完全分类]'
+}
+
+export function buildClassificationDetail(classification: ChanClassification): IndicatorMarkerDetail {
+  const positionLabel = {
+    above: '中枢上方', inside: '中枢内', below: '中枢下方', unknown: '未知',
+  }[classification.position]
+  return {
+    id: CLASSIFICATION_MARKER_ID,
+    title: '走势完全分类',
+    subtitle: `当前价 ${classification.lastClose ?? '—'} · ${positionLabel}`,
+    accentColor: '#e7c66b',
+    fields: [
+      { label: '中枢上沿', value: classification.zhongshuHigh === undefined ? '—' : String(classification.zhongshuHigh) },
+      { label: '中枢下沿', value: classification.zhongshuLow === undefined ? '—' : String(classification.zhongshuLow) },
+      { label: '当前位置', value: positionLabel },
+    ],
+    reasons: classification.scenarios.map((item) => (
+      `${item.active ? '● ' : '○ '}${item.label}：${item.condition} → ${item.implication}`
+    )),
+    reasonsTitle: '后续走势的完全分类（● 已满足前提）',
+  }
 }

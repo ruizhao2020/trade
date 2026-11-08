@@ -152,6 +152,37 @@ export interface IndicatorMarkerDetail {
   reasonsTitle?: string
 }
 
+/** 走势完全分类里的一种后续可能。 */
+export interface NextScenario {
+  key: string
+  label: string
+  condition: string
+  implication: string
+  active: boolean
+  /** 再往后一层的分类 */
+  children?: NextScenario[]
+}
+
+/** 当前走势的完全分类：基于最后一个笔中枢与当前价的关系。 */
+export interface ChanClassification {
+  position: 'above' | 'inside' | 'below' | 'unknown'
+  zhongshuHigh?: number
+  zhongshuLow?: number
+  lastClose?: number
+  scenarios: NextScenario[]
+}
+
+/** K 线重叠段：只读的级别参考（零缠的「K线重叠理论」），不参与任何结构判定。 */
+export interface KlineOverlap {
+  startTime: number
+  endTime: number
+  low: number
+  high: number
+  bars: number
+  level: 'sub1' | 'sub2' | 'sub3'
+  label: string
+}
+
 export interface ChanAnalysis {
   timeframeId: string
   chanKLines: ChanKLine[]
@@ -162,6 +193,8 @@ export interface ChanAnalysis {
   duanZhongshus: Zhongshu[]     // 段中枢(level="duan")
   buySellPoints: BuySellPoint[]
   divergences: Divergence[]
+  overlaps: KlineOverlap[]      // K 线重叠级别(只读标注)
+  classification?: ChanClassification  // 走势完全分类(只读)
   updatedAt: number
   isComplete: boolean
 }
@@ -179,6 +212,8 @@ export interface ChanRenderOptions {
   showZhongshu: boolean         // 显示中枢(矩形盒)
   showBuySellPoints: boolean    // 显示买卖点(一买/二买/三买)
   showDivergences: boolean      // 显示顶背驰/底背驰
+  showOverlaps: boolean         // 显示 K 线重叠级别(零缠口径的级别参考)
+  showClassification: boolean   // 显示走势完全分类(分支路径)
   biColor?: string              // 笔颜色,默认黄色
   duanColor?: string            // 线段颜色,默认蓝色
   zhongshuColor?: string        // 中枢颜色,默认蓝色(未破)/绿/红(已破)
@@ -194,6 +229,8 @@ export interface PlotSpec {
   type: 'line' | 'histogram' | 'marker' | 'profile' | 'zone'  // 线、柱状图、信号标记、价格分布或价格带
   color: string
   label: string
+  /** 柱状图按正负分色的第二颜色（MACD 的红柱/绿柱）；不填则整条柱同色 */
+  negativeColor?: string
 }
 
 /** 信号标记的渲染规格(如 BUY/SELL 箭头) */
@@ -215,11 +252,22 @@ export interface MarkerSpec {
   rule?: string
 }
 
+/** 副图上的跨 K 线箭头（如 MACD 柱群背驰：前群峰 → 后群峰） */
+export interface ArrowSpec {
+  fromTime: number             // 起点时间（毫秒，与 values[].time 一致）
+  fromValue: number
+  toTime: number
+  toValue: number
+  direction: 'top' | 'bottom'  // top=画在柱群上方（顶背驰），bottom=下方（底背驰）
+  color: string
+}
+
 /** 指标渲染规格 - 前端据此自动绘制,无需硬编码 */
 export interface RenderSpec {
   window: 'main' | 'sub'       // main=主图叠加, sub=子图独立
   plots: PlotSpec[]
   markers?: MarkerSpec[]       // 信号标记(可选)
+  arrows?: ArrowSpec[]         // 副图跨 K 线箭头(可选)
 }
 
 export interface IndicatorProfileSnapshot {
@@ -261,6 +309,12 @@ export interface IndicatorOutput {
   field: string
   label: string
   kind?: 'event' | 'level'
+  /** 评测角色：long=入场、short=出场/风险、none=由评测决定 */
+  direction?: 'long' | 'short' | 'none'
+  /** 字段级有效性结论（私域下发）：valid/filter_only/weak/rejected/insufficient/unverified */
+  verdict?: string
+  /** 形态含义：下拉悬停可见，选中后在条件卡片下方展开 */
+  description?: string
 }
 
 export const ConditionOperator = {

@@ -53,7 +53,7 @@ IndicatorService 启动时会自动 import 本目录所有 .py 文件,触发注�
 
 from abc import ABC, abstractmethod
 from pydantic import BaseModel
-from typing import Any, Optional, Type
+from typing import Any, Literal, Optional, Type
 import importlib
 import pkgutil
 
@@ -121,6 +121,8 @@ class PlotSpec(BaseModel):
     type: str = "line"                     # line | histogram | marker
     color: str = "#ffa726"                 # 线/柱颜色
     label: str = ""                        # 图例标签
+    # 柱状图按正负分色的第二颜色（MACD 的红柱/绿柱）。不填则整条柱同色。
+    negative_color: Optional[str] = None
 
 
 class MarkerSpec(BaseModel):
@@ -142,11 +144,27 @@ class MarkerSpec(BaseModel):
     spacing: int = 0                        # 与 K 线的视觉间距
 
 
+class ArrowSpec(BaseModel):
+    """副图上的跨 K 线箭头（如 MACD 柱群背驰：前群峰 → 后群峰）。
+
+    箭头只是展示：两个端点都落在已经走完的柱群上，出现时机由信号行控制，
+    不参与条件计算，也不回填 values。
+    """
+    from_time: int                          # 起点时间（毫秒，与 values[].time 一致）
+    from_value: float
+    to_time: int
+    to_value: float
+    # top = 画在柱群上方（顶背驰），bottom = 画在柱群下方（底背驰）
+    direction: Literal["top", "bottom"] = "top"
+    color: str = ""
+
+
 class RenderSpec(BaseModel):
     """指标渲染规格 - 前端据此自动绘制,无需硬编码"""
     window: str = "main"                   # main=主图叠加, sub=子图独立
     plots: list[PlotSpec] = []             # 每条线/柱的定义
     markers: list[MarkerSpec] = []         # 信号标记(可选)
+    arrows: list[ArrowSpec] = []           # 副图跨 K 线箭头(可选)
 
 
 class ProfileSnapshot(BaseModel):

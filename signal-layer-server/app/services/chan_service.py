@@ -28,9 +28,29 @@ from __future__ import annotations
 
 import logging
 from app.engine.chan import ChanEngine, ChanResult
+from app.engine.chan.overlap import KlineOverlap
+from app.engine.chan.classification import Classification, NextScenario
 from app.cache.indicator_cache import IndicatorCache, key_chan
 
 logger = logging.getLogger(__name__)
+
+
+def _deserialize_classification(data: dict | None) -> Classification | None:
+    if not data:
+        return None
+    return Classification(
+        position=data.get("position", "unknown"),
+        zhongshu_high=data.get("zhongshu_high"),
+        zhongshu_low=data.get("zhongshu_low"),
+        last_close=data.get("last_close"),
+        scenarios=[
+            NextScenario(
+                key=item["key"], label=item["label"], condition=item["condition"],
+                implication=item["implication"], active=item.get("active", False),
+            )
+            for item in data.get("scenarios", [])
+        ],
+    )
 
 
 class ChanService:
@@ -173,6 +193,29 @@ class ChanService:
                 }
                 for item in result.divergences
             ],
+            "overlaps": [
+                {
+                    "start_index": item.start_index, "end_index": item.end_index,
+                    "start_time": item.start_time, "end_time": item.end_time,
+                    "low": item.low, "high": item.high,
+                    "bars": item.bars, "level": item.level,
+                }
+                for item in result.overlaps
+            ],
+            "classification": None if result.classification is None else {
+                "position": result.classification.position,
+                "zhongshu_high": result.classification.zhongshu_high,
+                "zhongshu_low": result.classification.zhongshu_low,
+                "last_close": result.classification.last_close,
+                "scenarios": [
+                    {
+                        "key": scenario.key, "label": scenario.label,
+                        "condition": scenario.condition, "implication": scenario.implication,
+                        "active": scenario.active,
+                    }
+                    for scenario in result.classification.scenarios
+                ],
+            },
             "updated_at": result.updated_at,
         }
 
@@ -221,6 +264,9 @@ class ChanService:
                     start_time=d["start_time"], end_time=d["end_time"],
                     start_price=float(d["start_price"]), end_price=float(d["end_price"]),
                     high=float(d["high"]), low=float(d["low"]),
+                    feat_elements=d.get("feat_elements"),
+                    merged_feat=d.get("merged_feat"),
+                    fenxing_type=d.get("fenxing_type"),
                 )
                 for d in data.get("duans", [])
             ],
@@ -250,6 +296,16 @@ class ChanService:
                     reasons=item.get("reasons", []),
                 )
                 for item in data.get("divergences", [])
+            ],
+            classification=_deserialize_classification(data.get("classification")),
+            overlaps=[
+                KlineOverlap(
+                    start_index=item["start_index"], end_index=item["end_index"],
+                    start_time=item["start_time"], end_time=item["end_time"],
+                    low=float(item["low"]), high=float(item["high"]),
+                    bars=item["bars"], level=item["level"],
+                )
+                for item in data.get("overlaps", [])
             ],
             updated_at=data.get("updated_at", 0),
         )

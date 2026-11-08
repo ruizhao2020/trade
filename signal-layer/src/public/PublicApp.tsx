@@ -13,7 +13,7 @@ import type { SupportedTimeframeId } from '../core/constants.ts'
 
 const BASE_CHAN_OPTIONS: ChanRenderOptions = {
   showFenxing: false, showBi: false, showDuan: false, showZhongshu: false,
-  showZhongshuAxis: true, showBuySellPoints: false, showDivergences: false,
+  showZhongshuAxis: true, showBuySellPoints: false, showDivergences: false, showOverlaps: false, showClassification: false,
   biColor: '#e7c66b', duanColor: '#6c8cff', zhongshuColor: '#9b8cf2', zsLevel: 'bi',
 }
 

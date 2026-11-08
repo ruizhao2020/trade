@@ -10,6 +10,7 @@
  * 量柱结构 / 量价（形态类指标，按输出字段逐条列出）、以及其他指标。
  */
 
+import { useState } from 'react'
 import type { ConditionGroup, Condition, ConditionValue, IndicatorInfo, IndicatorOutput } from '../core/types.ts'
 import { ConditionOperator } from '../core/types.ts'
 import { SECONDARY_TIMEFRAME, SUPPORTED_TIMEFRAME_IDS, isFinerTimeframe, timeframeLabel } from '../core/constants.ts'
@@ -17,6 +18,7 @@ import type { SupportedTimeframeId } from '../core/constants.ts'
 import { MA_PERIODS } from '../core/indicatorColors.ts'
 import { PARAM_HINTS } from '../core/indicatorHints.ts'
 import { ParameterHint } from './ParameterHint.tsx'
+import { FormDiagram } from './FormDiagram.tsx'
 
 interface Props {
   /** 条件组列表 */
@@ -158,6 +160,7 @@ const PARAM_LABELS: Record<string, string> = {
   position_window: '位置参考窗口', consecutive_bars: '连续K线根数',
   volume_ratio_min: '放量倍数', stagnant_pct: '滞涨涨幅上限',
   stagnant_max_drawdown_pct: '滞涨高位上限', low_position_pct: '低位回撤阈值',
+  divergence_min_bars: '柱群最少根数',
 }
 
 const PARAM_HELP: Record<string, string> = {
@@ -172,6 +175,7 @@ const PARAM_HELP: Record<string, string> = {
   true_departure_bars: '连续脱离多少根后确认是真脱离。',
   maturity_bars: '合理价格区间持续多少根K线后视为成熟态势。',
   maturity_folds: '合理价格区间累计折叠次数达到该值后视为成熟。',
+  divergence_min_bars: 'MACD 红柱群/绿柱群至少多少根才参与背驰比较，用于过滤过短柱群的噪声。',
 }
 
 /** 参数说明：编辑器自己的短说明优先，其次复用指标库那份（PARAM_HINTS），最后兜底。 */
@@ -186,9 +190,25 @@ function IndicatorParamsEditor({
   info: IndicatorInfo
   onChange: (params: Record<string, number>) => void
 }) {
+  // 参数默认收起：条件卡片已经够长，参数只在需要时展开。
+  // 以指标默认值为底再叠加条件里已存的值——老条件缺的新参数也能显示出来，
+  // 每个参数都有默认值，不会出现空输入框。
+  const [open, setOpen] = useState(false)
+  const merged = { ...(info.default_params ?? {}), ...value.params }
+  const entries = Object.entries(merged)
   return (
-    <div className="flex items-center gap-3 flex-wrap">
-      {Object.entries(value.params).map(([key, paramValue]) => {
+    <div className="flex items-center gap-2 flex-wrap">
+      <button
+        type="button"
+        onClick={() => setOpen((current) => !current)}
+        aria-expanded={open}
+        aria-label={`${info.name} 参数`}
+        className="h-9 px-2.5 rounded-lg border border-[var(--border-primary)] text-[11px] text-[var(--text-secondary)] hover:border-[var(--border-accent)] hover:text-[var(--text-primary)] transition-colors"
+      >
+        参数{entries.length > 0 ? ` · ${entries.length}` : ''} {open ? '▾' : '▸'}
+      </button>
+      {open && <div className="flex items-center gap-3 flex-wrap">
+      {entries.map(([key, paramValue]) => {
         const label = PARAM_LABELS[key] ?? key
         if (value.indicatorType === 'ma' && key === 'period') {
           return (
@@ -197,7 +217,7 @@ function IndicatorParamsEditor({
               <select
                 aria-label={`${info.name} ${label}`}
                 value={paramValue}
-                onChange={(event) => onChange({ ...value.params, [key]: Number(event.target.value) })}
+                onChange={(event) => onChange({ ...merged, [key]: Number(event.target.value) })}
                 className="h-10 w-[104px] px-2.5 rounded-lg border border-[var(--border-primary)] bg-[var(--bg-tertiary)] text-[12px] font-mono text-[var(--text-primary)] outline-none focus:border-[var(--accent)]"
               >
                 {MA_PERIODS.map((period) => <option key={period} value={period}>周期 {period}</option>)}
@@ -212,12 +232,13 @@ function IndicatorParamsEditor({
               type="number"
               aria-label={`${info.name} ${label}`}
               value={paramValue}
-              onChange={(event) => onChange({ ...value.params, [key]: Number(event.target.value) })}
+              onChange={(event) => onChange({ ...merged, [key]: Number(event.target.value) })}
               className="h-10 w-[76px] px-2.5 rounded-lg border border-[var(--border-primary)] bg-[var(--bg-tertiary)] text-[12px] font-mono text-[var(--text-primary)] outline-none focus:border-[var(--accent)]"
             />
           </label>
         )
       })}
+      </div>}
     </div>
   )
 }
@@ -251,7 +272,10 @@ function isEventOutput(info: IndicatorInfo | null | undefined, field: string | u
  * 取值下拉的选项。左右两侧共用同一份，唯一的差别是左值不提供「固定值」：
  * 拿一个常数当比较主体没有意义，而右值必须要它——所有阈值都填在那里。
  */
-function SourceOptions({ indicators, includeConstant }: { indicators: IndicatorInfo[]; includeConstant: boolean }) {
+function SourceOptions({ indicators, includeConstant }: {
+  indicators: IndicatorInfo[]
+  includeConstant: boolean
+}) {
   return (
     <>
       <optgroup label="价格">
@@ -271,6 +295,7 @@ function SourceOptions({ indicators, includeConstant }: { indicators: IndicatorI
                 key={`signal:${group.type}:${output.field}`}
                 value={`signal:${group.type}:${output.field}`}
                 className={OPTION_CLASS}
+                title={output.description}
               >
                 {output.label}
               </option>
@@ -278,13 +303,27 @@ function SourceOptions({ indicators, includeConstant }: { indicators: IndicatorI
           </optgroup>
         )
       })}
-      <optgroup label="指标">
-        {indicators
-          .filter(item => !SIGNAL_TYPES.has(item.type))
-          .map(item => (
-            <option key={`indicator:${item.type}`} value={`indicator:${item.type}`} className={OPTION_CLASS}>{item.name}</option>
-          ))}
-      </optgroup>
+      {/* 其余指标各自成组，字段直接列出来——与「缠论」「量价」「量柱结构」同级 */}
+      {indicators
+        .filter(item => !SIGNAL_TYPES.has(item.type))
+        .map(item => {
+          const outputs = indicatorOutputs(item)
+          if (outputs.length === 0) return null
+          return (
+            <optgroup key={item.type} label={item.name}>
+              {outputs.map(output => (
+                <option
+                  key={`signal:${item.type}:${output.field}`}
+                  value={`signal:${item.type}:${output.field}`}
+                  className={OPTION_CLASS}
+                  title={output.description}
+                >
+                  {output.label}
+                </option>
+              ))}
+            </optgroup>
+          )
+        })}
       {includeConstant && (
         <optgroup label="其他">
           <option value="constant" className={OPTION_CLASS}>固定值</option>
@@ -404,7 +443,7 @@ export function ConditionGroupEditor({ groups, indicators, onChange, allowEmpty 
               const leftInfo = leftSrc === 'indicator' ? indicators.find(i => i.type === (cond.left as {indicatorType?: string}).indicatorType) : null
               const rightInfo = rightSrc === 'indicator' ? indicators.find(i => i.type === (cond.right as {indicatorType?: string}).indicatorType) : null
               const leftOutputs = indicatorOutputs(leftInfo)
-              const rightOutputs = indicatorOutputs(rightInfo)
+              const leftOutput = leftOutputs.find((output) => output.field === (cond.left as { field?: string }).field)
               // 缠论背驰和买卖点是独立事件条件，不需要操作符和右值
               const isChanSignal = leftSrc === 'chan' && ['divergence', 'buySellPoint'].includes((cond.left as {element?: string}).element ?? '')
               // 指标里的形态/事件型字段同理：看涨信号、态势成熟、一买这类字段本身
@@ -414,9 +453,7 @@ export function ConditionGroupEditor({ groups, indicators, onChange, allowEmpty 
               const isStandaloneCondition = isChanSignal || isEventField
               const isMaLeft = leftSrc === 'indicator' && (cond.left as IndicatorValue).indicatorType === 'ma'
               const isChipLeft = leftSrc === 'indicator' && (cond.left as IndicatorValue).indicatorType === 'chip_distribution'
-              // 形态类指标的字段已经写在取值编码里（signal:指标:字段），旁边不再显示字段下拉
-              const isSignalLeft = leftInfo != null && SIGNAL_TYPES.has(leftInfo.type)
-              const isSignalRight = rightInfo != null && SIGNAL_TYPES.has(rightInfo.type)
+              // 所有指标都以「signal:指标:字段」编码；只编码成 indicator:类型 会与选项值对不上，界面退回第一项
               // 支撑/压制是均线专属语义：后端会把它们映射到 MA 的 support / resistance
               // 输出字段（K线触及均线后收在哪一侧），对别的指标没有意义。
               const maOnlyOperators: ConditionOperator[] = [
@@ -441,7 +478,7 @@ export function ConditionGroupEditor({ groups, indicators, onChange, allowEmpty 
                   const type = (c as {indicatorType?: string}).indicatorType ?? ''
                   const field = (c as {field?: string}).field
                   // 形态类指标：编码里带上字段，才与下拉里的逐字段选项对得上
-                  if (SIGNAL_TYPES.has(type) && field) return `signal:${type}:${field}`
+                  if (field) return `signal:${type}:${field}`
                   return `indicator:${type}`
                 }
                 return c.source
@@ -534,16 +571,16 @@ export function ConditionGroupEditor({ groups, indicators, onChange, allowEmpty 
                     <SourceOptions indicators={indicators} includeConstant={false} />
                   </select>
 
-                  {leftSrc === 'indicator' && leftInfo && !isChipLeft && !isSignalLeft && leftOutputs.length > 1 && (
-                    <select value={(cond.left as {field?: string}).field ?? 'value'}
-                      aria-label={`${leftInfo.name} 输出线`}
-                      onChange={e => updateCondition(gi, conditionIndex, {
-                        left: { ...cond.left, field: e.target.value } as ConditionValue,
-                        ...eventOperatorUpdate(isEventOutput(leftInfo, e.target.value), cond.operator),
-                      })}
-                      className={`${selClass} w-[90px] font-mono text-[12px]`} style={{ ...selStyle, paddingRight: '24px' }}>
-                      {leftOutputs.map(output => <option key={output.field} value={output.field} className="bg-[var(--bg-secondary)] text-[var(--text-primary)]">{output.label}</option>)}
-                    </select>
+                  {leftOutput?.description && (
+                    <div className="w-full flex items-start gap-2">
+                      <span className="text-[11px] text-[var(--text-muted)] shrink-0">说明</span>
+                      <span className="text-[11px] leading-5 text-[var(--text-secondary)]">{leftOutput.description}</span>
+                    </div>
+                  )}
+                  {leftInfo && leftOutput && (
+                    <div className="w-full">
+                      <FormDiagram kind={`${leftInfo.type}:${leftOutput.field}`} />
+                    </div>
                   )}
 
                   {isChipLeft && (
@@ -598,14 +635,6 @@ export function ConditionGroupEditor({ groups, indicators, onChange, allowEmpty 
                             <SourceOptions indicators={indicators} includeConstant />
                           </select>
 
-                          {rightSrc === 'indicator' && rightInfo && !isSignalRight && (cond.right as IndicatorValue).indicatorType !== 'chip_distribution' && rightOutputs.length > 1 && (
-                            <select value={(cond.right as {field?: string}).field ?? 'value'}
-                              aria-label={`${rightInfo.name} 输出线`}
-                              onChange={e => updateCondition(gi, conditionIndex, { right: { ...cond.right, field: e.target.value } as ConditionValue })}
-                              className={`${selClass} w-[90px] font-mono text-[12px]`} style={{ ...selStyle, paddingRight: '24px' }}>
-                              {rightOutputs.map(output => <option key={output.field} value={output.field} className="bg-[var(--bg-secondary)] text-[var(--text-primary)]">{output.label}</option>)}
-                            </select>
-                          )}
 
                           {rightSrc === 'indicator' && (cond.right as IndicatorValue).indicatorType === 'chip_distribution' && (
                             <select value={(cond.right as IndicatorValue).field} aria-label="筹码分布右值字段" onChange={e => updateCondition(gi, conditionIndex, { right: { ...cond.right, field: e.target.value } as ConditionValue })} className={`${selClass} w-[120px]`} style={selStyle}>

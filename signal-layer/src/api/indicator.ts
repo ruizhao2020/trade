@@ -1,6 +1,7 @@
 import { api } from './client'
 import type {
-  IndicatorOutput, IndicatorResult, IndicatorInfo } from '../core/types.ts'
+  IndicatorOutput, IndicatorResult, IndicatorInfo, PlotSpec, RenderSpec,
+} from '../core/types.ts'
 import { applyIndicatorPeriodColor } from '../core/indicatorColors.ts'
 
 /** 后端返回的原始结构(snake_case) */
@@ -20,16 +21,73 @@ interface ApiMarkerSpec {
   rule?: string
 }
 
+interface ApiPlotSpec {
+  field: string
+  type: string
+  color: string
+  label: string
+  negative_color?: string | null
+}
+
+interface ApiArrowSpec {
+  from_time: number
+  from_value: number
+  to_time: number
+  to_value: number
+  direction: string
+  color: string
+}
+
+interface ApiRenderSpec {
+  window: string
+  plots: ApiPlotSpec[]
+  markers?: ApiMarkerSpec[]
+  arrows?: ApiArrowSpec[]
+}
+
+/** 后端 snake_case → 前端类型（计算结果与指标库共用） */
+function toRenderSpec(render: ApiRenderSpec): RenderSpec {
+  return {
+    window: render.window as 'main' | 'sub',
+    plots: render.plots.map(p => ({
+      field: p.field,
+      type: p.type as PlotSpec['type'],
+      color: p.color,
+      label: p.label,
+      negativeColor: p.negative_color ?? undefined,
+    })),
+    markers: (render.markers ?? []).map(marker => ({
+      field: marker.field,
+      priceField: marker.price_field ?? undefined,
+      labelIndexField: marker.label_index_field ?? undefined,
+      labelTagField: marker.label_tag_field ?? undefined,
+      labelTags: marker.label_tags,
+      size: marker.size,
+      spacing: marker.spacing,
+      buyColor: marker.buy_color,
+      sellColor: marker.sell_color,
+      buyLabel: marker.buy_label,
+      sellLabel: marker.sell_label,
+      index: marker.index,
+      rule: marker.rule,
+    })),
+    arrows: (render.arrows ?? []).map(arrow => ({
+      fromTime: arrow.from_time,
+      fromValue: arrow.from_value,
+      toTime: arrow.to_time,
+      toValue: arrow.to_value,
+      direction: arrow.direction === 'bottom' ? 'bottom' : 'top',
+      color: arrow.color,
+    })),
+  }
+}
+
 interface ApiIndicatorResult {
   type: string
   params: Record<string, number>
   /** 值为 null 表示该根样本不足（如长周期均线预热期），渲染时应断线 */
   values: Record<string, number | null>[]
-  render: {
-    window: string
-    plots: { field: string; type: string; color: string; label: string }[]
-    markers?: ApiMarkerSpec[]
-  }
+  render: ApiRenderSpec
   profile_data?: {
     prices: number[]
     snapshots: Array<{ time: number; weights: number[]; metrics: Record<string, number> }>
@@ -50,11 +108,7 @@ interface ApiInfo {
   description: string
   default_params: Record<string, number>
   outputs?: IndicatorOutput[]
-  render: {
-    window: string
-    plots: { field: string; type: string; color: string; label: string }[]
-    markers?: ApiMarkerSpec[]
-  }
+  render: ApiRenderSpec
 }
 
 interface ApiListResponse {
@@ -82,30 +136,7 @@ function toFrontend(r: ApiIndicatorResult): IndicatorResult {
     type: r.type,
     params: r.params,
     values: dropEmptyValues(r.values),
-    render: {
-      window: r.render.window as 'main' | 'sub',
-      plots: r.render.plots.map(p => ({
-        field: p.field,
-        type: p.type as 'line' | 'histogram' | 'marker' | 'profile',
-        color: p.color,
-        label: p.label,
-      })),
-      markers: (r.render.markers ?? []).map(marker => ({
-        field: marker.field,
-        priceField: marker.price_field ?? undefined,
-        labelIndexField: marker.label_index_field ?? undefined,
-        labelTagField: marker.label_tag_field ?? undefined,
-        labelTags: marker.label_tags,
-        size: marker.size,
-        spacing: marker.spacing,
-        buyColor: marker.buy_color,
-        sellColor: marker.sell_color,
-        buyLabel: marker.buy_label,
-        sellLabel: marker.sell_label,
-        index: marker.index,
-        rule: marker.rule,
-      })),
-    },
+    render: toRenderSpec(r.render),
     profileData: r.profile_data ? {
       prices: r.profile_data.prices,
       snapshots: r.profile_data.snapshots,
@@ -167,29 +198,6 @@ export async function fetchIndicatorList(): Promise<IndicatorInfo[]> {
     description: i.description,
     default_params: i.default_params,
     outputs: i.outputs,
-    render: {
-      window: i.render.window as 'main' | 'sub',
-      plots: i.render.plots.map(p => ({
-        field: p.field,
-        type: p.type as 'line' | 'histogram' | 'marker' | 'profile',
-        color: p.color,
-        label: p.label,
-      })),
-      markers: (i.render.markers ?? []).map(marker => ({
-        field: marker.field,
-        priceField: marker.price_field ?? undefined,
-        labelIndexField: marker.label_index_field ?? undefined,
-        labelTagField: marker.label_tag_field ?? undefined,
-        labelTags: marker.label_tags,
-        size: marker.size,
-        spacing: marker.spacing,
-        buyColor: marker.buy_color,
-        sellColor: marker.sell_color,
-        buyLabel: marker.buy_label,
-        sellLabel: marker.sell_label,
-        index: marker.index,
-        rule: marker.rule,
-      })),
-    },
+    render: toRenderSpec(i.render),
   }))
 }

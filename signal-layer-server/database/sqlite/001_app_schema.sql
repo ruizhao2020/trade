@@ -327,3 +327,31 @@ CREATE TABLE IF NOT EXISTS advisor_recommendations (
     created_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
     updated_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP
 );
+
+CREATE TABLE IF NOT EXISTS indicator_effectiveness (
+    id INTEGER NOT NULL PRIMARY KEY AUTOINCREMENT,
+    indicator_type VARCHAR(50) NOT NULL,
+    field VARCHAR(80) NOT NULL,
+    direction VARCHAR(10) NOT NULL DEFAULT 'none',
+    params_key VARCHAR(200) NOT NULL,
+    params JSON NULL,
+    timeframe VARCHAR(10) NOT NULL,
+    universe VARCHAR(80) NOT NULL,
+    horizon INTEGER NOT NULL DEFAULT 10,
+    sample_n INTEGER NOT NULL DEFAULT 0,
+    raw_events INTEGER NOT NULL DEFAULT 0,
+    hit_rate REAL NULL,
+    avg_return REAL NULL,
+    baseline_return REAL NULL,
+    excess_return REAL NULL,
+    p_value REAL NULL,
+    decay JSON NULL,
+    stability JSON NULL,
+    verdict VARCHAR(16) NOT NULL DEFAULT 'insufficient',
+    scope JSON NULL,
+    engine_version VARCHAR(16) NOT NULL DEFAULT 'v1',
+    evaluated_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    created_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    updated_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    UNIQUE (indicator_type, field, direction, params_key, timeframe, universe, horizon)
+);

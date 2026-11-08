@@ -10,7 +10,8 @@ import type { WorkspaceModule } from './components/WorkspaceNav.tsx'
 import { fetchKlines } from './api/kline.ts'
 import type { FrontendKlineResponse } from './api/kline.ts'
 import { fetchChanAnalysis } from './api/chan.ts'
-import { calculateIndicators } from './api/indicator.ts'
+import { calculateIndicatorsDetailed } from './api/indicator.ts'
+import { indicatorErrorMessage, withRetry } from './core/indicatorLoading.ts'
 import { runBacktest } from './api/signal.ts'
 import type { BacktestResult } from './api/signal.ts'
 import type {
@@ -49,6 +50,8 @@ const DEFAULT_CHAN_OPTIONS: ChanRenderOptions = {
   showZhongshuAxis: true,
   showBuySellPoints: false,
   showDivergences: false,
+  showOverlaps: false,
+  showClassification: false,
   biColor: '#e7c66b',
   duanColor: '#6c8cff',
   zhongshuColor: '#9b8cf2',
@@ -251,15 +254,15 @@ function WorkbenchApp({ user, onLogout, onUserChange, onLogin }: { user: AuthUse
   useEffect(() => {
     if (!symbol || selectedIndicators.length === 0 || klineData.length === 0) return
     let cancelled = false
-    calculateIndicators(
+    withRetry(() => calculateIndicatorsDetailed(
       symbol,
       timeframe,
       selectedIndicators.map((indicator) => ({ type: indicator.type, params: indicator.params })),
       500,
-    )
-      .then((results) => {
+    ))
+      .then(({ results, errors }) => {
         if (cancelled) return
-        setIndicatorError(null)
+        setIndicatorError(indicatorErrorMessage(errors))
         setIndicatorResults(results.map((result) => {
           const display = selectedIndicators.find((item) => (
             item.type === result.type
@@ -282,10 +285,10 @@ function WorkbenchApp({ user, onLogout, onUserChange, onLogin }: { user: AuthUse
   useEffect(() => {
     if (!symbol || strategyRequests.length === 0 || klineData.length === 0) return
     let cancelled = false
-    calculateIndicators(symbol, timeframe, strategyRequests, 500)
-      .then((results) => {
+    withRetry(() => calculateIndicatorsDetailed(symbol, timeframe, strategyRequests, 500))
+      .then(({ results, errors }) => {
         if (!cancelled) {
-          setStrategyIndicatorError(null)
+          setStrategyIndicatorError(indicatorErrorMessage(errors))
           setStrategyIndicatorResults({ key: strategyRequestKey, results })
         }
       })

@@ -76,6 +76,34 @@ class DivergenceSchema(BaseModel):
     reasons: list[str]
 
 
+class KlineOverlapSchema(BaseModel):
+    """K 线重叠段：只读的级别参考（零缠的"K线重叠理论"）。"""
+    start_time: int
+    end_time: int
+    low: str
+    high: str
+    bars: int
+    level: Literal["sub1", "sub2", "sub3"]
+    label: str
+
+
+class NextScenarioSchema(BaseModel):
+    key: str
+    label: str
+    condition: str
+    implication: str
+    active: bool
+    children: list["NextScenarioSchema"] = []
+
+
+class ClassificationSchema(BaseModel):
+    position: Literal["above", "inside", "below", "unknown"]
+    zhongshu_high: Optional[str] = None
+    zhongshu_low: Optional[str] = None
+    last_close: Optional[str] = None
+    scenarios: list[NextScenarioSchema] = []
+
+
 class ChanAnalysisResponse(BaseModel):
     symbol: str
     timeframe: str
@@ -85,5 +113,7 @@ class ChanAnalysisResponse(BaseModel):
     duan_zhongshus: list[ZhongshuSchema]         # 段中枢(level="duan")
     buy_sell_points: list[BuySellPointSchema]
     divergences: list[DivergenceSchema]
+    overlaps: list[KlineOverlapSchema] = []      # K 线重叠级别(只读标注)
+    classification: Optional[ClassificationSchema] = None  # 走势完全分类(只读)
     updated_at: int
     cached: bool

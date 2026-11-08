@@ -25,25 +25,27 @@ import type {
   ChanRenderOptions,
   Fenxing,
   Zhongshu,
+  KlineOverlap,
   BuySellPoint,
   Divergence,
   IndicatorMarkerDetail,
   Duan,
   Bi,
 } from '../core/types.ts'
-import { arrangeSeriesMarkersVertically, buildBuySellMarkerDetail, buildDivergenceMarkerDetail, buySellMarkerId, buySellMarkerLabel, divergenceMarkerId, divergenceMarkerLabel } from './markerDetails.ts'
+import { arrangeSeriesMarkersVertically, buildBuySellMarkerDetail, buildClassificationDetail, buildDivergenceMarkerDetail, buySellMarkerId, buySellMarkerLabel, classificationMarkerId, classificationMarkerLabel, divergenceMarkerId, divergenceMarkerLabel } from './markerDetails.ts'
+import { ClassificationPrimitive, buildClassificationBranches } from './ClassificationPrimitive.ts'
 
 class ZhongshuRenderer implements IPrimitivePaneRenderer {
   private readonly candleSeries: ISeriesApi<'Candlestick'>
   private readonly chart: IChartApi
   private readonly zhongshus: Zhongshu[]
-  private readonly options: { color: string; showAxis: boolean }
+  private readonly options: { color: string; showAxis: boolean; fillAlpha?: number; lineWidth?: number }
 
   constructor(
     candleSeries: ISeriesApi<'Candlestick'>,
     chart: IChartApi,
     zhongshus: Zhongshu[],
-    options: { color: string; showAxis: boolean }
+    options: { color: string; showAxis: boolean; fillAlpha?: number; lineWidth?: number }
   ) {
     this.candleSeries = candleSeries
     this.chart = chart
@@ -69,16 +71,18 @@ class ZhongshuRenderer implements IPrimitivePaneRenderer {
         const yTop = Math.min(yHigh, yLow)
         const h = Math.abs(yHigh - yLow)
 
+        // 填充透明度与线宽可按调用方调整（K 线重叠级别需要更醒目）
+        const alpha = Math.round((this.options.fillAlpha ?? 0.2) * 255).toString(16).padStart(2, '0')
         const fillColor = zs.broken
           ? (zs.breakDirection === 'up' ? 'rgba(255,91,98,0.15)' : 'rgba(47,197,141,0.15)')
-          : this.options.color + '33'
+          : this.options.color + alpha
         ctx.fillStyle = fillColor
         ctx.fillRect(x, yTop, w, h)
 
         ctx.strokeStyle = zs.broken
           ? (zs.breakDirection === 'up' ? '#ff5b62' : '#2fc58d')
           : this.options.color
-        ctx.lineWidth = 1
+        ctx.lineWidth = this.options.lineWidth ?? 1
         ctx.strokeRect(x, yTop, w, h)
 
         if (this.options.showAxis) {
@@ -106,7 +110,7 @@ class ZhongshuPaneView implements IPanePrimitivePaneView {
     candleSeries: ISeriesApi<'Candlestick'>,
     chart: IChartApi,
     zhongshus: Zhongshu[],
-    options: { color: string; showAxis: boolean }
+    options: { color: string; showAxis: boolean; fillAlpha?: number; lineWidth?: number }
   ) {
     this._renderer = new ZhongshuRenderer(candleSeries, chart, zhongshus, options)
   }
@@ -123,7 +127,7 @@ class ZhongshuPrimitive implements IPanePrimitive {
     candleSeries: ISeriesApi<'Candlestick'>,
     chart: IChartApi,
     zhongshus: Zhongshu[],
-    options: { color: string; showAxis: boolean }
+    options: { color: string; showAxis: boolean; fillAlpha?: number; lineWidth?: number }
   ) {
     this.views = [new ZhongshuPaneView(candleSeries, chart, zhongshus, options)]
   }
@@ -369,6 +373,7 @@ function buildDivergenceMarkers(divergences: Divergence[]): SeriesMarker<Time>[]
 }
 
 export class ChanRenderer {
+  private analysis: ChanAnalysis | null = null
   private lineSeriesList: ISeriesApi<'Line'>[] = []
   private primitives: IPanePrimitive[] = []
   private markersPlugin: ISeriesMarkersPluginApi<Time> | null = null
@@ -383,6 +388,7 @@ export class ChanRenderer {
 
   render(analysis: ChanAnalysis, options: ChanRenderOptions, detailFeatures?: string[]): void {
     this.clear()
+    this.analysis = analysis
 
     if (options.showBi && analysis.bis.length > 0) {
       const biSeries = this.chart.addSeries(LineSeries, {
@@ -422,7 +428,72 @@ export class ChanRenderer {
       }
     }
 
+    // 走势完全分类：从最后一根 K 线向右画出三条分支（箭头 + 标签）
+    // 只有缠论图层里显式打开「完全分类」才画
+    if (options.showClassification && analysis.classification && analysis.classification.scenarios.length > 0) {
+      const last = analysis.bis[analysis.bis.length - 1]
+      const lastZhongshu = analysis.zhongshus[analysis.zhongshus.length - 1]
+      const lastTime = last?.endTime ?? lastZhongshu?.endTime
+      const lastPrice = analysis.classification.lastClose
+      const branches = buildClassificationBranches(analysis.classification)
+      if (lastTime && lastPrice !== undefined && branches.length > 0) {
+        const prim = new ClassificationPrimitive(this.chart, this.candleSeries, lastTime, lastPrice, branches)
+        this.candleSeries.attachPrimitive(prim)
+        this.primitives.push(prim)
+      }
+    }
+
+    // K 线重叠级别：零缠口径的只读级别参考。独立于笔/中枢，序号偏移 10000
+    // 避免与真实中枢编号混淆。按级别分组上色：重叠根数越多级别越高，颜色越醒目。
+    if (options.showOverlaps && analysis.overlaps.length > 0) {
+      const levels: Array<{ level: KlineOverlap['level']; color: string }> = [
+        { level: 'sub1', color: '#f59e0b' },   // 长重叠（原「次级别」）
+        { level: 'sub2', color: '#22d3ee' },   // 中重叠（原「次次级别」）
+        { level: 'sub3', color: '#f472b6' },   // 短重叠（过渡区）
+      ]
+      const pane = this.chart.panes()[0]
+      for (const group of levels) {
+        const items = analysis.overlaps.filter((item) => item.level === group.level)
+        if (items.length === 0) continue
+        const overlapBoxes: Zhongshu[] = items.map((item, index) => ({
+          index: 10000 + index,
+          high: item.high,
+          low: item.low,
+          mid: (item.high + item.low) / 2,
+          startTime: item.startTime,
+          endTime: item.endTime,
+          level: 'bi',
+          broken: false,
+          biIndices: [],
+        }))
+        const prim = new ZhongshuPrimitive(this.candleSeries, this.chart, overlapBoxes, {
+          color: group.color,
+          showAxis: false,
+          fillAlpha: 0.30,
+          lineWidth: 2,
+        })
+        pane.attachPrimitive(prim)
+        this.primitives.push(prim)
+      }
+    }
+
     const markers: SeriesMarker<Time>[] = []
+    // 走势完全分类：挂在最后一笔的终点，点击弹出后续分类；只在开关打开时显示
+    if (options.showClassification && analysis.classification && analysis.classification.scenarios.length > 0) {
+      const last = analysis.bis[analysis.bis.length - 1]
+      const lastZhongshu = analysis.zhongshus[analysis.zhongshus.length - 1]
+      const lastTime = last?.endTime ?? lastZhongshu?.endTime
+      if (lastTime) {
+        markers.push({
+          time: (lastTime / 1000) as Time,
+          position: 'aboveBar',
+          color: '#e7c66b',
+          shape: 'circle',
+          text: classificationMarkerLabel(),
+          id: classificationMarkerId(),
+        })
+      }
+    }
     // 笔序号:在每笔终点标注序号,方便定位讨论
     if (options.showBi && analysis.bis.length > 0) {
       markers.push(...buildBiIndexMarkers(analysis.bis))
@@ -494,6 +565,9 @@ export class ChanRenderer {
   }
 
   getMarkerDetail(markerId: string): IndicatorMarkerDetail | undefined {
+    if (markerId === classificationMarkerId() && this.analysis?.classification) {
+      return buildClassificationDetail(this.analysis.classification)
+    }
     return this.markerDetails.get(markerId)
   }
 }

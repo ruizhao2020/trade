@@ -142,5 +142,7 @@ export function buildStrategyChanOptions(
     showZhongshuAxis: enabled,
     showBuySellPoints: enabled,
     showDivergences: enabled,
+    showOverlaps: false,
+    showClassification: false,
   }
 }

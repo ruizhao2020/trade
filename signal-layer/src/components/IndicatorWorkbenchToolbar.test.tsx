@@ -17,7 +17,8 @@ const ZONE: IndicatorInfo = {
 
 const CHAN_OPTIONS: ChanRenderOptions = {
   showFenxing: false, showBi: false, showDuan: false, showZhongshu: false,
-  showBuySellPoints: false, showDivergences: false, showZhongshuAxis: false, zsLevel: 'bi',
+  showBuySellPoints: false, showDivergences: false, showOverlaps: false, showClassification: false,
+  showZhongshuAxis: false, zsLevel: 'bi',
 }
 
 function renderToolbar() {

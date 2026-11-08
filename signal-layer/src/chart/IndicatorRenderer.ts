@@ -28,6 +28,7 @@ import { findProfileSnapshot } from '../core/profileData.ts'
 import { VolumeBoxPrimitive, type VolumeBoxPoint } from './VolumeBoxPrimitive.ts'
 import { PriceProfilePrimitive, type PriceProfilePoint } from './PriceProfilePrimitive.ts'
 import { DilunZonePrimitive, type DilunZoneRegion } from './DilunZonePrimitive.ts'
+import { DivergenceArrowPrimitive, arrowPadOf } from './DivergenceArrowPrimitive.ts'
 import { buildZoneBoxes, fillHeightRatio } from './zoneBoxes.ts'
 import { buildFormMarkerDetail, formMarkerId, formSignalNumbers, parseFormMarkerId, popupMarkerLabel } from './markerDetails.ts'
 
@@ -235,11 +236,32 @@ export class IndicatorRenderer {
             s.attachPrimitive(primitive)
             primitives.push({ detach: () => s.detachPrimitive(primitive) })
           }
+        } else if (plot.negativeColor) {
+          // 正负分色（MACD 的红柱/绿柱）：正值用主色，负值用第二颜色
+          const signedData = result.values
+            .filter(value => Number.isFinite(value[plot.field]))
+            .map(value => ({
+              time: (value.time / 1000) as Time,
+              value: value[plot.field],
+              color: value[plot.field] < 0 ? plot.negativeColor : plot.color,
+            }))
+          s.setData(signedData)
         } else {
           s.setData(data)
         }
         series.push(s)
       }
+    }
+
+    // 副图箭头（MACD 柱群背驰）：挂在同一 pane 的第一个系列上，端点用该 pane 的
+    // 价格轴定位。箭头列表由后端按柱群峰位算好，前端只负责画，不参与条件计算。
+    if (render.arrows && render.arrows.length > 0 && series.length > 0) {
+      const target = series[0]
+      const primitive = new DivergenceArrowPrimitive(
+        this.chart, target, render.arrows, arrowPadOf(render.arrows),
+      )
+      target.attachPrimitive(primitive)
+      primitives.push({ detach: () => target.detachPrimitive(primitive) })
     }
 
     // 标记一律挂在主图的 candlestick series 上（走价格轴），与指标自己的 window

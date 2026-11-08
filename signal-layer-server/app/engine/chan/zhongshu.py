@@ -8,9 +8,9 @@
 2. 定义 Duan 数据结构
 
 ## 段（Duan）构建规则
-- 笔是段的基本组成单元
-- 连续同向的笔合并为一段
-- 段的方向由组成它的笔决定
+- 先用特征序列分型法划分基础线段（至少 3 笔）
+- 再把未破坏趋势起点、幅度较小的回抽合并进趋势段
+- 段的方向由构成它的笔决定，相邻段共享端点
 
 ## 中枢识别（在 signal.py 中）
 - 至少 3 段的重叠区间构成中枢
@@ -42,254 +42,228 @@ class Duan:
     fenxing_type: str | None = None
 
 
+@dataclass
+class _BaseDuan:
+    """基础线段（特征序列分型法结果），用于后续走势回抽合并。"""
+
+    start: int
+    end: int
+    direction: str
+    fenxing: str | None
+    feats: list[tuple[float, float, int]]
+    merged: list[tuple[float, float, int]]
+    absorbed_pullback: bool = False
+
+
 def build_duans(bis: list[Bi]) -> list[Duan]:
     """
-    从笔构建段 — 严格对齐缠论原著"特征序列分型法"。
+    从笔构建段 — 特征序列基础线段 + 走势回抽合并。
 
-    ## 缠论原著算法(《教你炒股票》第 71、78 课)
+    ## 第一阶段：特征序列分型法（缠论原著第 67、71 课）
+    1. 段方向 = 起始笔方向，段至少 3 笔。
+    2. 特征序列 = 与段方向相反的笔；向上段取向下笔 (顶, 底)，
+       向下段取向上笔 (底, 顶)。
+    3. 特征序列按包含关系合并（向上段取小、向下段取大）。
+    4. 向上段出现顶分型 / 向下段出现底分型 → 段结束。
+    5. 段终点 = 分型中间反向笔之前、段内同向笔的极值笔（可能早于分型确认位置，
+       其后的笔归入下一段）。
 
-    ### 段的基本定义
-    - 至少 3 笔组成
-    - 段方向 = 第一笔方向
-    - 向上线段:起于底、终于顶(终点价格 > 起点价格)
-    - 向下线段:起于顶、终于底(终点价格 < 起点价格)
+    ## 第二阶段：走势回抽合并
+    基础线段中的反向线段若同时满足以下条件，说明它只是趋势中的回抽，而不是反转：
+    - 没有跌破/升破前一同向线段的起点；
+    - 回抽幅度小于前一同向线段的幅度；
+    - 其后同向线段仍然有效（终点超越起点）。
+    合并后的段终点取后一同向线段的终点（回抽之后趋势的最后一个极值），
+    这样一条走势段会跨过中间的回抽，而不是被回抽切成多条线段。
 
-    ### 特征序列定义(关键)
-    - 向上线段的特征序列 = 段内所有**向下笔**(反向笔)
-      每个特征元素 = (向下笔的起点价 = 顶, 向下笔的终点价 = 底)
-      即 (start_price, end_price) of 向下笔
-    - 向下线段的特征序列 = 段内所有**向上笔**(反向笔)
-      每个特征元素 = (向上笔的起点价 = 底, 向上笔的终点价 = 顶)
-      即 (start_price, end_price) of 向上笔
-    注意:用笔的起止价,不是 high/low(max/min)。
-
-    ### 包含合并(同 K 线去包含)
-    - 相邻两元素若存在包含关系,按段方向相反的方向合并
-    - 向上线段(向下笔序列):按"向下"方向合并 → 取 min(顶), min(底)
-    - 向下线段(向上笔序列):按"向上"方向合并 → 取 max(底), max(顶)
-
-    ### 分型确认段结束
-    - 合并后的特征序列出现顶分型 → 向上线段结束
-      顶分型:S1.顶 < S2.顶 > S3.顶 且 S1.底 < S2.底 > S3.底
-    - 出现底分型 → 向下线段结束
-      底分型:S1.顶 > S2.顶 < S3.顶 且 S1.底 > S2.底 < S3.底
-    - 段终点 = S2 对应反向笔的起点(= 前一根同向笔的终点 = 段内极值点)
-
-    ### 方向交替
-    分型确认后,新段方向必然相反。
+    无效线段（终点未超越起点）并入前一段，视为趋势延续；
+    若首笔单独成段（不足 3 笔），直接跳过：它只是行情开篇的一笔，
+    不能把后续线段拉回到更早的端点。
     """
     bi_count = len(bis)
     if bi_count < 3:
         logger.info(f"build_duans: {bi_count} bis (need >=3) -> 0 duans")
         return []
 
-    duans: list[Duan] = []
-    i = 0  # 当前段起始笔索引
+    segments = _build_base_duans(bis)
+    segments = _cleanup_base_duans(bis, segments)
+    segments = _merge_pullback_segments(bis, segments)
 
-    while i < bi_count - 2:
-        seg_dir = bis[i].direction
-        # 特征序列元素:(first_price, last_price, bi_index)
-        # first/last 是反向笔的起点价/终点价(非 high/low)
-        feat_elements: list[tuple[float, float, int]] = []
-
-        end_idx = bi_count - 1  # 默认延伸到最后
-        found_end = False
-        # 候选分型位置和段内极值(用于回滚判断)
-        candidate_end = -1  # 候选段末笔索引
-        seg_extreme_price: float  # 段内极值(向下段=最低,向上段=最高)
-
-        if seg_dir == "down":
-            seg_extreme_price = bis[i].start_price  # 向下段起点是最高
-        else:
-            seg_extreme_price = bis[i].start_price  # 向上段起点是最低
-
-        for j in range(i + 1, bi_count):
-            b = bis[j]
-            # 反向笔加入特征序列
-            if b.direction != seg_dir:
-                feat_elements.append((b.start_price, b.end_price, j))
-
-            # 更新段内极值(向下段跟踪最低,向上段跟踪最高)
-            if seg_dir == "down":
-                seg_extreme_price = min(seg_extreme_price, b.end_price)
-            else:
-                seg_extreme_price = max(seg_extreme_price, b.end_price)
-
-            # 如果已有候选分型,检查是否被后续笔破坏
-            # 向下段:后续笔创新低(低于候选段末笔的终点)→ 候选分型作废,继续延伸
-            # 向上段:后续笔创新高(高于候选段末笔的终点)→ 候选分型作废,继续延伸
-            if found_end:
-                last_candidate_end_price = bis[candidate_end].end_price
-                broken = (
-                    (seg_dir == "down" and b.end_price < last_candidate_end_price)
-                    or (seg_dir == "up" and b.end_price > last_candidate_end_price)
-                )
-                if broken:
-                    # 候选分型被破坏,撤销,继续延伸
-                    found_end = False
-                    candidate_end = -1
-                    # 重置 end_idx 为延伸到最后(否则 end_idx 仍保留被破坏候选的值,
-                    # 会导致段提前在已作废的候选位置终止)
-                    end_idx = bi_count - 1
-
-            # 至少 3 个元素(合并后)才能判断分型
-            merged = _merge_feature_elements(feat_elements, seg_dir)
-            if len(merged) < 3:
-                continue
-
-            # 检查最后 3 个元素是否形成分型(仅在没有有效候选时检测)
-            if not found_end:
-                is_top = _is_fx_top(merged[-3], merged[-2], merged[-1])
-                is_bot = _is_fx_bottom(merged[-3], merged[-2], merged[-1])
-
-                if seg_dir == "up" and is_top:
-                    s2_bi_idx = merged[-2][2]
-                    candidate_end = _find_seg_end_by_extreme(bis, i, s2_bi_idx - 1, seg_dir)
-                    end_idx = candidate_end
-                    found_end = True
-                elif seg_dir == "down" and is_bot:
-                    s2_bi_idx = merged[-2][2]
-                    candidate_end = _find_seg_end_by_extreme(bis, i, s2_bi_idx - 1, seg_dir)
-                    end_idx = candidate_end
-                    found_end = True
-
-        # 构建段 [i, end_idx]
-        seg_bis = bis[i:end_idx + 1]
-        if len(seg_bis) >= 3:
-            if found_end:
-                duan = _make_duan(len(duans), seg_dir, seg_bis)
-                duan.feat_elements = [
-                    {"first": f[0], "last": f[1], "bi": f[2]} for f in feat_elements
-                ]
-                duan.merged_feat = [
-                    {"first": f[0], "last": f[1], "bi": f[2]} for f in merged
-                ]
-                duan.fenxing_type = "top" if seg_dir == "up" else "bottom"
-                duans.append(duan)
-            else:
-                first = seg_bis[0]
-                last = seg_bis[-1]
-                direction_ok = (
-                    (seg_dir == "up" and last.end_price > first.start_price)
-                    or (seg_dir == "down" and last.end_price < first.start_price)
-                )
-                if direction_ok:
-                    duan = _make_duan_simple(len(duans), seg_dir, seg_bis)
-                    duan.feat_elements = [
-                        {"first": f[0], "last": f[1], "bi": f[2]} for f in feat_elements
-                    ]
-                    duan.merged_feat = [
-                        {"first": f[0], "last": f[1], "bi": f[2]} for f in merged
-                    ]
-                    duans.append(duan)
-                else:
-                    if duans:
-                        prev = duans[-1]
-                        prev.bi_indices.extend(b.index for b in seg_bis)
-                        prev_seg_bis = [bis[k] for k in prev.bi_indices]
-                        updated = _make_duan_simple(prev.index, prev.direction, prev_seg_bis)
-                        prev.start_time = updated.start_time
-                        prev.end_time = updated.end_time
-                        prev.start_price = updated.start_price
-                        prev.end_price = updated.end_price
-                        prev.high = updated.high
-                        prev.low = updated.low
-
-        if found_end and end_idx + 1 < bi_count:
-            i = end_idx + 1
-        else:
-            break
-
-    _align_duan_boundaries(duans, bis)
-    logger.info(f"build_duans: {bi_count} bis -> {len(duans)} duans (特征序列分型法)")
+    duans = [_make_duan(index, segment, bis) for index, segment in enumerate(segments)]
+    logger.info(f"build_duans: {bi_count} bis -> {len(duans)} duans (特征序列+走势回抽合并)")
     return duans
 
 
-def _align_duan_boundaries(duans: list[Duan], bis: list[Bi]) -> None:
-    """让相邻线段共享同一个极值端点，并据此重新划分边界笔。
+def _build_base_duans(bis: list[Bi]) -> list[_BaseDuan]:
+    """逐段扫描特征序列，得到基础线段。"""
+    segments: list[_BaseDuan] = []
+    start = 0
+    while start + 2 < len(bis):
+        segment = _scan_base_segment(bis, start)
+        segments.append(segment)
+        if segment.fenxing is None or segment.end + 1 <= start:
+            break
+        start = segment.end + 1
+    return segments
 
-    特征序列确认发生后，后一段可能在最初几笔内继续创出新极值。
-    `_make_duan` 会正确地把后一段起点放到该极值，但前一段仍可能停留在
-    较早的候选点，造成两段断开。这里以后一段已经确认的起点为最终边界：
-    边界前的笔归前段，边界开始的笔归后段。
+
+def _scan_base_segment(bis: list[Bi], start: int) -> _BaseDuan:
+    """扫描 [start, ...]，找到特征序列分型并返回基础线段。
+
+    找不到分型时返回延伸到最后的一笔（未完成段）。
     """
-    if len(duans) < 2:
-        return
+    direction = bis[start].direction
+    feats: list[tuple[float, float, int]] = []
+    merged: list[tuple[float, float, int]] = []
 
-    position_by_index = {item.index: position for position, item in enumerate(bis)}
-
-    for position in range(1, len(duans)):
-        previous = duans[position - 1]
-        current = duans[position]
-        boundary_position = next((
-            index for index, item in enumerate(bis)
-            if (
-                item.direction == current.direction
-                and item.start_time == current.start_time
-                and item.start_price == current.start_price
-            )
-        ), None)
-        if boundary_position is None or boundary_position == 0:
+    for j in range(start + 1, len(bis)):
+        current = bis[j]
+        if current.direction != direction:
+            feats.append((current.start_price, current.end_price, j))
+        merged = _merge_feature_elements(feats, direction)
+        if len(merged) < 3:
             continue
+        s1, s2, s3 = merged[-3], merged[-2], merged[-1]
+        if direction == "up" and _is_fx_top(s1, s2, s3):
+            bound = max(start, s2[2] - 1)
+            end = _seg_extreme_bi(bis, start, bound, direction)
+            return _BaseDuan(start, end, direction, "top", feats, merged)
+        if direction == "down" and _is_fx_bottom(s1, s2, s3):
+            bound = max(start, s2[2] - 1)
+            end = _seg_extreme_bi(bis, start, bound, direction)
+            return _BaseDuan(start, end, direction, "bottom", feats, merged)
 
-        previous_start = position_by_index.get(previous.bi_indices[0]) if previous.bi_indices else None
-        current_end = position_by_index.get(current.bi_indices[-1]) if current.bi_indices else None
-        if previous_start is None or current_end is None:
-            continue
-        if not (previous_start < boundary_position <= current_end):
-            continue
-
-        previous_bis = bis[previous_start:boundary_position]
-        current_bis = bis[boundary_position:current_end + 1]
-        if len(previous_bis) < 3 or len(current_bis) < 3:
-            continue
-
-        previous.bi_indices = [item.index for item in previous_bis]
-        previous.end_time = current.start_time
-        previous.end_price = current.start_price
-        previous.high = max(max(item.start_price, item.end_price) for item in previous_bis)
-        previous.low = min(min(item.start_price, item.end_price) for item in previous_bis)
-
-        current.bi_indices = [item.index for item in current_bis]
-        current.high = max(max(item.start_price, item.end_price) for item in current_bis)
-        current.low = min(min(item.start_price, item.end_price) for item in current_bis)
-
-        previous_allowed = set(previous.bi_indices)
-        current_allowed = set(current.bi_indices)
-        if previous.feat_elements is not None:
-            previous.feat_elements = [item for item in previous.feat_elements if item["bi"] in previous_allowed]
-        if previous.merged_feat is not None:
-            previous.merged_feat = [item for item in previous.merged_feat if item["bi"] in previous_allowed]
-        if current.feat_elements is not None:
-            current.feat_elements = [item for item in current.feat_elements if item["bi"] in current_allowed]
-        if current.merged_feat is not None:
-            current.merged_feat = [item for item in current.merged_feat if item["bi"] in current_allowed]
+    return _BaseDuan(start, len(bis) - 1, direction, None, feats, merged)
 
 
-def _find_seg_end_by_extreme(
-    bis: list[Bi], start_idx: int, end_idx_bound: int, seg_dir: str,
-) -> int:
+def _seg_extreme_bi(bis: list[Bi], start: int, end_bound: int, direction: str) -> int:
+    """段内同向笔的极值笔索引（向上取最高 end_price，向下取最低 end_price）。
+
+    极值相同取时间靠后的一笔，使段终点落在极值最后一次出现的位置。
     """
-    在 [start_idx, end_idx_bound] 范围内,找到段末笔的索引。
-    段末笔 = 同向笔中极值最优的那根:
-      - 向上线段:同向笔(向上笔)中 end_price 最大的
-      - 向下线段:同向笔(向下笔)中 end_price 最小的
-    返回该笔的索引。
+    best: int | None = None
+    for k in range(start, min(end_bound, len(bis) - 1) + 1):
+        if bis[k].direction != direction:
+            continue
+        if best is None:
+            best = k
+            continue
+        price = bis[k].end_price
+        best_price = bis[best].end_price
+        if (direction == "up" and price >= best_price) or (direction == "down" and price <= best_price):
+            best = k
+    return best if best is not None else start
+
+
+def _cleanup_base_duans(bis: list[Bi], segments: list[_BaseDuan]) -> list[_BaseDuan]:
+    """剔除/吸收不足 3 笔或方向无效的基础线段。
+
+    短段或方向无效段若夹在两条同向线段之间，说明它只是趋势中的一笔回抽，
+    与前后两段合并；否则并入前一段。首段无法成段时直接跳过，
+    不把后一段的起点拉到首笔起点（否则向上段会从一段下跌的开头开始）。
     """
-    best_idx = end_idx_bound
-    if seg_dir == "up":
-        best_price = -float("inf")
-        for k in range(start_idx, end_idx_bound + 1):
-            if bis[k].direction == seg_dir and bis[k].end_price > best_price:
-                best_price = bis[k].end_price
-                best_idx = k
-    else:
-        best_price = float("inf")
-        for k in range(start_idx, end_idx_bound + 1):
-            if bis[k].direction == seg_dir and bis[k].end_price < best_price:
-                best_price = bis[k].end_price
-                best_idx = k
-    return best_idx
+    cleaned: list[_BaseDuan] = []
+    position = 0
+
+    while position < len(segments):
+        segment = segments[position]
+        length = segment.end - segment.start + 1
+        if length < 3 or not _is_valid_segment(bis, segment):
+            following = segments[position + 1] if position + 1 < len(segments) else None
+            if cleaned and following is not None and cleaned[-1].direction == following.direction:
+                previous = cleaned[-1]
+                previous.end = following.end
+                previous.fenxing = following.fenxing
+                previous.feats = previous.feats + following.feats
+                previous.merged = following.merged
+                position += 2
+                continue
+            if cleaned:
+                previous = cleaned[-1]
+                if segment.end > previous.end:
+                    previous.end = segment.end
+                    previous.fenxing = None
+                    previous.feats = []
+                    previous.merged = []
+            position += 1
+            continue
+
+        cleaned.append(segment)
+        position += 1
+
+    return cleaned
+
+
+def _merge_pullback_segments(bis: list[Bi], segments: list[_BaseDuan]) -> list[_BaseDuan]:
+    """把符合回抽条件的基础线段合并为走势段。"""
+    changed = True
+    while changed:
+        changed = False
+        for position in range(len(segments) - 2):
+            trend = segments[position]
+            pullback = segments[position + 1]
+            following = segments[position + 2]
+
+            if trend.absorbed_pullback or pullback.absorbed_pullback or following.absorbed_pullback:
+                continue
+            if trend.direction != following.direction:
+                continue
+            if not _is_valid_segment(bis, following):
+                continue
+            if _breaks_origin(bis, trend, pullback):
+                continue
+            # 回抽幅度必须小于趋势幅度的一半，否则更像是一段真实的来回走势。
+            if _segment_amplitude(bis, pullback) * 2 >= _segment_amplitude(bis, trend):
+                continue
+
+            segments[position:position + 3] = [_BaseDuan(
+                start=trend.start,
+                end=following.end,
+                direction=trend.direction,
+                fenxing=following.fenxing,
+                feats=trend.feats + following.feats,
+                merged=following.merged,
+                absorbed_pullback=True,
+            )]
+            changed = True
+            break
+
+    return segments
+
+
+def _is_valid_segment(bis: list[Bi], segment: _BaseDuan) -> bool:
+    """段的终点是否沿段方向超越起点。"""
+    start_price = bis[segment.start].start_price
+    end_price = bis[segment.end].end_price
+    if segment.direction == "up":
+        return end_price > start_price
+    return end_price < start_price
+
+
+def _segment_extremes(bis: list[Bi], segment: _BaseDuan) -> tuple[float, float]:
+    """返回段的 (最高价, 最低价)。"""
+    prices: list[float] = []
+    for item in bis[segment.start:segment.end + 1]:
+        prices.append(item.start_price)
+        prices.append(item.end_price)
+    return max(prices), min(prices)
+
+
+def _breaks_origin(bis: list[Bi], trend: _BaseDuan, pullback: _BaseDuan) -> bool:
+    """回抽是否跌破（向上段）或升破（向下段）趋势段的起点。"""
+    origin = bis[trend.start].start_price
+    high, low = _segment_extremes(bis, pullback)
+    if trend.direction == "up":
+        return low < origin
+    return high > origin
+
+
+def _segment_amplitude(bis: list[Bi], segment: _BaseDuan) -> float:
+    """段的净幅度（终点相对起点的涨跌幅绝对值）。"""
+    start_price = bis[segment.start].start_price
+    end_price = bis[segment.end].end_price
+    base = abs(start_price) if start_price else 1.0
+    return abs(end_price - start_price) / base
 
 
 def _merge_feature_elements(
@@ -356,83 +330,31 @@ def _is_fx_bottom(s1, s2, s3) -> bool:
     return s1[0] > s2[0] and s2[0] < s3[0] and s1[1] > s2[1] and s2[1] < s3[1]
 
 
-def _make_duan(index: int, direction: str, seg_bis: list[Bi]) -> Duan:
+def _make_duan(index: int, segment: _BaseDuan, bis: list[Bi]) -> Duan:
+    """把最终走势段映射为 Duan。
+
+    段端点取首笔起点 / 末笔终点，保证相邻段共享同一个端点；
+    high/low 仍是整段的价格区间（可能包含段内回抽的极值）。
     """
-    从一组笔构造段(找到分型时使用,端点取段内极值)。
-    段端点按段方向取段内极值笔的端点(确保方向约束满足):
-      - 向上段:起点 = 最低点(某向下笔的终点 or 第一笔起点),终点 = 最高点(某向上笔的终点)
-      - 向下段:起点 = 最高点(某向上笔的终点 or 第一笔起点),终点 = 最低点(某向下笔的终点)
-    时间升序:起点时间 < 终点时间(极值笔按时间先后)
-    相邻段端点对齐:前段终点 = 后段起点(都是同极值笔的端点)。
-    """
-    # 找段内极值对应的笔端点(price, time)
-    all_endpoints: list[tuple[float, int]] = []
-    for b in seg_bis:
-        all_endpoints.append((b.start_price, b.start_time))
-        all_endpoints.append((b.end_price, b.end_time))
-
-    high_price = max(p for p, _ in all_endpoints)
-    low_price = min(p for p, _ in all_endpoints)
-    all_endpoints.sort(key=lambda x: x[1])
-
-    if direction == "up":
-        low_pt = min((pt for pt in all_endpoints if pt[0] == low_price), key=lambda x: x[1])
-        high_pt = max((pt for pt in all_endpoints if pt[0] == high_price), key=lambda x: x[1])
-        start_price, start_time = low_pt
-        end_price, end_time = high_pt
-    else:
-        high_pt = min((pt for pt in all_endpoints if pt[0] == high_price), key=lambda x: x[1])
-        low_pt = max((pt for pt in all_endpoints if pt[0] == low_price), key=lambda x: x[1])
-        start_price, start_time = high_pt
-        end_price, end_time = low_pt
-
-    if start_time > end_time:
-        first = seg_bis[0]
-        last = seg_bis[-1]
-        start_price, start_time = first.start_price, first.start_time
-        end_price, end_time = last.end_price, last.end_time
-
+    seg_bis = bis[segment.start:segment.end + 1]
+    high, low = _segment_extremes(bis, segment)
     return Duan(
         index=index,
-        direction=direction,
-        bi_indices=[b.index for b in seg_bis],
-        start_time=start_time,
-        end_time=end_time,
-        start_price=start_price,
-        end_price=end_price,
-        high=high_price,
-        low=low_price,
-    )
-
-
-def _make_duan_simple(index: int, direction: str, seg_bis: list[Bi]) -> Duan:
-    """
-    从一组笔构造段(未找到分型、段延伸到最后时使用)。
-    段端点 = 第一笔起点 + 末同向笔终点。
-      - 向上段:终点 = 最后一个向上笔的终点(段内最高点附近)
-      - 向下段:终点 = 最后一个向下笔的终点(段内最低点附近)
-    由于笔方向严格交替,末同向笔 = seg_bis[-1](若同向)或 seg_bis[-2](若反向)。
-    起止时间天然升序(笔连续),相邻段端点对齐。
-    """
-    first = seg_bis[0]
-    high = max(b.high for b in seg_bis)
-    low = min(b.low for b in seg_bis)
-
-    # 段终点 = 末同向笔的终点(与段方向相同的最后一笔)
-    if seg_bis[-1].direction == direction:
-        end_bi = seg_bis[-1]
-    else:
-        # 最后一笔与段反向,取倒数第二笔(必然同向)
-        end_bi = seg_bis[-2] if len(seg_bis) >= 2 else seg_bis[-1]
-
-    return Duan(
-        index=index,
-        direction=direction,
-        bi_indices=[b.index for b in seg_bis],
-        start_time=first.start_time,
-        end_time=end_bi.end_time,
-        start_price=first.start_price,
-        end_price=end_bi.end_price,
+        direction=segment.direction,
+        bi_indices=[item.index for item in seg_bis],
+        start_time=seg_bis[0].start_time,
+        end_time=seg_bis[-1].end_time,
+        start_price=seg_bis[0].start_price,
+        end_price=seg_bis[-1].end_price,
         high=high,
         low=low,
+        feat_elements=[
+            {"first": item[0], "last": item[1], "bi": item[2]}
+            for item in segment.feats
+        ] or None,
+        merged_feat=[
+            {"first": item[0], "last": item[1], "bi": item[2]}
+            for item in segment.merged
+        ] or None,
+        fenxing_type=segment.fenxing,
     )

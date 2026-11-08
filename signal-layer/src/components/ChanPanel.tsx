@@ -31,6 +31,8 @@ export function ChanPanel({ options, onChange, analysis }: Props) {
     { key: 'showZhongshuAxis', label: '中枢中轴', color: '#8b5cf6' },
     { key: 'showDivergences', label: '背驰', color: '#56c7e8', count: analysis?.divergences.length },
     { key: 'showBuySellPoints', label: '买卖点', color: '#10b981', count: analysis?.buySellPoints.length },
+    { key: 'showOverlaps', label: '重叠级别', color: '#22d3ee', count: analysis?.overlaps.length },
+    { key: 'showClassification', label: '完全分类', color: '#e7c66b' },
   ]
 
   const toggle = (key: keyof ChanRenderOptions) => {

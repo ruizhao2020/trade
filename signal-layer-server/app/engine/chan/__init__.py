@@ -26,7 +26,7 @@
 
 from __future__ import annotations
 import logging
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from app.engine.chan.merge import merge_containment, get_bars_ubi, MergedKLine, NewBar
 from app.engine.chan.fenxing import detect_fenxings, check_fxs, Fenxing
 from app.engine.chan.bi import build_bis, build_bis_from_bars, Bi, CZSC_MIN_BI_LEN
@@ -36,6 +36,8 @@ from app.engine.chan.signal import (
     Zhongshu, identify_buy_sell_points, BuySellPoint,
 )
 from app.engine.chan.divergence import Divergence, identify_divergences
+from app.engine.chan.overlap import KlineOverlap, detect_kline_overlaps
+from app.engine.chan.classification import Classification, classify_next_moves
 
 logger = logging.getLogger(__name__)
 
@@ -56,6 +58,8 @@ class ChanResult:
     buy_sell_points: list[BuySellPoint]
     divergences: list[Divergence]
     updated_at: int
+    overlaps: list[KlineOverlap] = field(default_factory=list)  # K 线重叠级别(只读标注)
+    classification: Classification | None = None  # 走势完全分类(只读)
 
 
 class ChanEngine:
@@ -98,6 +102,14 @@ class ChanEngine:
         divergences = identify_divergences(bis, zhongshus, divergence_power_ratio)
         points = identify_buy_sell_points(bis, zhongshus, divergences)
 
+        # 7. K 线重叠级别：零缠体系的级别参考，只读展示，不参与笔/中枢/买卖点判定
+        overlaps = detect_kline_overlaps(klines)
+
+        # 8. 走势完全分类：基于最后一个笔中枢与当前价的关系穷举后续走势
+        last_close = float(klines[-1]["close"]) if klines else None
+        last_bi_direction = bis[-1].direction if bis else None
+        classification = classify_next_moves(last_close, zhongshus, last_bi_direction, divergences)
+
         last_time = klines[-1]["open_time"] if klines else 0
 
         logger.info(f"ChanEngine.analyze {symbol} {timeframe} complete: "
@@ -116,5 +128,7 @@ class ChanEngine:
             duan_zhongshus=duan_zhongshus,
             buy_sell_points=points,
             divergences=divergences,
+            overlaps=overlaps,
+            classification=classification,
             updated_at=last_time,
         )

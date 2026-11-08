@@ -11,8 +11,17 @@ SF0_ENDPOINTS = [
     6196, 5616, 6086, 5804, 6008, 5584, 5854, 5722, 6624,
 ]
 
+# 000004_sz 日线 2024-05 ~ 2026-06 的笔端点（首笔起点 + 每笔终点）
+SZ000004_ENDPOINTS = [
+    12.38, 8.32, 11.20, 9.04, 11.77, 9.31, 13.25, 10.21, 12.50, 10.87,
+    24.81, 17.58, 20.59, 16.63, 19.26, 17.92, 20.84, 12.10, 13.90, 10.35,
+    14.59, 7.80, 10.31, 7.19, 10.70, 8.40, 9.44, 8.56, 8.97, 8.52,
+    9.26, 8.78, 11.88, 9.95, 11.83, 10.03, 13.98, 12.02, 13.52, 10.35,
+    12.59, 9.91, 11.41, 10.38, 13.20, 5.07, 6.40, 3.02, 3.82, 0.25,
+]
 
-def make_sf0_bis() -> list[Bi]:
+
+def make_bis(endpoints: list[float]) -> list[Bi]:
     return [
         Bi(
             index=index,
@@ -22,31 +31,64 @@ def make_sf0_bis() -> list[Bi]:
             bars=[],
             start_time=index,
             end_time=index + 1,
-            start_price=SF0_ENDPOINTS[index],
-            end_price=SF0_ENDPOINTS[index + 1],
-            high=max(SF0_ENDPOINTS[index:index + 2]),
-            low=min(SF0_ENDPOINTS[index:index + 2]),
-            power=abs(SF0_ENDPOINTS[index + 1] - SF0_ENDPOINTS[index]),
+            start_price=endpoints[index],
+            end_price=endpoints[index + 1],
+            high=max(endpoints[index:index + 2]),
+            low=min(endpoints[index:index + 2]),
+            power=abs(endpoints[index + 1] - endpoints[index]),
         )
-        for index in range(len(SF0_ENDPOINTS) - 1)
+        for index in range(len(endpoints) - 1)
     ]
 
 
-def test_sf0_third_duan_endpoint_moves_to_point_21() -> None:
-    duans = build_duans(make_sf0_bis())
+def test_sz000004_duans_follow_trend_swings() -> None:
+    duans = build_duans(make_bis(SZ000004_ENDPOINTS))
 
-    assert len(duans) >= 4
-    assert duans[2].end_time == 21
-    assert duans[2].end_price == 5308
-    assert duans[2].bi_indices[-1] == 20
-    assert duans[3].start_time == 21
-    assert duans[3].start_price == 5308
-    assert duans[3].bi_indices[0] == 21
+    assert [
+        (item.direction, item.bi_indices[0], item.bi_indices[-1], item.end_price)
+        for item in duans
+    ] == [
+        ("up", 1, 15, 20.84),
+        ("down", 16, 22, 7.19),
+        ("up", 23, 35, 13.98),
+        ("down", 36, 48, 0.25),
+    ]
+    assert duans[-1].fenxing_type is None
+
+
+def test_sz000004_first_duan_keeps_internal_high() -> None:
+    duans = build_duans(make_bis(SZ000004_ENDPOINTS))
+
+    assert duans[0].bi_indices[0] == 1
+    assert duans[0].start_price == 8.32
+    assert duans[0].high == 24.81
+    assert duans[0].low == 8.32
+
+
+def test_sf0_base_segments_keep_reversals() -> None:
+    duans = build_duans(make_bis(SF0_ENDPOINTS))
+
+    assert [
+        (item.direction, item.bi_indices[0], item.bi_indices[-1], item.end_price)
+        for item in duans
+    ] == [
+        ("down", 0, 10, 5014),
+        ("up", 11, 13, 6298),
+        ("down", 14, 18, 5438),
+        ("up", 19, 25, 5926),
+        ("down", 26, 28, 5452),
+        ("up", 29, 37, 6624),
+    ]
+    assert duans[-1].fenxing_type is None
 
 
 def test_all_confirmed_duans_share_boundaries_without_gaps() -> None:
-    duans = build_duans(make_sf0_bis())
-
-    for previous, current in zip(duans, duans[1:]):
-        assert previous.end_time == current.start_time
-        assert previous.end_price == current.start_price
+    for endpoints in (SF0_ENDPOINTS, SZ000004_ENDPOINTS):
+        duans = build_duans(make_bis(endpoints))
+        assert len(duans) >= 2
+        for previous, current in zip(duans, duans[1:]):
+            assert previous.end_time == current.start_time
+            assert previous.end_price == current.start_price
+            assert previous.bi_indices[-1] + 1 == current.bi_indices[0]
+            assert len(previous.bi_indices) >= 3
+            assert len(current.bi_indices) >= 3

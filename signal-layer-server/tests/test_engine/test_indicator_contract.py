@@ -239,7 +239,7 @@ def test_read_params_are_used_not_just_echoed(indicator_type):
 INVALID_PARAMS: dict[str, list[dict]] = {
     "ma": [{"period": 0}, {"period": -3}],
     "bollinger": [{"period": 0}, {"std": 0}],
-    "macd": [{"fast": 0}, {"fast": 30, "slow": 20}],
+    "macd": [{"fast": 0}, {"fast": 30, "slow": 20}, {"divergence_min_bars": 0}],
     "volume": [{"lookback": 1}, {"shrink_max": 2.0}],
     "volume_structure": [{"lookback": 1}, {"confirm_bars": 1}],
     "volume_price": [

@@ -8,7 +8,8 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from app.services.public_site_service import public_indicator_feature_map, public_indicator_map
 from app.schemas.chan import (
     ChanAnalysisResponse, BiSchema, DuanSchema,
-    ZhongshuSchema, BuySellPointSchema, DivergenceSchema,
+    ZhongshuSchema, BuySellPointSchema, DivergenceSchema, KlineOverlapSchema,
+    ClassificationSchema, NextScenarioSchema,
 )
 
 logger = logging.getLogger(__name__)
@@ -144,11 +145,47 @@ async def get_chan_analysis(
         elif not point_policy.show_details:
             points = [item.model_copy(update={"reason": None, "divergence_index": None}) for item in points]
 
+    overlaps = [
+        KlineOverlapSchema(
+            start_time=item.start_time, end_time=item.end_time,
+            low=str(item.low), high=str(item.high),
+            bars=item.bars, level=item.level, label=item.label,
+        )
+        for item in result.overlaps
+    ]
+
+    classification = None
+    if result.classification is not None:
+        item = result.classification
+        classification = ClassificationSchema(
+            position=item.position,
+            zhongshu_high=None if item.zhongshu_high is None else str(item.zhongshu_high),
+            zhongshu_low=None if item.zhongshu_low is None else str(item.zhongshu_low),
+            last_close=None if item.last_close is None else str(item.last_close),
+            scenarios=[
+                NextScenarioSchema(
+                    key=scenario.key, label=scenario.label,
+                    condition=scenario.condition, implication=scenario.implication,
+                    active=scenario.active,
+                    children=[
+                        NextScenarioSchema(
+                            key=child.key, label=child.label,
+                            condition=child.condition, implication=child.implication,
+                            active=child.active,
+                        )
+                        for child in scenario.children
+                    ],
+                )
+                for scenario in item.scenarios
+            ],
+        )
+
     actual_cached = False
 
     logger.info(f"GET /chan/{symbol}/{timeframe} -> {len(bis)} bis, {len(duans)} duans, "
                 f"{len(zhongshus)} bi_zs, {len(duan_zhongshus)} duan_zs, "
-                f"{len(divergences)} divergences, {len(points)} points")
+                f"{len(divergences)} divergences, {len(points)} points, "
+                f"{len(overlaps)} overlaps")
     return ChanAnalysisResponse(
         symbol=symbol,
         timeframe=timeframe,
@@ -158,6 +195,8 @@ async def get_chan_analysis(
         duan_zhongshus=duan_zhongshus,
         buy_sell_points=points,
         divergences=divergences,
+        overlaps=overlaps,
+        classification=classification,
         updated_at=result.updated_at,
         cached=actual_cached,
     )

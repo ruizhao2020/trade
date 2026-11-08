@@ -1,9 +1,11 @@
 import logging
-from fastapi import APIRouter, HTTPException, Depends, Request
+from fastapi import APIRouter, HTTPException, Depends, Request, Query
+from sqlalchemy import select
 from app.api.security import optional_user, require_permission
 from app.api.deps import get_data_service, get_indicator_service
 from app.db import get_session
 from sqlalchemy.ext.asyncio import AsyncSession
+from app.models.effectiveness import IndicatorEffectiveness
 from app.services.public_site_service import ensure_public_indicator, public_indicator_feature_map, public_indicator_map
 from app.services.auth_service import permission_codes
 from app.schemas.indicator import (
@@ -15,15 +17,77 @@ logger = logging.getLogger(__name__)
 
 router = APIRouter(prefix="/api/v1/indicator", tags=["indicator"])
 
+# 结论优先序：同一个字段有多个方向/规则时取证据最强的一条
+_VERDICT_RANK = {
+    "valid": 0, "filter_only": 1, "weak": 2, "rejected": 3,
+    "insufficient": 4, "unverified": 5,
+}
+
+
+async def _effectiveness_verdicts(
+    session: AsyncSession, timeframe: str, universe: str,
+) -> dict[tuple[str, str], str]:
+    """(指标类型, 字段) → 结论。只给私域用：它决定哪些字段能进策略。"""
+    rows = (await session.execute(select(
+        IndicatorEffectiveness.indicator_type,
+        IndicatorEffectiveness.field,
+        IndicatorEffectiveness.verdict,
+    ).where(
+        IndicatorEffectiveness.timeframe == timeframe,
+        IndicatorEffectiveness.universe == universe,
+    ))).all()
+    best: dict[tuple[str, str], str] = {}
+    for ind_type, field_name, verdict in rows:
+        key = (ind_type, field_name)
+        if key not in best or _VERDICT_RANK.get(verdict, 9) < _VERDICT_RANK.get(best[key], 9):
+            best[key] = verdict
+    return best
+
 
 # 指标元信息(前端指标库展示用)
 INDICATOR_META: dict[str, dict] = {
+    "position": {
+        "name": "位置",
+        "description": (
+            "价格在近期区间中的相对位置、距高点回撤、与缠论中枢的关系。"
+            "给形态加「顶部/中部/底部」的前置条件：位置分位 0=区间最低、100=区间最高；"
+            "中枢位置 1=中枢上方、0=中枢内、-1=中枢下方。"
+        ),
+        "default_params": {"window": 120},
+        "outputs": [
+            {"field": "position_pct", "label": "位置分位(0-100)", "description": "收盘价在最近窗口区间里的分位：0 是区间最低、100 是区间最高。用来区分顶部/中部/底部。"},
+            {"field": "drawdown_pct", "label": "距高点回撤%", "description": "收盘价距位置窗口最高价的回撤百分比。"},
+            {"field": "zone_position", "label": "中枢位置(上/中/下)", "description": "收盘价相对最近一个笔中枢的位置：1=中枢上方、0=中枢内、-1=中枢下方。"},
+        ],
+    },
     "ma": {
         "name": "移动平均线",
         "description": "趋势跟踪指标，支持向上、向下、方向反转、支撑和压制判断。",
         "default_params": {"period": 5, "touch_tolerance_pct": 0.5},
+        # 显式声明输出：不声明的话编辑器会回退到 plots 且拿不到有效性结论，
+        # 均线条件会全部落进「未验证」。
+        "outputs": [
+            {"field": "value", "label": "均线值", "description": "该周期的均线值（收盘价的简单移动平均）。"},
+        ],
     },
-    "macd": {"name": "MACD", "description": "指数平滑异同移动平均线", "default_params": {"fast": 12, "slow": 26, "signal": 9}},
+    "macd": {
+        "name": "MACD",
+        "description": (
+            "指数平滑异同移动平均线。用相邻红/绿柱群的面积对比标注顶背驰与底背驰："
+            "后一群的柱体面积更小，价格却创了新高/新低，说明推动力在衰减。"
+            "箭头连接前一群与后一群的峰位。"
+        ),
+        "default_params": {"fast": 12, "slow": 26, "signal": 9, "divergence_min_bars": 3},
+        # 显式声明输出：不声明的话条件编辑器会回退到 plots，
+        # 顶/底背驰这两个事件字段就选不到，策略里也没法做筛选。
+        "outputs": [
+            {"field": "dif", "label": "DIF", "description": "快慢 EMA 之差，代表短期动能。"},
+            {"field": "dea", "label": "DEA", "description": "DIF 的 EMA，作为信号线。"},
+            {"field": "histogram", "label": "MACD 柱", "description": "DIF 与 DEA 之差（柱体）：正值红柱、负值绿柱。"},
+            {"field": "top_divergence", "kind": "event", "label": "顶背驰", "direction": "short", "description": "相邻两个红柱群里后一群更小，价格却创新高。上涨动能衰减。"},
+            {"field": "bottom_divergence", "kind": "event", "label": "底背驰", "direction": "long", "description": "相邻两个绿柱群里后一群更小，价格却创新低。下跌动能衰减。"},
+        ],
+    },
     "bollinger": {
         "name": "布林带",
         "description": "Bollinger Bands 通道指标。带宽＝上轨−下轨，与若干根之前比较、幅度超过阈值即判定开口（走阔）或收口（收窄）。",
@@ -34,15 +98,15 @@ INDICATOR_META: dict[str, dict] = {
         # 显式声明：不声明的话条件编辑器会回退到 render.plots 的字段（UP/MID/LOW
         # 这类英文图例名），而且带宽字段就选不到——开口/收口也就无从表达。
         "outputs": [
-            {"field": "upper", "label": "上轨"},
-            {"field": "middle", "label": "中轨"},
-            {"field": "lower", "label": "下轨"},
-            {"field": "bandwidth", "label": "带宽"},
-            {"field": "bandwidth_pct", "label": "带宽%（相对中轨）"},
+            {"field": "upper", "label": "上轨", "description": "布林带上轨 = 中轨 + 标准差倍数 × 标准差。"},
+            {"field": "middle", "label": "中轨", "description": "布林带中轨，即周期均线。"},
+            {"field": "lower", "label": "下轨", "description": "布林带下轨 = 中轨 − 标准差倍数 × 标准差。"},
+            {"field": "bandwidth", "label": "带宽", "description": "上轨与下轨的差值，衡量波动幅度。"},
+            {"field": "bandwidth_pct", "label": "带宽%（相对中轨）", "description": "带宽相对中轨的百分比，便于跨标的比较。"},
             # 开口/收口是形态类事件：与若干根之前的带宽比较、超过阈值才算，
             # 因此按事件型字段处理（条件编辑器不给它挂 >= 这样的比较）
-            {"field": "band_squeeze", "label": "收口", "kind": "event"},
-            {"field": "band_expand", "label": "开口", "kind": "event"},
+            {"field": "band_squeeze", "label": "收口", "kind": "event", "direction": "none", "description": "带宽相对若干根之前明显收窄。波动收敛，常见于变盘前。"},
+            {"field": "band_expand", "label": "开口", "kind": "event", "direction": "none", "description": "带宽明显走阔。波动放大，趋势启动或加速。"},
         ],
     },
     "liquidity_sweep": {
@@ -56,11 +120,11 @@ INDICATOR_META: dict[str, dict] = {
         # 显式声明：不声明的话条件编辑器会回退到 render.plots，而信号现在走 markers，
         # 回退源为空 → 界面上一个可选字段都没有。
         "outputs": [
-            {"field": "bull_signal", "kind": "event", "label": "看涨扫荡信号"},
-            {"field": "bear_signal", "kind": "event", "label": "看跌扫荡信号"},
-            {"field": "bull_level", "label": "被扫的支撑水平"},
-            {"field": "bear_level", "label": "被扫的压力水平"},
-            {"field": "atr", "label": "ATR（波动率尺度）"},
+            {"field": "bull_signal", "kind": "event", "label": "看涨扫荡信号", "direction": "long", "description": "向下扫掉前低后收回。止损猎杀后的看涨反转。"},
+            {"field": "bear_signal", "kind": "event", "label": "看跌扫荡信号", "direction": "short", "description": "向上扫掉前高后回落。诱导突破后的看跌反转。"},
+            {"field": "bull_level", "label": "被扫的支撑水平", "description": "看涨扫荡信号所扫掉的支撑价位。"},
+            {"field": "bear_level", "label": "被扫的压力水平", "description": "看跌扫荡信号所扫掉的压力价位。"},
+            {"field": "atr", "label": "ATR（波动率尺度）", "description": "ATR 波动率尺度，用于过滤刺穿深度。"},
         ],
     },
     "liquidity_zone": {
@@ -82,17 +146,17 @@ INDICATOR_META: dict[str, dict] = {
         # zone_{k}_low/high/consumed/from_top 供前端画方框，依赖"最后一根时该区
         # 是否还成立"，不是因果序列，因此不进白名单。
         "outputs": [
-            {"field": "zone_count", "label": "聚集中的区数量"},
-            {"field": "nearest_zone_low", "label": "最近聚集区下沿"},
-            {"field": "nearest_zone_high", "label": "最近聚集区上沿"},
-            {"field": "nearest_zone_touches", "label": "最近聚集区触碰次数"},
-            {"field": "nearest_zone_consumed_pct", "label": "最近聚集区已被拿走比例"},
-            {"field": "nearest_zone_swept", "kind": "event", "label": "最近聚集区已被扫荡"},
-            {"field": "price_in_zone", "kind": "event", "label": "价格位于聚集区内"},
-            {"field": "distance_to_zone_pct", "label": "距聚集区百分比"},
-            {"field": "sweep_up", "kind": "event", "label": "上沿被扫荡"},
-            {"field": "sweep_down", "kind": "event", "label": "下沿被扫荡"},
-            {"field": "zone_broken", "kind": "event", "label": "聚集区被破位"},
+            {"field": "zone_count", "label": "聚集中的区数量", "description": "当前仍处在聚集阶段的流动性区数量。"},
+            {"field": "nearest_zone_low", "label": "最近聚集区下沿", "description": "离现价最近的聚集区下沿。"},
+            {"field": "nearest_zone_high", "label": "最近聚集区上沿", "description": "离现价最近的聚集区上沿。"},
+            {"field": "nearest_zone_touches", "label": "最近聚集区触碰次数", "description": "最近聚集区被触碰的次数，次数越多聚集越强。"},
+            {"field": "nearest_zone_consumed_pct", "label": "最近聚集区已被拿走比例", "description": "最近聚集区已被扫掉的筹码比例。"},
+            {"field": "nearest_zone_swept", "kind": "event", "label": "最近聚集区已被扫荡", "description": "最近聚集区是否已经被扫荡。"},
+            {"field": "price_in_zone", "kind": "event", "label": "价格位于聚集区内", "description": "现价是否位于聚集区内部。"},
+            {"field": "distance_to_zone_pct", "label": "距聚集区百分比", "description": "现价距合理区间的百分比。"},
+            {"field": "sweep_up", "kind": "event", "label": "上沿被扫荡", "description": "价格向上扫过聚集区上沿，流动性被拿走。"},
+            {"field": "sweep_down", "kind": "event", "label": "下沿被扫荡", "description": "价格向下扫过聚集区下沿，流动性被拿走。"},
+            {"field": "zone_broken", "kind": "event", "label": "聚集区被破位", "description": "最近聚集区是否已被有效突破。"},
         ],
     },
     "support_resistance": {
@@ -111,17 +175,17 @@ INDICATOR_META: dict[str, dict] = {
         # 只列因果的决策字段。level_1..N 是渲染用途（把当前有效位回填到首次触碰处），
         # 不在白名单里因此在条件编辑器中不可选——它依赖未来是否被破，不是因果序列。
         "outputs": [
-            {"field": "nearest_support", "label": "最近支撑位"},
-            {"field": "nearest_resistance", "label": "最近压力位"},
-            {"field": "nearest_support_touches", "label": "支撑位触碰次数"},
-            {"field": "nearest_resistance_touches", "label": "压力位触碰次数"},
-            {"field": "distance_to_support_pct", "label": "距支撑位百分比"},
-            {"field": "distance_to_resistance_pct", "label": "距压力位百分比"},
-            {"field": "at_support", "kind": "event", "label": "正在测试支撑位"},
-            {"field": "at_resistance", "kind": "event", "label": "正在测试压力位"},
-            {"field": "support_broken", "kind": "event", "label": "支撑位跌破"},
-            {"field": "resistance_broken", "kind": "event", "label": "压力位突破"},
-            {"field": "level_count", "label": "有效位数量"},
+            {"field": "nearest_support", "label": "最近支撑位", "description": "现价下方最近的支撑位价格。"},
+            {"field": "nearest_resistance", "label": "最近压力位", "description": "现价上方最近的压力位价格。"},
+            {"field": "nearest_support_touches", "label": "支撑位触碰次数", "description": "最近支撑位被触碰的次数。"},
+            {"field": "nearest_resistance_touches", "label": "压力位触碰次数", "description": "最近压力位被触碰的次数。"},
+            {"field": "distance_to_support_pct", "label": "距支撑位百分比", "description": "现价距最近支撑位的百分比。"},
+            {"field": "distance_to_resistance_pct", "label": "距压力位百分比", "description": "现价距最近压力位的百分比。"},
+            {"field": "at_support", "kind": "event", "label": "正在测试支撑位", "description": "现价是否正在触及支撑位。"},
+            {"field": "at_resistance", "kind": "event", "label": "正在测试压力位", "description": "现价是否正在触及压力位。"},
+            {"field": "support_broken", "kind": "event", "label": "支撑位跌破", "description": "支撑位是否已被跌破。"},
+            {"field": "resistance_broken", "kind": "event", "label": "压力位突破", "description": "压力位是否已被突破。"},
+            {"field": "level_count", "label": "有效位数量", "description": "当前识别到的支撑/压力位数量。"},
         ],
     },
     "volume": {
@@ -139,21 +203,21 @@ INDICATOR_META: dict[str, dict] = {
             "relative_period": 20,
         },
         "outputs": [
-            {"field": "ratio", "label": "相邻量比"},
-            {"field": "relative_volume", "label": "相对量能"},
-            {"field": "volume_class", "label": "倍率分类"},
-            {"field": "is_shrink_volume", "kind": "event", "label": "达到缩量"},
-            {"field": "is_increase_volume", "kind": "event", "label": "达到增量"},
-            {"field": "is_double_volume", "kind": "event", "label": "达到倍量"},
-            {"field": "is_triple_volume", "kind": "event", "label": "达到三倍量"},
-            {"field": "is_multiple_volume", "kind": "event", "label": "达到多倍量"},
-            {"field": "is_high_volume", "kind": "event", "label": "高量柱"},
-            {"field": "is_low_volume", "kind": "event", "label": "低量柱"},
-            {"field": "is_flat_volume", "kind": "event", "label": "平量柱"},
-            {"field": "is_ladder_volume", "kind": "event", "label": "梯量柱"},
-            {"field": "is_contracting_volume", "kind": "event", "label": "连续缩量"},
-            {"field": "increase_streak", "label": "连续放量根数"},
-            {"field": "shrink_streak", "label": "连续缩量根数"},
+            {"field": "ratio", "label": "相邻量比", "description": "当根成交量与前一根的比值。"},
+            {"field": "relative_volume", "label": "相对量能", "description": "当根成交量相对前若干根基线中位数的倍数。"},
+            {"field": "volume_class", "label": "倍率分类", "description": "量能分类编码：缩量/平量/增量/倍量/三倍量/多倍量。"},
+            {"field": "is_shrink_volume", "kind": "event", "label": "达到缩量", "description": "当根是否达到缩量标准。"},
+            {"field": "is_increase_volume", "kind": "event", "label": "达到增量", "description": "当根是否达到增量标准。"},
+            {"field": "is_double_volume", "kind": "event", "label": "达到倍量", "description": "当根是否达到倍量标准。"},
+            {"field": "is_triple_volume", "kind": "event", "label": "达到三倍量", "description": "当根是否达到三倍量标准。"},
+            {"field": "is_multiple_volume", "kind": "event", "label": "达到多倍量", "description": "当根是否达到多倍量标准。"},
+            {"field": "is_high_volume", "kind": "event", "label": "高量柱", "description": "当根是否属于高量柱。"},
+            {"field": "is_low_volume", "kind": "event", "label": "低量柱", "description": "当根是否属于低量柱。"},
+            {"field": "is_flat_volume", "kind": "event", "label": "平量柱", "description": "当根是否与前一周期量能持平。"},
+            {"field": "is_ladder_volume", "kind": "event", "label": "梯量柱", "description": "当根是否形成梯量（连续放量）。"},
+            {"field": "is_contracting_volume", "kind": "event", "label": "连续缩量", "description": "当根是否处在连续缩量序列中。"},
+            {"field": "increase_streak", "label": "连续放量根数", "description": "连续放量的根数。"},
+            {"field": "shrink_streak", "label": "连续缩量根数", "description": "连续缩量的根数。"},
         ],
     },
     "volume_structure": {
@@ -161,17 +225,17 @@ INDICATOR_META: dict[str, dict] = {
         "description": "识别关键量柱、将军柱、黄金柱，并生成关键量柱线和黄金线。确认信号不使用未来数据。",
         "default_params": {"lookback": 20, "key_ratio_min": 1.8, "confirm_bars": 3, "break_tolerance": 0.0},
         "outputs": [
-            {"field": "key_pillar", "kind": "event", "label": "关键量柱出现"},
-            {"field": "key_line", "label": "关键量柱线"},
-            {"field": "above_key_line", "kind": "event", "label": "站上关键量柱线"},
-            {"field": "key_line_distance_pct", "label": "距关键线百分比"},
-            {"field": "key_line_break", "kind": "event", "label": "跌破关键量柱线"},
-            {"field": "general_confirmed", "kind": "event", "label": "将军柱确认"},
-            {"field": "golden_confirmed", "kind": "event", "label": "黄金柱确认"},
-            {"field": "golden_line", "label": "黄金线"},
-            {"field": "above_golden_line", "kind": "event", "label": "站上黄金线"},
-            {"field": "golden_line_distance_pct", "label": "距黄金线百分比"},
-            {"field": "golden_line_break", "kind": "event", "label": "跌破黄金线"},
+            {"field": "key_pillar", "kind": "event", "label": "关键量柱出现", "direction": "none", "description": "出现远超基线的关键量柱，是后续关键量柱线的起点。"},
+            {"field": "key_line", "label": "关键量柱线", "description": "关键量柱确立的水平线，常作为回踩支撑/破位参考。"},
+            {"field": "above_key_line", "kind": "event", "label": "站上关键量柱线", "direction": "long", "description": "收盘站上关键量柱线，视为走强。"},
+            {"field": "key_line_distance_pct", "label": "距关键线百分比", "description": "现价距关键量柱线的百分比。"},
+            {"field": "key_line_break", "kind": "event", "label": "跌破关键量柱线", "direction": "short", "description": "收盘跌破关键量柱线，视为走弱。"},
+            {"field": "general_confirmed", "kind": "event", "label": "将军柱确认", "direction": "long", "description": "将军柱确认：关键量柱之后按确认根数站稳，属于较强的量柱结构。"},
+            {"field": "golden_confirmed", "kind": "event", "label": "黄金柱确认", "direction": "long", "description": "黄金柱确认：比将军柱更强的量柱结构。"},
+            {"field": "golden_line", "label": "黄金线", "description": "黄金柱确立的水平线。"},
+            {"field": "above_golden_line", "kind": "event", "label": "站上黄金线", "direction": "long", "description": "收盘站上黄金线，强势延续。"},
+            {"field": "golden_line_distance_pct", "label": "距黄金线百分比", "description": "现价距黄金线的百分比。"},
+            {"field": "golden_line_break", "kind": "event", "label": "跌破黄金线", "direction": "short", "description": "收盘跌破黄金线，强势被破坏。"},
         ],
     },
     "volume_price": {
@@ -193,18 +257,19 @@ INDICATOR_META: dict[str, dict] = {
             "low_position_pct": 20.0,
         },
         "outputs": [
-            {"field": "volume_breakout", "kind": "event", "label": "放量突破"},
-            {"field": "shrink_pullback", "kind": "event", "label": "缩量回调"},
-            {"field": "price_volume_rise", "kind": "event", "label": "量价齐升"},
-            {"field": "volume_stagnation", "kind": "event", "label": "放量滞涨"},
-            {"field": "climax_top", "kind": "event", "label": "天量天价"},
-            {"field": "exhaustion_bottom", "kind": "event", "label": "地量地价"},
-            {"field": "bottom_volume", "kind": "event", "label": "底部放量"},
-            {"field": "failed_breakout", "kind": "event", "label": "放量冲高回落"},
-            {"field": "relative_volume", "label": "相对量能"},
-            {"field": "breakout_pct", "label": "距前高百分比"},
-            {"field": "drawdown_pct", "label": "距区间高点回撤"},
-            {"field": "change_pct", "label": "当日涨幅"},
+            # direction 是评测角色：long=入场、short=出场/风险、none=由评测决定方向。
+            {"field": "volume_breakout", "kind": "event", "label": "放量突破", "direction": "long", "description": "收盘价突破近 breakout_window 根的最高价，且相对量能达到放量阈值。突破有量配合，有效性较高。"},
+            {"field": "shrink_pullback", "kind": "event", "label": "缩量回调", "direction": "long", "description": "连续多根收盘走低、量能低于缩量上限，且没有跌破前低。抛压不大，属于良性回调。"},
+            {"field": "price_volume_rise", "kind": "event", "label": "量价齐升", "direction": "long", "description": "连续多根收盘走高、成交量逐根放大。价涨量增，上涨结构健康。"},
+            {"field": "volume_stagnation", "kind": "event", "label": "放量滞涨", "direction": "short", "description": "放量但涨幅只有 0~1%，且价格处在近期高位。高位放量却涨不动，是顶部预警。"},
+            {"field": "climax_top", "kind": "event", "label": "天量天价", "direction": "short", "description": "成交量达到位置窗口最大值，收盘也在窗口最高附近。天量天价，情绪高潮、分歧最大。"},
+            {"field": "exhaustion_bottom", "kind": "event", "label": "地量地价", "direction": "long", "description": "连续多根缩量，且价格处在近期低位。地量地价，抛压衰竭。"},
+            {"field": "bottom_volume", "kind": "event", "label": "底部放量", "direction": "long", "description": "低位出现放量阳线。恐慌之后有资金承接。"},
+            {"field": "failed_breakout", "kind": "event", "label": "放量冲高回落", "direction": "short", "description": "盘中越过前高但收盘收回前高之下，同时放量。上冲被压回，属于假突破。"},
+            {"field": "relative_volume", "label": "相对量能", "description": "当根成交量相对前若干根基线中位数的倍数。"},
+            {"field": "breakout_pct", "label": "距前高百分比", "description": "收盘价超出前高的百分比。"},
+            {"field": "drawdown_pct", "label": "距区间高点回撤", "description": "收盘价距位置窗口最高价的回撤百分比。"},
+            {"field": "change_pct", "label": "当日涨幅", "description": "当根涨跌幅（%）。"},
         ],
     },
     "dilun_structure": {
@@ -220,31 +285,31 @@ INDICATOR_META: dict[str, dict] = {
             "breakout_buffer_pct": 0.0,
         },
         "outputs": [
-            {"field": "fractal_confirmed", "kind": "event", "label": "确认分型方向"},
-            {"field": "top_fractal_confirmed", "kind": "event", "label": "顶分型确认"},
-            {"field": "bottom_fractal_confirmed", "kind": "event", "label": "底分型确认"},
-            {"field": "trend_confirmed", "kind": "event", "label": "趋势确认方向"},
-            {"field": "trend_direction", "kind": "event", "label": "当前趋势方向"},
-            {"field": "trend_broken", "kind": "event", "label": "趋势破坏方向"},
-            {"field": "zone_confirmed", "kind": "event", "label": "合理价格区间确认"},
-            {"field": "zone_low", "label": "合理价格下沿"},
-            {"field": "zone_high", "label": "合理价格上沿"},
-            {"field": "zone_mid", "label": "合理价格中轴"},
-            {"field": "zone_width_pct", "label": "合理区间宽度"},
-            {"field": "zone_age", "label": "态势持续根数"},
-            {"field": "fold_count", "label": "折叠次数"},
-            {"field": "zone_mature", "kind": "event", "label": "态势成熟"},
-            {"field": "inside_zone", "kind": "event", "label": "位于合理区间"},
-            {"field": "zone_position", "kind": "event", "label": "相对合理区间位置"},
-            {"field": "distance_to_zone_pct", "label": "距合理区间百分比"},
-            {"field": "departure_direction", "kind": "event", "label": "脱离方向"},
-            {"field": "departure_bars", "label": "脱离持续根数"},
-            {"field": "zone_departure_signal", "kind": "event", "label": "脱离确认"},
-            {"field": "zone_return_signal", "kind": "event", "label": "脱离后回归"},
-            {"field": "false_departure_signal", "kind": "event", "label": "假脱离回归"},
-            {"field": "return_failure_signal", "kind": "event", "label": "回归失败转折"},
-            {"field": "true_departure_signal", "kind": "event", "label": "真脱离确认"},
-            {"field": "terminal_breakout_signal", "kind": "event", "label": "态势末端脱离"},
+            {"field": "fractal_confirmed", "kind": "event", "label": "确认分型方向", "description": "分型是否已确认（需要后续 K 线验证）。"},
+            {"field": "top_fractal_confirmed", "kind": "event", "label": "顶分型确认", "description": "是否确认了顶分型。"},
+            {"field": "bottom_fractal_confirmed", "kind": "event", "label": "底分型确认", "description": "是否确认了底分型。"},
+            {"field": "trend_confirmed", "kind": "event", "label": "趋势确认方向", "description": "趋势方向是否已确认。"},
+            {"field": "trend_direction", "kind": "event", "label": "当前趋势方向", "description": "当前趋势方向：1=向上、-1=向下、0=未定。"},
+            {"field": "trend_broken", "kind": "event", "label": "趋势破坏方向", "description": "趋势是否已被破坏。"},
+            {"field": "zone_confirmed", "kind": "event", "label": "合理价格区间确认", "description": "合理价格区间是否已确认成立。"},
+            {"field": "zone_low", "label": "合理价格下沿", "description": "合理价格区间下沿。"},
+            {"field": "zone_high", "label": "合理价格上沿", "description": "合理价格区间上沿。"},
+            {"field": "zone_mid", "label": "合理价格中轴", "description": "合理价格区间中轴。"},
+            {"field": "zone_width_pct", "label": "合理区间宽度", "description": "合理区间的宽度（相对中轴）。"},
+            {"field": "zone_age", "label": "态势持续根数", "description": "当前合理区间已经持续的根数。"},
+            {"field": "fold_count", "label": "折叠次数", "description": "区间内发生的折叠次数，越多说明震荡越充分。"},
+            {"field": "zone_mature", "kind": "event", "label": "态势成熟", "description": "合理价格区间是否已经成熟（持续足够根数/折叠）。"},
+            {"field": "inside_zone", "kind": "event", "label": "位于合理区间", "description": "现价是否位于合理价格区间内部。"},
+            {"field": "zone_position", "kind": "event", "label": "相对合理区间位置", "description": "现价相对合理区间的位置：上/中/下。"},
+            {"field": "distance_to_zone_pct", "label": "距合理区间百分比", "description": "现价距合理区间的百分比。"},
+            {"field": "departure_direction", "kind": "event", "label": "脱离方向", "description": "脱离合理区间的方向：1=向上、-1=向下。"},
+            {"field": "departure_bars", "label": "脱离持续根数", "description": "价格脱离合理区间后持续的根数。"},
+            {"field": "zone_departure_signal", "kind": "event", "label": "脱离确认", "description": "价格脱离合理区间的信号。"},
+            {"field": "zone_return_signal", "kind": "event", "label": "脱离后回归", "description": "价格重新回到合理区间的信号。"},
+            {"field": "false_departure_signal", "kind": "event", "label": "假脱离回归", "description": "假脱离：离开后又快速回到区间。"},
+            {"field": "return_failure_signal", "kind": "event", "label": "回归失败转折", "description": "回归失败：回到区间边缘后再次离开。"},
+            {"field": "true_departure_signal", "kind": "event", "label": "真脱离确认", "description": "真脱离：离开后不再回到区间。"},
+            {"field": "terminal_breakout_signal", "kind": "event", "label": "态势末端脱离", "description": "区间末端的突破信号。"},
         ],
     },
     "chip_distribution": {
@@ -259,67 +324,75 @@ INDICATOR_META: dict[str, dict] = {
             "pressure_release_threshold": 5.0, "retest_tolerance_pct": 1.0,
         },
         "outputs": [
-            {"field": "peak_price", "label": "主筹码峰"},
-            {"field": "average_cost", "label": "平均成本"},
-            {"field": "profit_ratio", "label": "获利盘比例"},
-            {"field": "range70_low", "label": "70%成本下沿"},
-            {"field": "range70_high", "label": "70%成本上沿"},
-            {"field": "concentration70", "label": "70%集中度"},
-            {"field": "range90_low", "label": "90%成本下沿"},
-            {"field": "range90_high", "label": "90%成本上沿"},
-            {"field": "concentration90", "label": "90%集中度"},
-            {"field": "price_vs_peak_pct", "label": "距主峰百分比"},
-            {"field": "price_vs_average_pct", "label": "距平均成本百分比"},
-            {"field": "above_peak", "kind": "event", "label": "站上主筹码峰"},
-            {"field": "above_average_cost", "kind": "event", "label": "站上平均成本"},
-            {"field": "inside_range70", "kind": "event", "label": "位于70%成本区间"},
-            {"field": "inside_range90", "kind": "event", "label": "位于90%成本区间"},
-            {"field": "support_chip_ratio", "label": "下方支撑筹码"},
-            {"field": "pressure_chip_ratio", "label": "上方压力筹码"},
-            {"field": "upper_chip_ratio", "label": "套牢筹码比例"},
-            {"field": "near_price_chip_ratio", "label": "现价附近筹码"},
-            {"field": "dominant_peak_ratio", "label": "主峰筹码占比"},
-            {"field": "peak_count", "label": "有效筹码峰数量"},
-            {"field": "single_peak", "kind": "event", "label": "单峰密集"},
-            {"field": "double_peak", "kind": "event", "label": "双峰结构"},
-            {"field": "secondary_peak_price", "label": "次筹码峰"},
-            {"field": "peak_separation_pct", "label": "主次峰间距"},
-            {"field": "peak_change_pct", "label": "主峰迁移幅度"},
-            {"field": "average_cost_change_pct", "label": "平均成本变化"},
-            {"field": "profit_ratio_change", "label": "获利盘变化"},
-            {"field": "concentration70_change", "label": "集中度变化"},
-            {"field": "peak_direction", "kind": "event", "label": "主峰迁移方向"},
-            {"field": "average_cost_direction", "kind": "event", "label": "平均成本方向"},
-            {"field": "chip_converging", "kind": "event", "label": "筹码正在集中"},
-            {"field": "chip_spreading", "kind": "event", "label": "筹码正在发散"},
-            {"field": "cross_peak_up", "kind": "event", "label": "上穿主筹码峰"},
-            {"field": "cross_peak_down", "kind": "event", "label": "下穿主筹码峰"},
-            {"field": "cross_average_cost_up", "kind": "event", "label": "上穿平均成本"},
-            {"field": "cross_average_cost_down", "kind": "event", "label": "下穿平均成本"},
-            {"field": "break_range70_high", "kind": "event", "label": "突破70%成本上沿"},
-            {"field": "break_range70_low", "kind": "event", "label": "跌破70%成本下沿"},
-            {"field": "retest_peak", "kind": "event", "label": "回踩主峰"},
-            {"field": "single_peak_formed", "kind": "event", "label": "单峰密集形成"},
-            {"field": "double_peak_formed", "kind": "event", "label": "双峰结构形成"},
-            {"field": "peak_shifted_up", "kind": "event", "label": "主峰确认上移"},
-            {"field": "peak_shifted_down", "kind": "event", "label": "主峰确认下移"},
-            {"field": "concentration_started", "kind": "event", "label": "开始集中"},
-            {"field": "pressure_released", "kind": "event", "label": "上方压力释放"},
-            {"field": "support_strengthened", "kind": "event", "label": "下方支撑增强"},
-            {"field": "coverage_ratio", "label": "数据覆盖率"},
+            {"field": "peak_price", "label": "主筹码峰", "description": "筹码分布中最密集的价位（主峰）。"},
+            {"field": "average_cost", "label": "平均成本", "description": "全部持仓筹码的平均成本。"},
+            {"field": "profit_ratio", "label": "获利盘比例", "description": "现价之上获利筹码占全部筹码的比例。"},
+            {"field": "range70_low", "label": "70%成本下沿", "description": "覆盖 70% 筹码的成本区间下沿。"},
+            {"field": "range70_high", "label": "70%成本上沿", "description": "覆盖 70% 筹码的成本区间上沿。"},
+            {"field": "concentration70", "label": "70%集中度", "description": "70% 成本区间的集中度，越高说明筹码越集中。"},
+            {"field": "range90_low", "label": "90%成本下沿", "description": "覆盖 90% 筹码的成本区间下沿。"},
+            {"field": "range90_high", "label": "90%成本上沿", "description": "覆盖 90% 筹码的成本区间上沿。"},
+            {"field": "concentration90", "label": "90%集中度", "description": "90% 成本区间的集中度。"},
+            {"field": "price_vs_peak_pct", "label": "距主峰百分比", "description": "现价距主筹码峰的百分比。"},
+            {"field": "price_vs_average_pct", "label": "距平均成本百分比", "description": "现价距平均成本的百分比。"},
+            {"field": "above_peak", "kind": "event", "label": "站上主筹码峰", "description": "现价是否在主力筹码峰之上。"},
+            {"field": "above_average_cost", "kind": "event", "label": "站上平均成本", "description": "现价是否高于平均成本。"},
+            {"field": "inside_range70", "kind": "event", "label": "位于70%成本区间", "description": "现价是否处于 70% 成本区间内部。"},
+            {"field": "inside_range90", "kind": "event", "label": "位于90%成本区间", "description": "现价是否处于 90% 成本区间内部。"},
+            {"field": "support_chip_ratio", "label": "下方支撑筹码", "description": "位于现价下方的筹码占比（潜在支撑）。"},
+            {"field": "pressure_chip_ratio", "label": "上方压力筹码", "description": "位于现价上方的筹码占比（潜在压力）。"},
+            {"field": "upper_chip_ratio", "label": "套牢筹码比例", "description": "套牢筹码占全部筹码的比例。"},
+            {"field": "near_price_chip_ratio", "label": "现价附近筹码", "description": "集中在现价附近的筹码占比。"},
+            {"field": "dominant_peak_ratio", "label": "主峰筹码占比", "description": "主峰筹码占全部筹码的比例。"},
+            {"field": "peak_count", "label": "有效筹码峰数量", "description": "有效筹码峰的数量，两个峰即双峰结构。"},
+            {"field": "single_peak", "kind": "event", "label": "单峰密集", "description": "筹码是否呈单峰结构。"},
+            {"field": "double_peak", "kind": "event", "label": "双峰结构", "description": "筹码是否呈双峰结构。"},
+            {"field": "secondary_peak_price", "label": "次筹码峰", "description": "除主峰外最明显的次筹码峰价位。"},
+            {"field": "peak_separation_pct", "label": "主次峰间距", "description": "主峰与次峰之间的价格间距。"},
+            {"field": "peak_change_pct", "label": "主峰迁移幅度", "description": "主筹码峰相对前一根的迁移幅度。"},
+            {"field": "average_cost_change_pct", "label": "平均成本变化", "description": "平均成本相对前一根的变化幅度。"},
+            {"field": "profit_ratio_change", "label": "获利盘变化", "description": "获利盘比例相对前一根的变化。"},
+            {"field": "concentration70_change", "label": "集中度变化", "description": "70% 集中度相对前一根的变化。"},
+            {"field": "peak_direction", "kind": "event", "label": "主峰迁移方向", "description": "主筹码峰的迁移方向：1=上移、-1=下移。"},
+            {"field": "average_cost_direction", "kind": "event", "label": "平均成本方向", "description": "平均成本的迁移方向。"},
+            {"field": "chip_converging", "kind": "event", "label": "筹码正在集中", "description": "筹码是否在收敛（集中度上升）。"},
+            {"field": "chip_spreading", "kind": "event", "label": "筹码正在发散", "description": "筹码是否在发散（集中度下降）。"},
+            {"field": "cross_peak_up", "kind": "event", "label": "上穿主筹码峰", "description": "现价是否上穿主筹码峰。"},
+            {"field": "cross_peak_down", "kind": "event", "label": "下穿主筹码峰", "description": "现价是否下穿主筹码峰。"},
+            {"field": "cross_average_cost_up", "kind": "event", "label": "上穿平均成本", "description": "现价是否上穿平均成本。"},
+            {"field": "cross_average_cost_down", "kind": "event", "label": "下穿平均成本", "description": "现价是否下穿平均成本。"},
+            {"field": "break_range70_high", "kind": "event", "label": "突破70%成本上沿", "description": "现价是否突破 70% 成本区间上沿。"},
+            {"field": "break_range70_low", "kind": "event", "label": "跌破70%成本下沿", "description": "现价是否跌破 70% 成本区间下沿。"},
+            {"field": "retest_peak", "kind": "event", "label": "回踩主峰", "description": "价格回踩主筹码峰后确认。"},
+            {"field": "single_peak_formed", "kind": "event", "label": "单峰密集形成", "description": "单峰结构形成：筹码集中在一个价位附近。"},
+            {"field": "double_peak_formed", "kind": "event", "label": "双峰结构形成", "description": "筹码分布出现两个明显密集峰：上方峰是压力，下方峰是支撑，中间相对稀疏。"},
+            {"field": "peak_shifted_up", "kind": "event", "label": "主峰确认上移", "description": "主筹码峰明显上移。"},
+            {"field": "peak_shifted_down", "kind": "event", "label": "主峰确认下移", "description": "主筹码峰明显下移。"},
+            {"field": "concentration_started", "kind": "event", "label": "开始集中", "description": "筹码开始集中。"},
+            {"field": "pressure_released", "kind": "event", "label": "上方压力释放", "description": "上方压力筹码被消化。"},
+            {"field": "support_strengthened", "kind": "event", "label": "下方支撑增强", "description": "下方支撑筹码增强。"},
+            {"field": "coverage_ratio", "label": "数据覆盖率", "description": "筹码估算所用有效换手数据的覆盖率。"},
         ],
     },
 }
 
 
 @router.get("/list", response_model=IndicatorListResponse)
-async def list_indicators(request: Request, user = Depends(optional_user), session: AsyncSession = Depends(get_session)):
+async def list_indicators(
+    request: Request,
+    user = Depends(optional_user),
+    session: AsyncSession = Depends(get_session),
+    timeframe: str = Query("1d"),
+    universe: str = Query("stock"),
+):
     """返回所有可用指标的元信息(前端用于展示指标库)"""
     svc = get_indicator_service()
     available = svc.available_indicators
     private_access = user is not None and "private.access" in permission_codes(user)
     is_public = not private_access or request.headers.get("x-signal-surface", "").lower() == "public"
     policies = await public_indicator_map(session)
+    # 字段级有效性结论：前端据此决定哪些字段能进策略（私域才带）
+    verdicts = {} if is_public else await _effectiveness_verdicts(session, timeframe, universe)
     indicators: list[IndicatorInfo] = []
     for ind_type in sorted(available):
         meta = INDICATOR_META.get(ind_type, {})
@@ -353,10 +426,65 @@ async def list_indicators(request: Request, user = Depends(optional_user), sessi
             description=meta.get("description", "") if not is_public or not policy or policy.show_details else "",
             default_params=meta.get("default_params", {}) if not is_public or not policy or policy.show_parameters else {},
             render=render,
-            outputs=meta.get("outputs", []) if not is_public or policy.show_details else [],
+            outputs=[
+                {
+                    **output,
+                    **({} if is_public else {
+                        "verdict": verdicts.get((ind_type, output.get("field")), "unverified"),
+                    }),
+                }
+                for output in (meta.get("outputs", []) if not is_public or policy.show_details else [])
+            ],
         ))
     await session.commit()
     return IndicatorListResponse(indicators=indicators)
+
+
+@router.get("/effectiveness")
+async def list_effectiveness(
+    request: Request,
+    user = Depends(optional_user),
+    session: AsyncSession = Depends(get_session),
+    timeframe: str = Query("1d"),
+    universe: str = Query("stock"),
+):
+    """指标字段有效性结论（仅私域）：策略构建时据此过滤可选字段。"""
+    private_access = user is not None and "private.access" in permission_codes(user)
+    if not private_access or request.headers.get("x-signal-surface", "").lower() == "public":
+        raise HTTPException(status_code=403, detail="有效性结论仅私域可用")
+    rows = (await session.execute(select(IndicatorEffectiveness).where(
+        IndicatorEffectiveness.timeframe == timeframe,
+        IndicatorEffectiveness.universe == universe,
+    ).order_by(
+        IndicatorEffectiveness.indicator_type,
+        IndicatorEffectiveness.field,
+    ))).scalars().all()
+    return {
+        "timeframe": timeframe,
+        "universe": universe,
+        "items": [
+            {
+                "indicator_type": row.indicator_type,
+                "field": row.field,
+                "direction": row.direction,
+                "params": row.params,
+                "horizon": row.horizon,
+                "verdict": row.verdict,
+                "sample_n": row.sample_n,
+                "hit_rate": row.hit_rate,
+                "avg_return": row.avg_return,
+                "baseline_return": row.baseline_return,
+                "excess_return": row.excess_return,
+                "p_value": row.p_value,
+                "decay": row.decay,
+                "stability": row.stability,
+                "scope": row.scope,
+                "engine_version": row.engine_version,
+                "evaluated_at": row.evaluated_at.isoformat() if row.evaluated_at else None,
+            }
+            for row in rows
+        ],
+    }
 
 
 @router.post("/calculate", response_model=IndicatorCalculateResponse)
@@ -471,7 +599,13 @@ async def calculate_indicators(req: IndicatorCalculateRequest, request: Request,
                 feature_map = await public_indicator_feature_map(session, ind.type)
                 public_plots = [plot for plot in result.render.plots if not feature_map or feature_map.get(plot.field) and feature_map[plot.field].public_visible]
                 public_markers = [marker for marker in result.render.markers if policy.show_markers and feature_map.get(f"marker:{marker.field}") and feature_map[f"marker:{marker.field}"].public_visible]
-                public_render = result.render.model_copy(update={"plots": public_plots, "markers": public_markers})
+                public_render = result.render.model_copy(update={
+                    "plots": public_plots,
+                    "markers": public_markers,
+                    # 背驰箭头属于信号类展示，公共端默认不透出（即使公开策略打开了标记）。
+                    # 确需公开时再加 feature policy 键。
+                    "arrows": [],
+                })
                 if not policy.show_details:
                     allowed_fields = {"time", *(plot.field for plot in public_plots), *(marker.field for marker in public_markers)}
                     public_values = [{key: value for key, value in row.items() if key in allowed_fields} for row in result.values]

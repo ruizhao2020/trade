@@ -10,6 +10,7 @@ from app.models.notification import NotificationChannel, NotificationEvent, Noti
 from app.models.content import ArticleDraft, ContentTemplate  # noqa: F401
 from app.models.system_setting import SystemSetting  # noqa: F401
 from app.models.advisor import AdvisorCandidate, AdvisorRecommendation, AdvisorRun  # noqa: F401
+from app.models.effectiveness import IndicatorEffectiveness  # noqa: F401
 from app.config import settings
 
 _engine = None

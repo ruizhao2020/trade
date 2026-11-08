@@ -17,6 +17,8 @@ const baseOptions: ChanRenderOptions = {
   showZhongshuAxis: false,
   showBuySellPoints: false,
   showDivergences: false,
+  showOverlaps: false,
+  showClassification: false,
   zsLevel: 'bi',
 }
 
@@ -130,7 +132,7 @@ describe('strategy indicator dependencies by timeframe', () => {
         { type: 'buy1', price: 10, time: 1, biIndex: 1, confirmed: true, strength: 1 },
         { type: 'sell1', price: 11, time: 2, biIndex: 2, confirmed: true, strength: 1 },
       ],
-      divergences: [], updatedAt: 1, isComplete: true,
+      divergences: [], overlaps: [], updatedAt: 1, isComplete: true,
     } as Parameters<typeof filterStrategyChanAnalysis>[0]
 
     expect(filterStrategyChanAnalysis(analysis, target, '30m')?.buySellPoints.map((item) => item.type)).toEqual(['buy1'])
