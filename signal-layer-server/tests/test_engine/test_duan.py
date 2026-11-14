@@ -92,3 +92,20 @@ def test_all_confirmed_duans_share_boundaries_without_gaps() -> None:
             assert previous.bi_indices[-1] + 1 == current.bi_indices[0]
             assert len(previous.bi_indices) >= 3
             assert len(current.bi_indices) >= 3
+
+def test_duan_feature_elements_stay_inside_segment() -> None:
+    for endpoints in (SF0_ENDPOINTS, SZ000004_ENDPOINTS):
+        duans = build_duans(make_bis(endpoints))
+        for duan in duans:
+            allowed = set(duan.bi_indices)
+            for item in duan.feat_elements or []:
+                assert item["bi"] in allowed
+            for item in duan.merged_feat or []:
+                assert item["bi"] in allowed
+
+
+def test_sz000004_feature_elements_do_not_leak_past_segment_end() -> None:
+    duans = build_duans(make_bis(SZ000004_ENDPOINTS))
+
+    assert [item["bi"] for item in duans[0].feat_elements or []] == [2, 4, 6, 8, 10, 12, 14]
+    assert [item["bi"] for item in duans[1].feat_elements or []] == [17, 19, 21]

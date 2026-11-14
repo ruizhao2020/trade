@@ -53,8 +53,9 @@ def key_chan(symbol: str, timeframe: str, divergence_power_ratio: float = 0.7, w
     # v8: classification 增加 children（二级分类），旧缓存没有这个字段。
     # v9: 段改为"特征序列基础线段 + 走势回抽合并"，段划分与旧版本不同。
     # v10: 首笔单独成段时跳过，段从趋势起点开始（不再把后段拉回首笔起点）。
+    # v11: 特征元素过滤到本段范围，旧缓存会把段末之后的笔也画成本段虚线。
     window_part = f":window={window}" if window is not None else ""
-    return f"chan:v10:{symbol}:{timeframe}{window_part}:divergence={divergence_power_ratio:.6f}"
+    return f"chan:v11:{symbol}:{timeframe}{window_part}:divergence={divergence_power_ratio:.6f}"
 
 
 def key_indicator(symbol: str, timeframe: str, indicator_type: str, params: dict[str, Any]) -> str:

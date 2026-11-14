@@ -13,3 +13,6 @@
 **/dist-public/
 **/dist-private/
 signal-layer-server/data/
+*.md
+articles/*
+

@@ -338,6 +338,11 @@ def _make_duan(index: int, segment: _BaseDuan, bis: list[Bi]) -> Duan:
     """
     seg_bis = bis[segment.start:segment.end + 1]
     high, low = _segment_extremes(bis, segment)
+    # 特征序列只保留本段范围内的元素：扫描时为了确认分型会越过段末，
+    # 那些笔属于后续段，不能画在本段上。
+    allowed = set(range(segment.start, segment.end + 1))
+    feats = [item for item in segment.feats if item[2] in allowed]
+    merged = [item for item in segment.merged if item[2] in allowed]
     return Duan(
         index=index,
         direction=segment.direction,
@@ -350,11 +355,11 @@ def _make_duan(index: int, segment: _BaseDuan, bis: list[Bi]) -> Duan:
         low=low,
         feat_elements=[
             {"first": item[0], "last": item[1], "bi": item[2]}
-            for item in segment.feats
+            for item in feats
         ] or None,
         merged_feat=[
             {"first": item[0], "last": item[1], "bi": item[2]}
-            for item in segment.merged
+            for item in merged
         ] or None,
         fenxing_type=segment.fenxing,
     )

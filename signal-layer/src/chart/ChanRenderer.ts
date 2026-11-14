@@ -170,76 +170,6 @@ function buildLineData(items: Array<{ startTime: number; startPrice: number; end
     .map(([time, value]) => ({ time: time as Time, value }))
 }
 
-function buildBiIndexMarkers(bis: Array<{ index: number; direction: 'up' | 'down'; startTime: number; endTime: number; startPrice: number; endPrice: number }>): SeriesMarker<Time>[] {
-  // 每个端点都标号,相邻笔共享端点编号,连续递增。
-  // N 笔 -> N+1 个端点标号 (0, 1, 2, ..., N)
-  // 笔 0 起点标 0;每笔终点标 i+1(笔 i 终点 = 笔 i+1 起点,共享同一标号)
-  // 顶(高价)标上方 aboveBar;底(低价)标下方 belowBar
-  const markers: SeriesMarker<Time>[] = []
-  if (bis.length === 0) return markers
-
-  // 第一笔起点(仅一次,后续笔的起点已被前一笔终点覆盖)
-  const first = bis[0]
-  markers.push({
-    time: first.startTime / 1000 as Time,
-    position: first.direction === 'up' ? 'atPriceBottom' : 'atPriceTop',
-    price: first.startPrice,
-    color: '#fbbf24',
-    shape: 'circle',
-    size: 0.8,
-    id: `chan:bi-point:0:${first.startTime}`,
-    text: '0',
-  })
-
-  // 每笔终点:编号 i+1
-  bis.forEach((b, i) => {
-    markers.push({
-      time: b.endTime / 1000 as Time,
-      position: b.direction === 'up' ? 'atPriceTop' : 'atPriceBottom',
-      price: b.endPrice,
-      color: '#fbbf24',
-      shape: 'circle',
-      size: 0.8,
-      id: `chan:bi-point:${i + 1}:${b.endTime}`,
-      text: `${i + 1}`,
-    })
-  })
-
-  return markers
-}
-
-function buildDuanIndexMarkers(duans: Array<{ index: number; direction: 'up' | 'down'; startTime: number; endTime: number; startPrice: number; endPrice: number }>): SeriesMarker<Time>[] {
-  const markers: SeriesMarker<Time>[] = []
-  if (duans.length === 0) return markers
-
-  const first = duans[0]
-  markers.push({
-    time: first.startTime / 1000 as Time,
-    position: first.direction === 'up' ? 'atPriceBottom' : 'atPriceTop',
-    price: first.startPrice,
-    color: '#3b82f6',
-    shape: 'square',
-    size: 0.8,
-    id: `chan:duan-point:0:${first.startTime}`,
-    text: 'D0',
-  })
-
-  duans.forEach((d, i) => {
-    markers.push({
-      time: d.endTime / 1000 as Time,
-      position: d.direction === 'up' ? 'atPriceTop' : 'atPriceBottom',
-      price: d.endPrice,
-      color: '#3b82f6',
-      shape: 'square',
-      size: 0.8,
-      id: `chan:duan-point:${i + 1}:${d.endTime}`,
-      text: `D${i + 1}`,
-    })
-  })
-
-  return markers
-}
-
 interface FeatLine {
   t1: number
   p1: number
@@ -254,7 +184,10 @@ function buildFeatLines(duans: Duan[], bis: Bi[]): FeatLine[] {
   const lines: FeatLine[] = []
   for (const duan of duans) {
     const mergedSet = new Set(duan.mergedFeat?.map(m => m.bi) ?? [])
+    // 只画本段的特征元素：扫描确认分型时会越过段末，旧数据可能把这些笔也带进来
+    const allowed = new Set(duan.biIndices ?? [])
     for (const f of duan.featElements ?? []) {
+      if (!allowed.has(f.bi)) continue
       const bi = bis[f.bi]
       if (!bi) continue
       const isMerged = mergedSet.has(f.bi)
@@ -262,7 +195,7 @@ function buildFeatLines(duans: Duan[], bis: Bi[]): FeatLine[] {
         t1: bi.startTime, p1: f.first,
         t2: bi.endTime, p2: f.last,
         color: isMerged ? '#22c55e' : '#f97316',
-        width: isMerged ? 2 : 1,
+        width: 3,
         dash: isMerged ? [6, 4] : [4, 4],
       })
     }
@@ -313,6 +246,10 @@ class FeatSequencePaneView implements IPanePrimitivePaneView {
   renderer(): IPrimitivePaneRenderer | null {
     return this._renderer
   }
+  // 特征序列画在笔线之上，否则 1px 虚线会和同路径的笔线重叠、被完全盖住
+  zOrder(): 'top' {
+    return 'top'
+  }
 }
 
 class FeatSequencePrimitive implements IPanePrimitive {
@@ -320,6 +257,159 @@ class FeatSequencePrimitive implements IPanePrimitive {
   constructor(candleSeries: ISeriesApi<'Candlestick'>, chart: IChartApi, lines: FeatLine[]) {
     this.views = [new FeatSequencePaneView(candleSeries, chart, lines)]
   }
+  paneViews(): readonly IPanePrimitivePaneView[] {
+    return this.views
+  }
+}
+
+interface EndpointLabelPart {
+  text: string
+  color: string
+}
+
+interface EndpointLabel {
+  time: number
+  price: number
+  side: 'above' | 'below'
+  parts: EndpointLabelPart[]
+}
+
+/**
+ * 笔序号与段端点的纯文字标注。
+ *
+ * - 笔序号用笔线颜色，段端点用段线颜色；不再使用圆点/方块图标。
+ * - 同一时间、同一价格上的笔序号和 D 标记合并成一组，并排绘制（如 `16 D1`）。
+ * - 不重叠的端点仍按方向放在价位上方或下方。
+ */
+function buildEndpointLabels(analysis: ChanAnalysis, options: ChanRenderOptions): EndpointLabel[] {
+  interface RawLabel {
+    text: string
+    color: string
+    side: 'above' | 'below'
+    order: number
+  }
+  const groups = new Map<string, { time: number; price: number; labels: RawLabel[] }>()
+  const add = (
+    time: number, price: number, text: string, color: string, side: 'above' | 'below', order: number,
+  ) => {
+    const key = `${time}:${price.toFixed(6)}`
+    const group = groups.get(key) ?? { time, price, labels: [] }
+    group.labels.push({ text, color, side, order })
+    groups.set(key, group)
+  }
+
+  if (options.showBi && analysis.bis.length > 0) {
+    const color = options.biColor ?? '#e7c66b'
+    const first = analysis.bis[0]
+    add(first.startTime, first.startPrice, '0', color, first.direction === 'up' ? 'below' : 'above', 0)
+    analysis.bis.forEach((bi, index) => {
+      add(bi.endTime, bi.endPrice, `${index + 1}`, color, bi.direction === 'up' ? 'above' : 'below', 0)
+    })
+  }
+
+  if (options.showDuan && analysis.duans.length > 0) {
+    const color = options.duanColor ?? '#3b82f6'
+    const first = analysis.duans[0]
+    add(first.startTime, first.startPrice, 'D0', color, first.direction === 'up' ? 'below' : 'above', 1)
+    analysis.duans.forEach((duan, index) => {
+      add(duan.endTime, duan.endPrice, `D${index + 1}`, color, duan.direction === 'up' ? 'above' : 'below', 1)
+    })
+  }
+
+  return [...groups.values()]
+    .sort((a, b) => a.time - b.time)
+    .map((group) => {
+      const labels = [...group.labels].sort((a, b) => a.order - b.order)
+      const anchor = labels.find((item) => item.order === 0) ?? labels[0]
+      return {
+        time: group.time,
+        price: group.price,
+        side: anchor.side,
+        parts: labels.map(({ text, color }) => ({ text, color })),
+      }
+    })
+}
+
+class EndpointLabelRenderer implements IPrimitivePaneRenderer {
+  private readonly chart: IChartApi
+  private readonly series: ISeriesApi<'Candlestick'>
+  private readonly labels: EndpointLabel[]
+
+  constructor(chart: IChartApi, series: ISeriesApi<'Candlestick'>, labels: EndpointLabel[]) {
+    this.chart = chart
+    this.series = series
+    this.labels = labels
+  }
+
+  draw(target: CanvasRenderingTarget2D): void {
+    const timeScale = this.chart.timeScale()
+    target.useMediaCoordinateSpace((scope) => {
+      const ctx = scope.context
+      ctx.save()
+      ctx.font = '600 12px -apple-system, BlinkMacSystemFont, "Segoe UI", "PingFang SC", sans-serif'
+      ctx.textBaseline = 'middle'
+      for (const label of this.labels) {
+        const x = timeScale.timeToCoordinate(label.time / 1000 as Time)
+        const y = this.series.priceToCoordinate(label.price)
+        if (x === null || y === null) continue
+        const widths = label.parts.map((part) => ctx.measureText(part.text).width)
+        const separatorGap = 4
+        const separatorWidth = 1
+        const between = label.parts.length > 1 ? separatorGap * 2 + separatorWidth : 0
+        const total = widths.reduce((sum, width) => sum + width, 0) + between * Math.max(0, label.parts.length - 1)
+        const startX = Math.max(4, Math.min(x - total / 2, 1184 - total))
+        const textY = Math.max(12, Math.min(label.side === 'above' ? y - 13 : y + 15, 842))
+        let cursor = startX
+        for (let i = 0; i < label.parts.length; i += 1) {
+          const part = label.parts[i]
+          ctx.lineWidth = 3
+          ctx.strokeStyle = 'rgba(10, 13, 19, 0.95)'
+          ctx.strokeText(part.text, cursor, textY)
+          ctx.fillStyle = part.color
+          ctx.fillText(part.text, cursor, textY)
+          cursor += widths[i]
+          if (i < label.parts.length - 1) {
+            // 多标签之间用一根中性细竖线分隔，避免类别颜色互相干扰
+            const lineX = cursor + separatorGap + separatorWidth / 2
+            ctx.beginPath()
+            ctx.moveTo(lineX, textY - 5)
+            ctx.lineTo(lineX, textY + 5)
+            ctx.strokeStyle = '#8b93a7'
+            ctx.lineWidth = 1
+            ctx.stroke()
+            cursor += between
+          }
+        }
+      }
+      ctx.restore()
+    })
+  }
+}
+
+class EndpointLabelPaneView implements IPanePrimitivePaneView {
+  private readonly _renderer: EndpointLabelRenderer
+
+  constructor(chart: IChartApi, series: ISeriesApi<'Candlestick'>, labels: EndpointLabel[]) {
+    this._renderer = new EndpointLabelRenderer(chart, series, labels)
+  }
+
+  renderer(): IPrimitivePaneRenderer | null {
+    return this._renderer
+  }
+
+  // 端点文字画在 K 线/笔线/特征线之上
+  zOrder(): 'top' {
+    return 'top'
+  }
+}
+
+class EndpointLabelPrimitive implements IPanePrimitive {
+  private readonly views: IPanePrimitivePaneView[]
+
+  constructor(chart: IChartApi, series: ISeriesApi<'Candlestick'>, labels: EndpointLabel[]) {
+    this.views = [new EndpointLabelPaneView(chart, series, labels)]
+  }
+
   paneViews(): readonly IPanePrimitivePaneView[] {
     return this.views
   }
@@ -494,14 +584,6 @@ export class ChanRenderer {
         })
       }
     }
-    // 笔序号:在每笔终点标注序号,方便定位讨论
-    if (options.showBi && analysis.bis.length > 0) {
-      markers.push(...buildBiIndexMarkers(analysis.bis))
-    }
-    // 段序号:在每段终点标注序号(蓝色 D 前缀),与笔序号(黄色)区分
-    if (options.showDuan && analysis.duans.length > 0) {
-      markers.push(...buildDuanIndexMarkers(analysis.duans))
-    }
     if (options.showDuan && analysis.duans.length > 0) {
       const featLines = buildFeatLines(analysis.duans, analysis.bis)
       if (featLines.length > 0) {
@@ -510,6 +592,14 @@ export class ChanRenderer {
         pane.attachPrimitive(prim)
         this.primitives.push(prim)
       }
+    }
+    // 笔序号 / 段端点：纯文字标注；重合时并排显示
+    const endpointLabels = buildEndpointLabels(analysis, options)
+    if (endpointLabels.length > 0) {
+      const prim = new EndpointLabelPrimitive(this.chart, this.candleSeries, endpointLabels)
+      const pane = this.chart.panes()[0]
+      pane.attachPrimitive(prim)
+      this.primitives.push(prim)
     }
     if (options.showFenxing && analysis.fenxings.length > 0) {
       const chanKLineTimes = analysis.chanKLines.map(k => k.openTime)
