@@ -9,12 +9,16 @@
     python3 style_scan.py articles/volume-price-indicator.md
     python3 style_scan.py articles/*.md --verbose
 
-关注三个指标：
+关注五个指标：
 1. **破折号密度**：中文 AI 生成文本的典型特征是"——"过多。经验上每千字 < 1 处较自然。
 2. **框架词/金句词**：一句话、换句话说、简单来说、这正是…的原因、才是真正的…、本质上是…
    这类词本身不算错，但集中出现会显得像模板。
 3. **句长变异系数**（标准差/均值）：过低说明句子长度整齐划一；但**不要为了指标好看强行改节奏**，
    0.45~0.65 区间通常读起来是自然的。
+4. **中英文标点混用**：中文正文用全角标点（，。、；：！？（）「」等）；半角 , . ; : ! ? ( ) [ ] " '
+   只应出现在代码、公式、数字内部。脚本会跳过行内代码、链接、表格与数字之间的 , :，
+   其余在含中文的行里出现的半角标点都会列出来。
+5. **引号约定**：文章统一用 「 」（嵌套用 『 』）；弯引号 “ ” 与 ASCII 直引号都算混用。
 """
 
 from __future__ import annotations
@@ -34,6 +38,31 @@ TELL_WORDS = [
 ]
 
 EM_DASH = "——"
+
+# 中文正文里不该出现的半角标点（点号允许小数，横线允许日期，不在此列）
+ASCII_PUNCT = re.compile(r"""["',;:!?()\[\]]""")
+# 文章统一用 「 」；弯引号 “ ” 也算引号混用
+CURLY_QUOTES = "“”"
+
+
+def strip_inline(value: str) -> str:
+    """去掉行内代码、链接与图片，只留正文，避免公式里的半角标点误报。"""
+    value = re.sub(r"`[^`]*`", "", value)
+    value = re.sub(r"!\[[^\]]*\]\([^)]*\)", "", value)
+    value = re.sub(r"\[[^\]]*\]\([^)]*\)", "", value)
+    return value
+
+
+def ascii_punct_hits(value: str) -> list[str]:
+    hits: list[str] = []
+    for match in ASCII_PUNCT.finditer(value):
+        char = match.group()
+        index = match.start()
+        # 数字之间的冒号/逗号是时间或千分位，不算正文标点混用
+        if char in ",:" and 0 < index < len(value) - 1 and value[index - 1].isdigit() and value[index + 1].isdigit():
+            continue
+        hits.append(char)
+    return hits
 
 
 def prose_lines(text: str) -> list[tuple[int, str]]:
@@ -66,6 +95,29 @@ def scan(path: Path) -> dict:
         if lines:
             tells[word] = lines
 
+    # 引号检查覆盖全文（含引述、表格、图注），只排除代码块
+    all_lines: list[tuple[int, str]] = []
+    in_code = False
+    for index, line in enumerate(text.splitlines(), start=1):
+        if line.strip().startswith("```"):
+            in_code = not in_code
+            continue
+        if not in_code:
+            all_lines.append((index, line))
+    curly_quote_lines: list[tuple[int, str]] = [
+        (index, content) for index, content in all_lines if any(char in content for char in CURLY_QUOTES)
+    ]
+    curly_quotes = sum(content.count("“") + content.count("”") for _, content in curly_quote_lines)
+
+    ascii_punct: list[tuple[int, list[str], str]] = []
+    for index, content in numbered:
+        cleaned = strip_inline(content)
+        if not re.search(r"[\u4e00-\u9fff]", cleaned):
+            continue
+        hits = ascii_punct_hits(cleaned)
+        if hits:
+            ascii_punct.append((index, hits, cleaned))
+
     sentences = [s for s in re.split(r"(?<=[。！？])", body) if len(s.strip()) > 1]
     lengths = [len(s) for s in sentences]
     mean = statistics.mean(lengths) if lengths else 0
@@ -90,6 +142,10 @@ def scan(path: Path) -> dict:
         "em_dash_per_1000": round(em_dashes / chars * 1000, 2) if chars else 0,
         "tells": tells,
         "tell_total": sum(len(lines) for lines in tells.values()),
+        "ascii_punct": ascii_punct,
+        "ascii_punct_total": sum(len(hits) for _, hits, _ in ascii_punct),
+        "curly_quotes": curly_quotes,
+        "curly_quote_lines": curly_quote_lines,
         "sentences": len(sentences),
         "sentence_mean": round(mean, 1),
         "sentence_cv": round(cv, 2),
@@ -114,10 +170,18 @@ def main() -> int:
         print(f"  散文 {result['chars']} 字 / {result['sentences']} 句 / {result['paragraphs']} 段（最长段 {result['paragraph_max']} 字）")
         print(f"  破折号: {result['em_dashes']} 处，每千字 {result['em_dash_per_1000']}（<1 较自然）")
         print(f"  框架/金句词: {result['tell_total']} 次" + (f"，涉及 {len(result['tells'])} 个词" if result["tells"] else ""))
+        print(f"  英文标点: {result['ascii_punct_total']} 处" + (f"，涉及 {len(result['ascii_punct'])} 行" if result["ascii_punct"] else ""))
+        print(f"  弯引号: {result['curly_quotes']} 处" + (f"，涉及 {len(result['curly_quote_lines'])} 行" if result["curly_quote_lines"] else ""))
         print(f"  句长: 平均 {result['sentence_mean']} 字，变异系数 {result['sentence_cv']}（0.45~0.65 较自然；不要为指标强行改节奏）")
         if args.verbose and result["tells"]:
             for word, lines in result["tells"].items():
                 print(f"    {word}: 行 {lines}")
+        if args.verbose and result["ascii_punct"]:
+            for line, hits, snippet in result["ascii_punct"]:
+                print(f"    行 {line}: {''.join(hits)} | {snippet[:90]}")
+        if args.verbose and result["curly_quote_lines"]:
+            for line, content in result["curly_quote_lines"]:
+                print(f"    行 {line}: 弯引号 | {content[:90]}")
     return 0
 
 
